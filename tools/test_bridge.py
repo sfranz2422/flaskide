@@ -31,6 +31,7 @@ WHAT IS CHECKED, AND WHY EACH ONE
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import sys
@@ -65,7 +66,8 @@ bridge = match.group(1)
 # It lives in a JS template string, so it is written with escaped newlines and
 # backticks. Undo exactly what the string literal did to it.
 bridge = bridge.replace("\\\\n", "\\n").replace("\\`", "`").replace("\\$", "$")
-bridge = bridge.replace("${PROJECT}", "/tmp/flaskide-test-project")
+PROJECT_DIR = "/tmp/flaskide-test-project"
+bridge = bridge.replace("${PROJECT}", PROJECT_DIR)
 
 check("the runtime's Python was found and unescaped",
       "_flaskide_load" in bridge and "_flaskide_request" in bridge,
@@ -170,6 +172,43 @@ SHRUNK = {k: v for k, v in EDITED.items() if k != "static/style.css"}
 load(json.dumps(SHRUNK))
 r = get("/static/style.css")
 check("a deleted file is really deleted", r["status"] == 404, "got %d" % r["status"])
+
+# ------------------------------- the one CPython cannot reproduce by itself
+#
+# Loading ends with os.chdir into the project, so a student's
+# open("data.txt") means what they expect. That leaves the process standing
+# in the directory the NEXT run has to delete.
+#
+# Linux allows removing the directory you are in. Emscripten does not, and
+# raises `OSError: [Errno 10] Resource busy: '/project'` — so the first Run
+# worked, the second died, and it looked like the student's edit broke it.
+# Found by pressing Run twice in a browser, which is the only place it
+# happens.
+#
+# It cannot be reproduced here, so the invariant is checked instead: at the
+# moment the tree is removed, the process must not be standing in it. That
+# is testable anywhere and is the thing that was actually wrong.
+import shutil                                                     # noqa: E402
+
+seen = {}
+_real_rmtree = shutil.rmtree
+
+
+def _watch(path, *a, **kw):
+    seen["cwd"] = os.getcwd()
+    return _real_rmtree(path, *a, **kw)
+
+
+os.chdir(PROJECT_DIR)                    # exactly where a run leaves it
+scope["shutil"].rmtree = _watch
+try:
+    load(json.dumps(PROJECT))
+finally:
+    scope["shutil"].rmtree = _real_rmtree
+
+inside = seen.get("cwd", "").startswith(PROJECT_DIR)
+check("the project is not the working directory when it is deleted",
+      not inside, "cwd was %s" % seen.get("cwd"))
 
 # ----------------------------------------------------- when they get it wrong
 BROKEN = {"app.py": '''from flask import Flask

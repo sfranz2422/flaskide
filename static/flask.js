@@ -119,9 +119,27 @@ _flaskide_app = None
 
 def _flaskide_clear():
     """A run starts from nothing, so a deleted file is really deleted and a
-    module-level list really starts empty."""
+    module-level list really starts empty.
+
+    THE CHDIR IS NOT TIDINESS, IT IS THE WHOLE THING WORKING TWICE
+
+    Loading a project ends with os.chdir into it, so that a student's
+    open("data.txt") means what they expect. That leaves the process
+    standing inside the directory this function then has to delete.
+
+    Linux does not mind: you may remove the directory you are in, and the
+    process simply ends up with a working directory that no longer exists.
+    Emscripten's filesystem does mind, and raises
+
+        OSError: [Errno 10] Resource busy: '/project'
+
+    So the first Run worked and the second one died, which is the worst
+    shape a bug can have in an editor — it looks like the student's edit
+    broke it. Stepping out first costs one line.
+    """
     global _flaskide_app
     _flaskide_app = None
+    os.chdir("/")
     if os.path.isdir(_FLASKIDE_PROJECT):
         shutil.rmtree(_FLASKIDE_PROJECT)
     os.makedirs(_FLASKIDE_PROJECT, exist_ok=True)

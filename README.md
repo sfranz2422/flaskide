@@ -67,6 +67,22 @@ otherwise without reading the file. (WebIDE's `static/runner.js` docstring
 still says `allow-scripts`, which is now the only stale copy of the claim
 anywhere and is worth a one-line fix there.)
 
+**Emscripten will not let you delete the directory you are standing in.**
+Loading a project ends with `os.chdir` into it, so a student's
+`open("data.txt")` means what they expect. That leaves the process inside
+the directory the *next* Run has to remove. Linux allows that; Emscripten
+raises `OSError: [Errno 10] Resource busy: '/project'`. So the first Run
+worked and the second died — which is the worst shape a bug can take in an
+editor, because it looks like the student's edit broke it.
+
+This is the limit of "Pyodide is a CPython, so a logic error here is a logic
+error there". That holds for logic and not for filesystem semantics, and no
+amount of running the bridge on CPython would have found it — only pressing
+Run twice in a browser did. `tools/test_bridge.py` now checks the invariant
+instead of the symptom: at the moment the tree is removed, the process must
+not be standing in it. That is testable anywhere, and it is the thing that
+was actually wrong.
+
 **Top-level `await` needs `runPythonAsync` semantics.** PyIDE's console mode
 compiles the student's program first, to report syntax errors nicely, and that
 compile does not allow top-level await — so `await micropip.install("flask")`
