@@ -1,0 +1,58 @@
+# FlaskIDE shares PyIDE's Postgres rather than provisioning a third one.
+#
+# Share links stay separate: PyIDE owns `snippets`, WebIDE owns `projects`,
+# and this owns `flask_projects`. Each app's create_all() makes only its own
+# table and each only ever queries its own, so an identical share slug in all
+# three is harmless.
+#
+# The account tables (users, assignments, drafts, submissions) ARE shared, on
+# purpose — accounts.py is the same file in all three apps, so one sign-in is
+# one person across every class. An `app` column on assignments and drafts
+# keeps each editor's work out of the others' lists.
+#
+# There is no `databases:` block on purpose. DATABASE_URL is marked
+# sync: false, so Render asks for it at deploy time — paste PyIDE's database
+# Internal Connection String there.
+
+services:
+  - type: web
+    name: flaskide
+    runtime: python
+    # 0.5 CPU / 512 MB, the same plan PyIDE and WebIDE run on. The student's
+    # Flask app runs in their browser, so this instance serves static files
+    # and saves drafts and nothing else — it does not scale with how much
+    # Python anybody writes.
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --threads 4 --timeout 60
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+
+      - key: DATABASE_URL
+        sync: false
+
+      # Signs the session cookie. Render generates one; changing it signs
+      # everyone out.
+      - key: SECRET_KEY
+        generateValue: true
+
+      # Google sign-in. Leave all three unset and the editor runs exactly as
+      # it does without accounts: no sign-in button, no saving, no dashboard,
+      # and every share link still works.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+      # Who may sign in. Comma separated, no @. Empty means anyone with a
+      # Google account.
+      - key: ALLOWED_EMAIL_DOMAINS
+        sync: false
+
+      # Who gets the dashboard and the Publish button. Comma separated full
+      # addresses. Kept in the environment rather than a column so nobody can
+      # promote themselves by finding a hole in the app.
+      - key: TEACHER_EMAILS
+        sync: false

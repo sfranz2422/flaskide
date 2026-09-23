@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  /* Runs before anything paints, so projecting in light mode never starts
+     with a flash of dark. No saved choice means follow the computer's. */
+  (function () {
+    try {
+      var saved = localStorage.getItem("flaskide-theme");
+      if (saved === "light" || saved === "dark") {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
+      var size = parseInt(localStorage.getItem("flaskide-code-size"), 10);
+      if (size >= 11 && size <= 32) {
+        document.documentElement.style.setProperty("--code-size", size + "px");
+      }
+    } catch (e) { /* storage blocked; the CSS default still applies */ }
+  })();
+</script>
+</head>
+
+<body{% if authoring %} class="is-authoring"{% endif %}>
+
+<header class="bar">
+  <div class="brand"><span class="logo">🧪</span> FlaskIDE</div>
+
+  <div class="meta">
+    <input id="title" class="field field-title" type="text"
+           value="{{ title }}" placeholder="Project name" maxlength="120"
+           {% if readonly %}readonly{% endif %}>
+    <input id="author" class="field field-author" type="text"
+           value="{{ author }}" placeholder="Your name" maxlength="80"
+           {% if readonly %}readonly{% endif %}>
+  </div>
+
+  <div class="actions">
+    <button id="run" class="btn btn-run">
+      <span class="btn-icon">▶</span><span id="run-label">Run</span>
+    </button>
+    <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
+    {% if not readonly %}
+      <label class="toggle">
+        <input type="checkbox" id="auto-run"> Auto
+      </label>
+    {% endif %}
+    {#  Who sees what.
+        A student working on an assignment needs Run and Turn in. Everything
+        else is clutter to them, and clutter in a toolbar is a question a
+        student has to stop and answer instead of writing code.
+
+          Hide code, Publish  teachers only — both exist to hand work OUT
+          Turn in             only where there is an assignment to hand to
+          Share               hidden only when Turn in is there to replace it
+          Save                a signed-in student keeping their own project
+          Download            in the account menu when signed in, here if not
+    #}
+    {% if readonly %}
+      <a class="btn btn-primary" href="{{ url_for('fork_shared', slug=slug) }}">Edit a copy</a>
+    {% else %}
+      {% if draft_slug %}
+        <span id="save-state" class="savestate" aria-live="polite">Saved</span>
+      {% elif user %}
+        <button id="save-project" class="btn"
+                title="Keep this project on your account so it saves itself from now on.">Save</button>
+      {% endif %}
+
+      {% if draft_slug and assignment_slug %}
+        <button id="turn-in" class="btn btn-primary"
+                title="Hand this in to your teacher. You can keep working and turn it in again.">
+          {% if submitted_at %}Turn in again{% else %}Turn in{% endif %}
+        </button>
+      {% endif %}
+
+      {% if is_teacher %}
+        <label class="hidecode"
+               title="Share a link that shows the finished page with no source on it and no way to copy it.">
+          <input type="checkbox" id="hide-code"> Hide code
+        </label>
+      {% endif %}
+
+      {% if is_teacher or not (draft_slug and assignment_slug) %}
+        <button id="share" class="btn btn-primary">Share</button>
+      {% endif %}
+
+      {% if editing_assignment %}
+        <button id="update-assignment" class="btn btn-primary"
+                title="Save these changes to the assignment.">Update assignment</button>
+      {% elif is_teacher %}
+        <button id="publish" class="btn"
+                title="Hand this out to a class as an assignment.">Publish</button>
+      {% endif %}
+    {% endif %}
+    {# Signed in, Download lives in the account menu — still one click, but not
+       taking up room in a bar a student reads every lesson. #}
+    {% if not user %}
+      <button id="download" class="btn">Download</button>
+    {% endif %}
+    <div class="stepper" role="group" aria-label="Code text size">
+      <button id="font-down" class="step" title="Smaller code text">−</button>
+      <span id="font-size" class="step-value" aria-live="polite">14</span>
+      <button id="font-up" class="step" title="Bigger code text">+</button>
+    </div>
+    <button id="theme" class="btn btn-icon-only" title="Switch between light and dark">
+      <span id="theme-glyph">☾</span>
+    </button>
+
+    {% if login_enabled %}
+      {% if user %}
+        <div class="account">
+          <button id="account" class="btn btn-account" aria-expanded="false"
+                  title="{{ user_email }}">{{ user_name }}</button>
+          <div id="account-menu" class="menu" hidden>
+            <button id="my-projects" class="menu-item">My projects</button>
+            <button id="download-menu" class="menu-item">Download this project</button>
+            {% if is_teacher %}
+              <a class="menu-item" href="{{ url_for('teacher_home') }}">Assignments</a>
+            {% endif %}
+            <a class="menu-item" href="{{ url_for('logout', next=request.path) }}">Sign out</a>
+          </div>
+        </div>
+      {% else %}
+        <a class="btn btn-primary"
+           href="{{ url_for('login', next=request.full_path if request.query_string else request.path) }}"
+           title="Sign in with your school Google account to save your work">Sign in</a>
+      {% endif %}
+    {% endif %}
+  </div>
+</header>
+
+{% if sign_in_hint and login_enabled and not user %}
+<div class="banner banner-hint">
+  <strong>You're not signed in.</strong> You can do the work right here, but it
+  won't be saved and you can't turn it in.
+  <a href="{{ url_for('login', next=request.path) }}">Sign in with your school account</a>
+  to keep it.
+</div>
+{% endif %}
+
+{% if readonly %}
+<div class="banner">
+  <strong>Shared project</strong> — you're viewing a read-only snapshot{% if author %} from {{ author }}{% endif %}{% if shared_at %}, saved {{ shared_at }}{% endif %}.
+  You can run it, but to change it choose <em>Edit a copy</em>.
+</div>
+{% endif %}
+
+<main class="split">
+  <section class="pane pane-editor">
+    <div class="pane-head pane-head-tabs">
+      <div id="file-tabs" class="tabs" role="tablist"></div>
+      {% if not readonly %}
+        <button id="new-file" class="linkbtn" title="Add a file to this project">+ File</button>
+      {% endif %}
+    </div>
+    <div class="editor-wrap"><textarea id="editor"></textarea></div>
+  </section>
+
+  <section class="pane pane-right">
+    <div id="preview-view" class="subpane">
+      <div class="pane-head">
+        <span>Preview</span>
+        <span class="hint">Ctrl+Enter to run</span>
+      </div>
+      <!-- Every URL here is imaginary — it exists only as a rule in the
+           student's url_map — so this is an address bar over a function
+           call. It is editable because typing a path is how you check that
+           a route you just wrote actually answers. -->
+      <div class="trail">
+        <button id="preview-back" class="linkbtn" title="Back">◀</button>
+        <input id="preview-path" class="field field-path" value="/"
+               spellcheck="false" autocomplete="off">
+        <span id="preview-status" class="status-code"></span>
+      </div>
+      <div class="preview-frame">
+        <!-- allow-scripts WITHOUT allow-same-origin: student JavaScript runs
+             normally but on a null origin, so it cannot touch this page.
+             allow-forms only lets the submit event fire — every submission is
+             caught by the bridge, so nothing is ever actually posted. -->
+        <iframe id="preview" title="Page preview"
+                sandbox="allow-scripts allow-forms"></iframe>
+      </div>
+      <div class="pane-head console-head">
+        <span>Console</span>
+        <button id="clear" class="linkbtn">Clear</button>
+      </div>
+      <pre id="output" class="output"><span class="dim">Press Run to start your app.</span>
+</pre>
+    </div>
+
+    <div id="notes-view" class="subpane" hidden>
+      <div class="pane-head">
+        <span id="notes-name">Notes</span>
+        {% if authoring %}
+          <button id="notes-edit" class="linkbtn">Edit source</button>
+        {% endif %}
+      </div>
+      <div id="notes-body" class="notes-body prose"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-card">
+    <h2 id="modal-title">Project shared</h2>
+    <p class="modal-sub" id="modal-sub">Anyone with this link can open and run this snapshot.</p>
+    <div class="linkrow">
+      <input id="share-url" type="text" readonly>
+      <button id="copy" class="btn btn-primary">Copy</button>
+    </div>
+    <p class="modal-note" id="modal-note">The link captures every file exactly as it is right now.
+      If you keep working, share again to create an updated link.</p>
+    <button id="close-modal" class="btn">Done</button>
+  </div>
+</div>
+
+<div id="projects-modal" class="modal" hidden>
+  <div class="modal-card">
+    <h2>My projects</h2>
+    <p class="modal-sub">Everything you have saved, newest first.</p>
+    <div id="projects-list" class="projects"></div>
+    <button id="close-projects" class="btn">Done</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/jinja2/jinja2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/xml-fold.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closetag.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+<script>
+  window.FLASKIDE = {
+    readonly: {{ 'true' if readonly else 'false' }},
+    authoring: {{ 'true' if authoring else 'false' }},
+    shareUrl: "{{ url_for('create_share') }}",
+    files: {{ files | tojson }},
+    entry: {{ entry | tojson }},
+    folders: {{ folders | tojson }},
+    signedIn: {{ 'true' if user else 'false' }},
+    isTeacher: {{ 'true' if is_teacher else 'false' }},
+    draftSlug: {{ (draft_slug or '') | tojson }},
+    assignmentSlug: {{ (assignment_slug or '') | tojson }},
+    submittedAt: {{ (submitted_at or '') | tojson }},
+    editingAssignment: {{ (editing_assignment or '') | tojson }},
+    editingStarted: {{ (editing_started or 0) | tojson }}
+  };
+
+</script>
+<script src="{{ url_for('static', filename='zip.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js"></script>
+<script src="{{ url_for('static', filename='flask.js') }}"></script>
+<script src="{{ url_for('static', filename='preview.js') }}"></script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='account.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ assignment.title }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">{{ assignment.title }}</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('teacher_home') }}">All assignments</a>
+    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+  </div>
+</header>
+
+<main class="sheet">
+
+  <section class="handout">
+    <h2>The link to hand out</h2>
+    <div class="linkrow">
+      <input id="share-url" type="text" readonly value="{{ share_url }}">
+      <button id="copy" class="btn btn-primary">Copy</button>
+    </div>
+    <p class="dim">
+      Students who open this get their own copy, saved under their name.
+      Opening it again later returns them to their own work rather than
+      starting over.
+    </p>
+  </section>
+
+  <section>
+    <h2>Turned in <span class="count">{{ handed_in|length }}</span></h2>
+    {% if handed_in %}
+      <table class="listing">
+        <thead><tr><th>Student</th><th>When</th><th></th><th></th></tr></thead>
+        <tbody>
+          {% for s in handed_in %}
+            <tr>
+              <td>{{ s.name }}<div class="dim small">{{ s.email }}</div></td>
+              <td class="dim">{{ s.when }}</td>
+              <td class="dim">{% if s.times > 1 %}{{ s.times }} attempts{% endif %}</td>
+              <td class="right"><a class="linkbtn" href="{{ s.url }}">Open</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="dim">Nobody yet.</p>
+    {% endif %}
+  </section>
+
+  {% if not_yet %}
+    <section>
+      <h2>Started but not turned in <span class="count">{{ not_yet|length }}</span></h2>
+      <p class="dim">They've opened the link and have work saved.</p>
+      <ul class="names">
+        {% for name in not_yet %}<li>{{ name }}</li>{% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+</main>
+
+<script>
+  document.getElementById("copy").addEventListener("click", function () {
+    var field = document.getElementById("share-url");
+    field.select();
+    navigator.clipboard.writeText(field.value).then(function () {
+      document.getElementById("copy").textContent = "Copied";
+      setTimeout(function () {
+        document.getElementById("copy").textContent = "Copy";
+      }, 1500);
+    }, function () { document.execCommand("copy"); });
+  });
+</script>
+
+</body>
+</html>

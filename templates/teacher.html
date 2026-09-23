@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assignments — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">Assignments</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('index') }}">New project</a>
+    <span class="whoami">{{ user_email }}</span>
+    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+  </div>
+</header>
+
+<main class="sheet">
+  {% macro rows(list, archived) %}
+    <table class="listing">
+      <thead>
+        <tr><th>Assignment</th><th>Set</th><th>Turned in</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in list %}
+          <tr data-slug="{{ a.slug }}" data-count="{{ counts.get(a.id, 0) }}"
+              data-title="{{ a.title }}">
+            <td><a href="{{ url_for('teacher_assignment', slug=a.slug) }}">{{ a.title }}</a></td>
+            <td class="dim">{{ a.created_at.strftime('%b %d, %Y') }}</td>
+            <td><strong>{{ counts.get(a.id, 0) }}</strong></td>
+            <td class="right rowactions">
+              <a class="linkbtn" href="{{ url_for('edit_assignment', slug=a.slug) }}">Edit</a>
+              <button class="linkbtn js-archive">{{ "Restore" if archived else "Archive" }}</button>
+              {% if counts.get(a.id, 0) == 0 %}
+                <button class="linkbtn js-delete danger">Delete</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endmacro %}
+
+  {% if assignments %}
+    {{ rows(assignments, false) }}
+  {% elif not archived %}
+    <div class="empty">
+      <h2>No assignments yet</h2>
+      <p>Open a project, get it how you want students to find it, then press
+         <strong>Publish</strong>. You'll get a link to hand out.</p>
+      <p><a class="btn btn-primary" href="{{ url_for('index') }}">Start a project</a></p>
+    </div>
+  {% else %}
+    <p class="dim">Nothing current. {{ archived|length }} archived.</p>
+  {% endif %}
+
+  {% if archived %}
+    <section>
+      <h2>
+        Archived <span class="count">{{ archived|length }}</span>
+        <a class="linkbtn" href="{{ url_for('teacher_home', archived='0' if show_archived else '1') }}">
+          {{ "hide" if show_archived else "show" }}
+        </a>
+      </h2>
+      {% if show_archived %}
+        <p class="dim">Still there in full — every submission and every
+          student's copy. Just out of the way.</p>
+        {{ rows(archived, true) }}
+      {% endif %}
+    </section>
+  {% endif %}
+</main>
+
+<script>
+  /* Archive is reversible and needs no ceremony. Delete is refused by the
+     server whenever anyone has turned work in, so the confirm here is about
+     the teacher's own effort, not about student work being at risk. */
+  document.addEventListener("click", function (e) {
+    var row = e.target.closest("tr[data-slug]");
+    if (!row) return;
+    var slug = row.dataset.slug;
+
+    if (e.target.classList.contains("js-archive")) {
+      fetch("/api/assignment/" + slug + "/archive", { method: "POST" })
+        .then(function () { location.reload(); });
+      return;
+    }
+
+    if (e.target.classList.contains("js-delete")) {
+      if (!confirm("Delete “" + row.dataset.title + "”?\n\n" +
+                   "Nobody has turned anything in, so nothing is lost. " +
+                   "Any student who started it keeps their copy as an " +
+                   "ordinary saved project.")) return;
+      fetch("/api/assignment/" + slug, { method: "DELETE" })
+        .then(function (r) { return r.json().then(function (d) { return { r: r, d: d }; }); })
+        .then(function (out) {
+          if (!out.r.ok) { alert(out.d.error || "Couldn't delete that."); return; }
+          location.reload();
+        });
+    }
+  });
+</script>
+
+</body>
+</html>

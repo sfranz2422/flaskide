@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign-in problem — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main class="center">
+  <h1>That didn't work</h1>
+  <p>{{ reason }}</p>
+  {% if allowed %}
+    <p class="dim">Accepted right now:
+      {% for d in allowed %}<code>@{{ d }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+      If that list looks wrong, it's the <code>ALLOWED_EMAIL_DOMAINS</code>
+      setting on the server — clear it to let any Google account in.</p>
+  {% endif %}
+  <p class="dim">You can keep working without signing in — you just won't be
+     able to save projects or turn work in.</p>
+  <p>
+    <a class="btn btn-primary" href="{{ url_for('login') }}">Try again</a>
+    <a class="btn" href="{{ url_for('index') }}">Carry on without signing in</a>
+  </p>
+</main>
+</body>
+</html>

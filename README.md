@@ -49,15 +49,23 @@ find files on Pyodide's virtual filesystem. It does, inheritance included.
 
 ## Three things learned on the way in
 
-**`sandbox="allow-scripts"` alone kills every form, silently.** WebIDE uses
-exactly that and is right to. Here it is wrong: without `allow-forms` the
-browser blocks a submission *before any listener runs*, so the submit event
-never fires and the interception never gets to `preventDefault`. The form
-just does nothing — no error, no console warning. Half a Flask unit is
-`<form method="post">`, so this would have been found by a student rather
-than a test. Measured with a probe iframe either way: zero submit events with
-`allow-scripts`, one with `allow-scripts allow-forms`. It costs nothing in
-isolation — `allow-same-origin` is the dangerous one, and it stays off.
+**`allow-forms` is not optional, and its absence is silent.** With
+`sandbox="allow-scripts"` alone the browser blocks a form submission *before
+any listener runs*: the submit event never fires, so the interception never
+gets to `preventDefault`. The form does nothing. No error, no console
+warning. Measured with a probe iframe either way — zero submit events with
+`allow-scripts`, one with `allow-scripts allow-forms`.
+
+It costs nothing in isolation. `allow-same-origin` is the one that would
+matter, and it stays off.
+
+*I first wrote this up as something WebIDE had got wrong. It is not.*
+WebIDE's preview already uses `allow-scripts allow-forms`, and the comment
+above its iframe says almost exactly what the one in `preview.js` says — it
+hit this when forms were added there and wrote down the answer. I asserted
+otherwise without reading the file. (WebIDE's `static/runner.js` docstring
+still says `allow-scripts`, which is now the only stale copy of the claim
+anywhere and is worth a one-line fix there.)
 
 **Top-level `await` needs `runPythonAsync` semantics.** PyIDE's console mode
 compiles the student's program first, to report syntax errors nicely, and that
@@ -120,3 +128,20 @@ python app.py
 
 Sign-in is off unless the Google variables are set, and everything except
 saving works without it.
+
+## Tests
+
+```bash
+python3 tools/test_bridge.py    # the runtime, on real Flask, no browser
+python3 tools/test_app.py       # this server, the file rules, the wiring
+```
+
+`test_bridge.py` lifts the Python out of `static/flask.js` and runs it on
+CPython. Pyodide is a CPython, so a logic error there is a logic error in the
+browser, found in a second rather than after a page load.
+
+`test_app.py` covers the half that is easy to get wrong silently: that every
+`$("id")` in the editor's JavaScript matches an element that actually exists
+in the template, and that every script the page loads is a file in the repo.
+Neither failure produces an error — the button is simply dead, or the editor
+simply does not start, and the page renders perfectly either way.

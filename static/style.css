@@ -1,0 +1,886 @@
+/* Dark is the base palette. Light is defined once, below, and applied either
+   by an explicit choice (data-theme) or by the computer's own setting. */
+:root {
+  --bg: #12151c;
+  --bg-panel: #1a1e27;
+  --bg-head: #212734;
+  --line: #2c3341;
+  --text: #dde3ee;
+  --muted: #8a94a8;
+  --accent: #4f8cff;
+  --accent-hover: #3d78e8;
+  --on-accent: #08182f;
+  --green: #3ecf8e;
+  --green-hover: #35b87d;
+  --on-green: #0d2b1e;
+  --red: #ff6b6b;
+  --on-red: #3a0d0d;
+  --amber: #f5c451;
+
+  --hover-bg: #232936;
+  --hover-line: #40495b;
+  --banner-bg: #1d2740;
+  --banner-line: #2b3a5e;
+  --banner-text: #c3d3f2;
+  --shadow: rgba(0, 0, 0, .45);
+
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --bar-h: 56px;
+  --code-size: 14px;   /* editor + output only; the chrome never scales */
+
+  color-scheme: dark;
+}
+
+/* Light. Accent and status colours are darkened so they stay legible on a
+   classroom projector, which washes contrast out badly. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #ffffff;
+    --bg-panel: #f6f8fb;
+    --bg-head: #edf1f7;
+    --line: #ccd4e0;
+    --text: #161c28;
+    --muted: #55607a;
+    --accent: #1d4ed8;
+    --accent-hover: #1e40af;
+    --on-accent: #ffffff;
+    --green: #15803d;
+    --green-hover: #126c34;
+    --on-green: #ffffff;
+    --red: #b91c1c;
+    --on-red: #ffffff;
+    --amber: #8a5a00;
+    --amber: #8a5a00;
+
+    --hover-bg: #e3e9f2;
+    --hover-line: #9fadc4;
+    --banner-bg: #e8eefb;
+    --banner-line: #b9c9ea;
+    --banner-text: #24365e;
+    --shadow: rgba(24, 34, 54, .18);
+
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --amber: #8a5a00;
+  --bg: #ffffff;
+  --bg-panel: #f6f8fb;
+  --bg-head: #edf1f7;
+  --line: #ccd4e0;
+  --text: #161c28;
+  --muted: #55607a;
+  --accent: #1d4ed8;
+  --accent-hover: #1e40af;
+  --on-accent: #ffffff;
+  --green: #15803d;
+  --green-hover: #126c34;
+  --on-green: #ffffff;
+  --red: #b91c1c;
+  --on-red: #ffffff;
+
+  --hover-bg: #e3e9f2;
+  --hover-line: #9fadc4;
+  --banner-bg: #e8eefb;
+  --banner-line: #b9c9ea;
+  --banner-text: #24365e;
+  --shadow: rgba(24, 34, 54, .18);
+
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------- bar */
+.bar {
+  height: var(--bar-h);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  background: var(--bg-head);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-weight: 650;
+  font-size: 15px;
+  letter-spacing: .2px;
+  white-space: nowrap;
+}
+.logo { margin-right: 4px; }
+
+.newgame {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.newgame:hover { color: var(--text); border-color: var(--hover-line); }
+
+.meta {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.field {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+}
+.field:focus { outline: none; border-color: var(--accent); }
+.field::placeholder { color: var(--muted); }
+.field[readonly] { opacity: .7; }
+.field-bad {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, .18);
+}
+.field-bad:focus { border-color: var(--red); }
+.field-title { flex: 1 1 260px; max-width: 340px; }
+.field-author { flex: 0 1 160px; }
+
+.actions { display: flex; gap: 8px; }
+
+/* Where the preview currently is, once it has left the home page. Reads as a
+   thin address bar rather than a toolbar, because it describes the preview
+   below it and not the project. */
+.trail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.trail[hidden] { display: none; }
+.trail-page code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+.trail .linkbtn:disabled { opacity: .4; cursor: default; }
+
+/* "Auto" — whether the preview follows the typing. Sits beside Run and reads
+   as a setting for it, rather than competing with it for attention. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.toggle input { accent-color: var(--accent); cursor: pointer; margin: 0; }
+.toggle:hover { color: var(--text); }
+.toggle[hidden] { display: none; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: var(--hover-line); background: var(--hover-bg); }
+.btn:disabled { opacity: .5; cursor: default; }
+/* .btn sets display, which would otherwise beat the browser's [hidden] rule */
+.btn[hidden] { display: none; }
+
+.btn-run {
+  background: var(--green);
+  border-color: var(--green);
+  color: var(--on-green);
+  font-weight: 650;
+  min-width: 104px;
+  justify-content: center;
+}
+.btn-run:hover:not(:disabled) { background: var(--green-hover); border-color: var(--green-hover); }
+.btn-icon { font-size: 11px; }
+
+.btn-icon-only {
+  padding: 8px 11px;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* Code text size. Deliberately separate from browser zoom, which blows the
+   toolbar up along with the code. */
+.stepper {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.step {
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 10px;
+  cursor: pointer;
+}
+.step:hover:not(:disabled) { background: var(--hover-bg); }
+.step:disabled { opacity: .35; cursor: default; }
+
+.step-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-stop {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--on-red);
+  font-weight: 650;
+}
+.btn-stop:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-stop[hidden] { display: none; }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* ---------------------------------------------------------------- banner */
+.banner {
+  background: var(--banner-bg);
+  border-bottom: 1px solid var(--banner-line);
+  color: var(--banner-text);
+  font-size: 13px;
+  padding: 9px 16px;
+}
+.banner strong { color: var(--text); }
+
+/* ----------------------------------------------------------------- panes */
+.split {
+  display: flex;
+  height: calc(100% - var(--bar-h));
+  min-height: 0;
+}
+.banner ~ .split { height: calc(100% - var(--bar-h) - 37px); }
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.pane-editor { flex: 1 1 58%; border-right: 1px solid var(--line); }
+.pane-right { flex: 1 1 42%; background: var(--bg-panel); }
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg-head);
+  border-bottom: 1px solid var(--line);
+}
+.hint { text-transform: none; font-weight: 400; letter-spacing: 0; }
+
+/* ------------------------------------------------------------ file tabs */
+.pane-head-tabs { padding: 0 12px 0 0; gap: 8px; }
+
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  min-width: 0;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 9px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--text); background: var(--hover-bg); }
+.tab-on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  background: var(--bg-panel);
+}
+
+.tab-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--muted);
+}
+.tab-x:hover { background: var(--red); color: var(--on-red); }
+
+.linkbtn {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 0;
+}
+.linkbtn:hover { color: var(--text); }
+
+/* ---------------------------------------------------------------- editor */
+.editor-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.editor-wrap .CodeMirror {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  font-family: var(--mono);
+  font-size: var(--code-size);
+  line-height: 1.6;
+}
+.CodeMirror-gutters { border-right: 1px solid var(--line); }
+
+/* CodeMirror's built-in light theme, retuned for a projector. Its own comment
+   colour (#a50) only reaches 5.2:1 on white; #7a3e00 reaches 8.3:1, and the
+   operator purple is darkened for the same reason. */
+.cm-s-default { background: var(--bg); color: var(--text); }
+.cm-s-default .CodeMirror-gutters { background: var(--bg); }
+.cm-s-default .CodeMirror-linenumber { color: var(--muted); }
+.cm-s-default .CodeMirror-cursor { border-left-color: var(--text); }
+.cm-s-default .CodeMirror-selected { background: #cfe0fb; }
+.cm-s-default.CodeMirror-focused .CodeMirror-selected { background: #b9d3f8; }
+.cm-s-default .CodeMirror-activeline-background { background: #eef3fb; }
+.cm-s-default .cm-comment { color: #7a3e00; }
+.cm-s-default .cm-operator { color: #6b21a8; }
+
+/* material-darker renders comments and line numbers at #545454, only 2.1:1
+   against its own background — close to invisible, and lesson code is full of
+   explanatory comments. Lifted to 5.7:1. */
+.cm-s-material-darker .cm-comment { color: #909d90; }
+.cm-s-material-darker .CodeMirror-linenumber { color: #8b9499; }
+
+/* ---------------------------------------------------------------- output */
+.output {
+  flex: 1;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: var(--code-size);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+.output .err { color: var(--red); }
+.output .dim { color: var(--muted); }
+
+
+/* ----------------------------------------------------------------- modal */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 12, .72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+.modal[hidden] { display: none; }
+
+.modal-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 26px;
+  width: 100%;
+  max-width: 480px;
+}
+.modal-card h2 { margin: 0 0 4px; font-size: 19px; }
+.modal-sub { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
+.modal-note { margin: 14px 0 20px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+
+.linkrow { display: flex; gap: 8px; }
+.linkrow input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 13px;
+  min-width: 0;
+}
+.linkrow input:focus { outline: none; border-color: var(--accent); }
+
+.pane-sprites {
+  flex: 0 0 250px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--line);
+}
+.pane-sprites[hidden] { display: none; }
+
+.sprite-tools { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.sprite-tools .field { width: 100%; }
+
+.sprite-scroll { flex: 1 1 auto; overflow-y: auto; padding: 12px; min-height: 0; }
+
+.sprite-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+.sprite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 4px 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+}
+.sprite:hover { border-color: var(--accent); background: var(--hover-bg); }
+.sprite:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sprite[hidden] { display: none; }
+
+.sprite-img {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 42px;
+}
+.sprite-img img { max-width: 100%; max-height: 42px; image-rendering: pixelated; }
+
+.sprite-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sprite:hover .sprite-name { color: var(--text); }
+.sprite-empty { padding: 18px 4px; font-size: 13px; }
+
+.sprite-foot {
+  margin: 0;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.sprite-foot code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------- preview */
+/* The right pane holds two views: the running page, and rendered notes.
+   Only one is visible, and .subpane sets display, so [hidden] needs help. */
+.subpane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.subpane[hidden] { display: none; }
+
+.preview-frame {
+  flex: 1 1 62%;
+  min-height: 140px;
+  display: flex;
+  /* a web page brings its own background; never tint it with the editor's */
+  background: #ffffff;
+}
+#preview {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #ffffff;
+}
+
+.console-head { border-top: 1px solid var(--line); }
+#output { flex: 0 1 38%; min-height: 84px; }
+.output .warn { color: var(--amber); }
+
+/* ----------------------------------------------------- completion popup */
+/* show-hint.css hardcodes a white box with black text, which would glare in
+   dark mode. Repaint it from the tokens. */
+.CodeMirror-hints {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  box-shadow: 0 6px 20px var(--shadow);
+  font-family: var(--mono);
+  font-size: calc(var(--code-size) * 0.92);
+  padding: 4px;
+  z-index: 40;
+}
+.CodeMirror-hint { color: var(--text); border-radius: 4px; padding: 3px 9px; }
+li.CodeMirror-hint-active { background: var(--accent); color: var(--on-accent); }
+
+/* ---------------------------------------------------------------- notes */
+.notes-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 20px 24px 32px;
+  min-height: 0;
+}
+.prose {
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.65;
+  max-width: 68ch;
+}
+.prose > :first-child { margin-top: 0; }
+.prose h1, .prose h2, .prose h3, .prose h4 {
+  line-height: 1.25; margin: 1.6em 0 .5em; text-wrap: balance;
+}
+.prose h1 { font-size: 1.7em; }
+.prose h2 { font-size: 1.35em; }
+.prose h3 { font-size: 1.15em; }
+.prose h1, .prose h2 { padding-bottom: .25em; border-bottom: 1px solid var(--line); }
+.prose p, .prose ul, .prose ol, .prose blockquote { margin: 0 0 1em; }
+.prose ul, .prose ol { padding-left: 1.4em; }
+.prose li { margin: .25em 0; }
+.prose a { color: var(--accent); text-decoration: underline; }
+.prose a:hover { color: var(--accent-hover); }
+.prose code {
+  font-family: var(--mono); font-size: .88em;
+  background: var(--hover-bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: .1em .35em;
+}
+.prose pre {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+  padding: 12px 14px; overflow-x: auto; margin: 0 0 1em;
+}
+.prose pre code { background: none; border: 0; padding: 0; font-size: .92em; }
+.prose blockquote {
+  border-left: 3px solid var(--accent); padding: .1em 0 .1em 1em; color: var(--muted);
+}
+.prose hr { border: 0; border-top: 1px solid var(--line); margin: 1.8em 0; }
+.prose img { max-width: 100%; height: auto; border-radius: 6px; display: block; margin: .4em 0; }
+.prose table { border-collapse: collapse; width: 100%; margin: 0 0 1em; font-size: .95em; }
+.prose th, .prose td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+.prose th { background: var(--bg-head); font-weight: 600; }
+
+/* ---------------------------------------------------------------- mobile */
+@media (max-width: 860px) {
+  html, body { overflow: auto; }
+  .bar { height: auto; flex-wrap: wrap; padding: 10px 12px; gap: 10px; }
+  .meta { order: 3; width: 100%; }
+  .field-title, .field-author { flex: 1 1 auto; max-width: none; }
+  .split, .banner ~ .split { flex-direction: column; height: auto; }
+  .pane-editor { border-right: 0; border-bottom: 1px solid var(--line); }
+  .editor-wrap { height: 55vh; flex: 0 0 auto; }
+  .pane-sprites { flex: 0 0 auto; border-left: 0; border-top: 1px solid var(--line); }
+  .sprite-scroll { max-height: 44vh; }
+  .sprite-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+  .output { height: 35vh; }
+}
+
+/* ------------------------------------------------------------- demo page */
+/* What a "hide code" link opens. There is no editor pane to place beside the
+   preview, because there is no editor on that page at all — not hidden, not
+   read-only, absent — so the preview takes the full width. */
+.demo-main {
+  display: flex;
+  height: calc(100% - var(--bar-h));
+  min-height: 0;
+}
+.demo-main .pane-right { flex: 1 1 100%; }
+
+/* ------------------------------------------------- signing in and saving */
+
+/* Whether the work is safe. Quiet when it is, because it almost always is —
+   the only state worth noticing is the one that says it isn't. */
+.savestate {
+  align-self: center;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  padding: 0 4px;
+  min-width: 68px;
+  text-align: right;
+}
+.savestate.busy { opacity: .7; }
+.savestate.bad { color: var(--red); font-weight: 600; }
+
+.account { position: relative; }
+.btn-account { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 170px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow);
+  padding: 5px;
+  z-index: 60;
+}
+.menu[hidden] { display: none; }
+.menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.menu-item:hover { background: var(--bg); }
+
+.banner-hint { background: var(--bg-panel); }
+
+.projects { max-height: 340px; overflow-y: auto; margin: 4px 0 18px; }
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  margin-bottom: 6px;
+}
+.project-row:hover { border-color: var(--accent); }
+.project-open {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 10px 12px;
+  text-decoration: none;
+  color: var(--text);
+  min-width: 0;
+}
+.project-name { font-weight: 500; }
+.project-when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* Quiet until you go looking for it, so nobody deletes a project on the way
+   to opening one. */
+.project-x {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 19px;
+  line-height: 1;
+  padding: 6px 12px 8px;
+  cursor: pointer;
+  opacity: .35;
+  border-radius: 6px;
+}
+.project-row:hover .project-x { opacity: 1; }
+.project-x:hover { color: var(--red); background: var(--bg); }
+
+.rowactions { white-space: nowrap; }
+.rowactions .linkbtn { margin-left: 12px; }
+.linkbtn.danger { color: var(--red); }
+
+/* ------------------------------------------------------ teacher's pages */
+.sheet {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+  overflow-y: auto;
+  height: calc(100% - var(--bar-h));
+}
+.sheet h2 {
+  font-size: 15px;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 30px 0 12px;
+}
+.sheet .count {
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 12px;
+  margin-left: 4px;
+}
+.pagetitle { font-weight: 600; }
+.whoami { align-self: center; color: var(--muted); font-size: 12.5px; }
+.brandlink { color: inherit; text-decoration: none; }
+
+.listing { width: 100%; border-collapse: collapse; font-size: 14px; }
+.listing th {
+  text-align: left;
+  font-size: 11.5px;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0 10px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.listing td { padding: 12px 10px; border-bottom: 1px solid var(--line); }
+.listing tr:hover td { background: var(--bg-panel); }
+.listing a { color: var(--accent); text-decoration: none; }
+.listing a:hover { text-decoration: underline; }
+.listing .right { text-align: right; }
+.small { font-size: 12px; }
+
+.handout { border: 1px solid var(--line); border-radius: 9px; padding: 16px 18px; }
+.handout h2 { margin-top: 0; }
+.names { columns: 2; margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
+.empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+.empty h2 { text-transform: none; font-size: 20px; color: var(--text); }
+
+
+/* Assignment notes can't be selected, so the code in them can't be copied
+   into the editor. Typing it out is most of the exercise.
+
+   Done by preventing selection rather than by policing paste: a paste filter
+   would have to guess where text came from, and would block a student who
+   typed the starter code correctly and then copied their own line. This has
+   no such failure — it removes the shortcut without ever getting in the way
+   of someone doing the work.
+
+   It is a speed bump, not a lock. Developer tools will still show the text.
+   That is the same bargain as a demo link, and it stops the ordinary path.
+
+   Not while authoring: the notes are yours at "/" and on your own projects,
+   and you may well want to copy a line out of them. Every view a student sees
+   — an assignment, a share, a fork — is covered. */
+body:not(.is-authoring) .notes-body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Links stay usable: clicking one still works, and its text is the one thing
+   worth being able to lift out of the notes. */
+body:not(.is-authoring) .notes-body a {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* -------------------------------------------------------------- 404 page */
+.center {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: 24px;
+}
+.center h1 { margin: 0; font-size: 22px; }
+.center p { margin: 0; color: var(--muted); max-width: 40ch; line-height: 1.6; }
+
+/* ------------------------------------------------- FlaskIDE additions -- */
+
+/* A tab name here can contain a folder — templates/index.html — and a
+   column of those reads as one long smear of identical prefix. The folder
+   goes grey so the eye lands on the part that differs. */
+.tab-dir { opacity: .55; }
+
+/* The preview's address bar. Every URL in it is imaginary: it exists only
+   as a rule in the student's url_map, and typing one is how they check that
+   a route they just wrote actually answers. */
+.trail {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .35rem .6rem;
+  border-bottom: 1px solid var(--line);
+}
+.field-path {
+  flex: 1; font-family: var(--mono, ui-monospace, Menlo, monospace);
+  font-size: .82rem; padding: .25rem .5rem;
+}
+.status-code {
+  font: 600 .75rem/1 var(--mono, ui-monospace, Menlo, monospace);
+  padding: .25rem .45rem; border-radius: 5px; min-width: 2.4rem;
+  text-align: center; color: var(--fg-dim);
+}
+.status-code.ok   { background: #1e6b4822; color: #1e6b48; }
+.status-code.warn { background: #8a6a0022; color: #8a6a00; }
+.status-code.bad  { background: #b23a4822; color: #b23a48; }

@@ -27,17 +27,16 @@
  * page a null origin: their JavaScript runs normally, and cannot read this
  * page's DOM, cookies or storage.
  *
- * WebIDE uses `allow-scripts` alone and that is right for WebIDE. It is
- * wrong here, and the way it is wrong is nasty. Without `allow-forms` the
- * browser blocks a form submission BEFORE any listener runs — the submit
- * event does not fire at all, so the interception below never gets its
- * chance to preventDefault. The form simply does nothing. No error, no
- * console warning, no clue. Measured directly: a probe iframe with
+ * `allow-forms` is the part that is easy to leave out and impossible to
+ * debug. Without it the browser blocks a submission BEFORE any listener
+ * runs — the submit event does not fire at all, so the interception below
+ * never gets its chance to preventDefault. The form simply does nothing. No
+ * error, no console warning, no clue. Measured directly: a probe iframe with
  * `allow-scripts` recorded zero submit events and the same probe with
  * `allow-scripts allow-forms` recorded one.
  *
- * Half of a Flask unit is `<form method="post">`, so this would have been a
- * dead feature discovered by a fourteen-year-old rather than by a test.
+ * Half of a Flask unit is `<form method="post">`, so this would otherwise be
+ * a dead feature found by a fourteen-year-old rather than by a test.
  *
  * `allow-forms` costs nothing in isolation: it permits submission, and every
  * submission is caught here and answered from Pyodide. Nothing reaches the

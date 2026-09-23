@@ -211,15 +211,14 @@ check("an app.py with no Flask app says so, and shows the two lines",
 # Not something this file can exercise — it needs a browser — but it can
 # stop the attribute being quietly narrowed back.
 #
-# `sandbox="allow-scripts"` is what WebIDE uses and is correct there. Here
-# it silently kills every form: without `allow-forms` the browser blocks the
+# Without `allow-forms` this silently kills every form: the browser blocks the
 # submission BEFORE any listener runs, so the submit event never fires and
 # preview.js never gets to preventDefault it. Nothing errors. The form just
 # does nothing. Measured in a browser: zero submit events with
 # `allow-scripts`, one with `allow-scripts allow-forms`.
 #
-# Somebody tidying this toward WebIDE's version would break half a Flask
-# unit and see no failure anywhere. Hence a test with no browser in it.
+# Somebody "tidying" the attribute down to `allow-scripts` would break half
+# a Flask unit and see no failure anywhere. Hence a test with no browser.
 for name in ("static/proof.html",):
     html = (ROOT / name).read_text()
     frames = re.findall(r'<iframe[^>]*sandbox="([^"]*)"', html)
@@ -229,8 +228,14 @@ for name in ("static/proof.html",):
     check("  and without allow-same-origin, which is the dangerous one",
           all("allow-same-origin" not in f for f in frames), str(frames))
 
+# Flattened first: the comment is wrapped and prefixed with " * ", so a
+# search for a sentence in it otherwise fails on where the line happens to
+# break — which is a test failing for a reason that is not about the code.
 preview = (ROOT / "static" / "preview.js").read_text()
+flat = " ".join(preview.replace("*", " ").split())
 check("preview.js says why allow-forms is there",
-      "allow-forms" in preview and "before any listener runs" in preview.lower())
+      "allow-forms" in flat
+      and "BEFORE any listener runs" in flat
+      and "zero submit events" in flat)
 
 done()
