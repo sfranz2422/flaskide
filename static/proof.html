@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FlaskIDE — runtime proof</title>
+<!--
+  The runtime and the preview, with no editor around them.
+
+  This exists to answer one question — does a Flask app running in Pyodide
+  behave like a website when you click things — without any of the editor
+  shell being written yet. If it works here it will work in the IDE; if it
+  does not, nothing else was worth building.
+
+  The project below is what a student writes in week two: routes, a base
+  template, a loop, a form that POSTs and redirects, and a stylesheet.
+-->
+<style>
+  body { margin: 0; font: 15px/1.6 system-ui, sans-serif;
+         background: #1b222c; color: #eef3f8; }
+  header { padding: .8rem 1rem; border-bottom: 1px solid #36424f;
+           display: flex; gap: .7rem; align-items: center; }
+  h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  button { font: inherit; padding: .35rem .9rem; border-radius: 7px;
+           border: 1px solid #36424f; background: #232c38; color: #eef3f8;
+           cursor: pointer; }
+  button.go { background: #8fd95e; color: #12181f; border-color: #8fd95e;
+              font-weight: 600; }
+  #bar { flex: 1; font: 13px ui-monospace, Menlo, monospace; padding: .35rem .6rem;
+         border-radius: 7px; border: 1px solid #36424f; background: #151b24;
+         color: #9cc4f0; }
+  #status { font: 12px ui-monospace, monospace; color: #a9b6c4; min-width: 15rem; }
+  main { display: grid; grid-template-columns: 1fr 1fr; height: calc(100vh - 3.4rem); }
+  #frame { width: 100%; height: 100%; border: 0; background: #fff; }
+  #log { margin: 0; padding: 1rem; overflow: auto; background: #151b24;
+         font: 12px/1.55 ui-monospace, Menlo, monospace; white-space: pre-wrap;
+         border-right: 1px solid #36424f; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FlaskIDE runtime</h1>
+  <button class="go" id="run">Run</button>
+  <button id="back">←</button>
+  <input id="bar" value="/" spellcheck="false">
+  <span id="status">not started</span>
+</header>
+
+<main>
+  <pre id="log">Press Run.</pre>
+  <iframe id="frame" sandbox="allow-scripts allow-forms"></iframe>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js"></script>
+<script src="./flask.js"></script>
+<script src="./preview.js"></script>
+<script>
+// What a student's project looks like. Several files, because Flask is.
+const PROJECT = {
+  "app.py": `from flask import Flask, render_template, request, redirect, url_for
+
+app = Flask(__name__)
+
+pets = ["cat", "dog", "bean"]
+
+
+@app.route("/")
+def home():
+    return render_template("index.html", pets=pets)
+
+
+@app.route("/pet/<name>")
+def pet(name):
+    return render_template("pet.html", name=name)
+
+
+@app.route("/add", methods=["POST"])
+def add():
+    name = request.form["name"].strip()
+    if name:
+        pets.append(name)
+    return redirect(url_for("home"))
+`,
+
+  "templates/base.html": `<!doctype html>
+<html>
+<head>
+  <title>{% block title %}Pets{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1>The Pet List</h1>
+  {% block body %}{% endblock %}
+</body>
+</html>
+`,
+
+  "templates/index.html": `{% extends "base.html" %}
+{% block body %}
+  <ul>
+    {% for p in pets %}
+      <li><a href="{{ url_for('pet', name=p) }}">{{ p }}</a></li>
+    {% endfor %}
+  </ul>
+  <p>{{ pets|length }} pets.</p>
+
+  <form method="post" action="{{ url_for('add') }}">
+    <input name="name" placeholder="a new pet">
+    <button>Add</button>
+  </form>
+{% endblock %}
+`,
+
+  "templates/pet.html": `{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block body %}
+  <p class="big">This one is called <strong>{{ name }}</strong>.</p>
+  <p><a href="/">back to the list</a></p>
+{% endblock %}
+`,
+
+  "static/style.css": `body { font-family: system-ui, sans-serif; margin: 2rem; color: #222; }
+h1 { color: rebeccapurple; }
+li { margin: .2rem 0; }
+.big { font-size: 1.3rem; }
+form { margin-top: 1.5rem; }
+input, button { font: inherit; padding: .3rem .5rem; }
+`,
+};
+
+const log = document.getElementById("log");
+const statusEl = document.getElementById("status");
+function say(s) { log.textContent += s; log.scrollTop = log.scrollHeight; }
+
+FlaskIDERuntime.setOutput(say);
+
+const preview = new FlaskIDEPreview({
+  frame: document.getElementById("frame"),
+  bar: document.getElementById("bar"),
+  onStatus: (code, path) => {
+    statusEl.textContent = code ? code + "  " + path : path;
+  },
+});
+window.__preview = preview;
+
+document.getElementById("back").onclick = () => preview.back();
+
+document.getElementById("run").onclick = async () => {
+  log.textContent = "";
+  const t0 = performance.now();
+  const res = await FlaskIDERuntime.run(PROJECT, (s) => s && say(s + "\n"));
+  if (!res.ok) { say("\n" + res.error + "\n"); return; }
+  say("app.py imported in " + Math.round(performance.now() - t0) + " ms\n");
+  say("routes:\n");
+  for (const r of res.routes) {
+    say("  " + r.methods.join(",").padEnd(8) + r.path + "\n");
+  }
+  window.__ranAt = performance.now() - t0;
+  await preview.go("/");
+};
+</script>
+</body>
+</html>
