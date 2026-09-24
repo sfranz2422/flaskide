@@ -245,6 +245,30 @@ unstyled = sorted(c for c in applied if c and c not in styled)
 check("every class the editor applies has a CSS rule", not unstyled, str(unstyled))
 check("  (and it applies some)", len(applied) >= 8, "%d classes" % len(applied))
 
+# ------------------------------------------- publish edits what it published
+#
+# Publish used to POST a new assignment every single press, so a teacher
+# revising a task ended up with three links and no way to tell which one the
+# class was holding. Nothing errored — it did exactly what it was told, three
+# times. Wanting a second, separate assignment has a better path: share the
+# project to yourself and publish the copy, which arrives named "Copy of ...".
+#
+# Three editors share a teacher and a workflow but not a file, so the fix had
+# to be made three times. That is the reason for the check: the next person to
+# change one of them will not think to look at the other two.
+account = (ROOT / "static" / "account.js").read_text()
+
+check("publishing twice updates rather than duplicating",
+      "if (cfg.editingAssignment)" in account
+      and "updateAssignment(btn, read, say)" in account)
+check("  and the button says so afterwards",
+      'btn.textContent = "Update assignment"' in account)
+check("  remembering what it just published",
+      "cfg.editingAssignment = out.data.slug" in account)
+check("  with one shared update function",
+      account.count("function updateAssignment(") == 1
+      and account.count('/api/assignment/" + encodeURIComponent') == 1)
+
 check("this editor's table is its own, not WebIDE's",
       A.Project.__tablename__ == "flask_projects", A.Project.__tablename__)
 check("and it books into the shared account tables under its own name",

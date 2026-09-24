@@ -183,10 +183,16 @@ window.FlaskIDEAccount = (function () {
   }
 
   // ------------------------------------------------ updating an assignment
-  function wireUpdateAssignment(read, say) {
-    var btn = $("update-assignment");
-    if (!btn) return;
-    btn.addEventListener("click", function () {
+  /* Saving over an assignment that already exists.
+   *
+   * Reached two ways: the Update button the server renders when you open an
+   * assignment from the dashboard, and the Publish button AFTER it has
+   * published once — which is why this is its own function rather than
+   * living inside a click handler. Two copies of this would be two places to
+   * fix the message that explains who the change reaches.
+   */
+  function updateAssignment(btn, read, say) {
+    (function () {
       btn.disabled = true;
       var label = btn.textContent;
       btn.textContent = "Saving…";
@@ -217,7 +223,13 @@ window.FlaskIDEAccount = (function () {
         btn.textContent = label;
         say("\nCouldn't reach the server.\n", "err");
       });
-    });
+    }());
+  }
+
+  function wireUpdateAssignment(read, say) {
+    var btn = $("update-assignment");
+    if (!btn) return;
+    btn.addEventListener("click", function () { updateAssignment(btn, read, say); });
   }
 
   // ------------------------------------------------------------- publish
@@ -225,6 +237,19 @@ window.FlaskIDEAccount = (function () {
     var btn = $("publish");
     if (!btn) return;
     btn.addEventListener("click", function () {
+      /* Publish once, then this same button keeps that assignment current.
+       *
+       * It used to make a brand new assignment on every press, so a teacher
+       * revising a task ended up with three links and no idea which one the
+       * class had. Wanting a second, separate assignment is the rarer case,
+       * and it already has a better path: share the project to yourself,
+       * open the copy — which arrives named "Copy of ..." — and publish that.
+       */
+      if (cfg.editingAssignment) {
+        updateAssignment(btn, read, say);
+        return;
+      }
+
       var payload = read();
       var title = window.prompt(
         "Name this assignment — students will see it:", payload.title || "");
@@ -253,6 +278,13 @@ window.FlaskIDEAccount = (function () {
         $("share-url").value = out.data.url;
         $("modal").hidden = false;
         $("share-url").select();
+
+        /* From here on this button edits what was just published. The label
+           has to change with it: a button that says Publish and quietly
+           updates is worse than one that made duplicates. */
+        cfg.editingAssignment = out.data.slug;
+        btn.textContent = "Update assignment";
+        btn.title = "Save these changes to the assignment you just published.";
       }).catch(function () {
         btn.disabled = false;
         say("\nCouldn't reach the server.\n", "err");
