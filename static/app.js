@@ -97,7 +97,11 @@
     strip.textContent = "";
     tabOrder().forEach(function (name) {
       var tab = document.createElement("button");
-      tab.className = "tab" + (name === current ? " tab-active" : "");
+      // tab-on, not tab-active: the stylesheet has always said .tab-on, and
+      // PyIDE and WebIDE agree. This file drifted during the port, so the
+      // open file had no highlight at all — nothing errors, the strip just
+      // stops telling you which file you are editing.
+      tab.className = "tab" + (name === current ? " tab-on" : "");
       tab.setAttribute("role", "tab");
       tab.title = name;
 
@@ -132,7 +136,22 @@
       }
       strip.appendChild(tab);
     });
+    markOverflow(strip);
   }
+
+  /* Does the strip have more tabs than fit?
+   *
+   * It scrolls either way — but on macOS the scrollbar is an overlay that
+   * stays invisible until you are already scrolling, so a clipped tab just
+   * looks like a bug. The class turns on a fade at the right edge, which is
+   * the only thing on screen saying "there is more this way".
+   */
+  function markOverflow(strip) {
+    if (!strip) return;
+    strip.classList.toggle("has-more", strip.scrollWidth > strip.clientWidth + 1);
+  }
+
+  window.addEventListener("resize", function () { markOverflow($("file-tabs")); });
 
   function newFile() {
     var folders = (cfg.folders || ["templates", "static"]).join(" or ");

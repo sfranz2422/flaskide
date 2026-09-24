@@ -95,13 +95,40 @@
 })();
 <\/script>`;
 
+  /* TWO IFRAMES, NOT ONE
+   *
+   * Assigning `srcdoc` tears the iframe's document down and builds a new
+   * one, and the browser paints white in between. On a page that changes on
+   * every link and every form submit, that is a white flash several times a
+   * minute — and on a slow first Pyodide response it is long enough that a
+   * student thinks their app has broken.
+   *
+   * The usual fix, writing into the document with open/write/close, is not
+   * available here: the frame is sandboxed WITHOUT allow-same-origin, so
+   * this page cannot reach `contentDocument` at all. That is deliberate and
+   * worth keeping — it is what gives the student's JavaScript a null origin.
+   *
+   * So the new page is built in a second, invisible iframe, and the two are
+   * swapped once it has loaded. The old page stays on screen until the new
+   * one is ready, so there is no gap to paint white.
+   */
+  function twinOf(frame) {
+    const twin = frame.cloneNode(false);       // same sandbox, same styling
+    twin.id = frame.id ? frame.id + "-b" : "";
+    twin.classList.add("is-back");
+    frame.parentNode.insertBefore(twin, frame.nextSibling);
+    return twin;
+  }
+
   class Preview {
     constructor(opts) {
-      this.frame = opts.frame;
+      this.frames = [opts.frame, twinOf(opts.frame)];
+      this.live = 0;
       this.bar = opts.bar || null;             // where the path is shown
       this.onStatus = opts.onStatus || (() => {});
       this.path = "/";
       this.history = [];
+      this._seq = 0;
 
       window.addEventListener("message", (e) => this._fromPage(e));
       if (this.bar) {
@@ -110,6 +137,9 @@
         });
       }
     }
+
+    /** The iframe currently on screen. */
+    get frame() { return this.frames[this.live]; }
 
     /** Ask the app for a path and show what it says. */
     async go(path, method, form, record) {
@@ -143,11 +173,13 @@
       if (!res.isText) {
         // An image or a download. Nothing to intercept inside it.
         const kind = res.headers["Content-Type"] || "application/octet-stream";
-        this.frame.removeAttribute("srcdoc");
-        this.frame.src = "data:" + kind + ";base64," + res.body;
+        await this._show((f) => {
+          f.removeAttribute("srcdoc");
+          f.src = "data:" + kind + ";base64," + res.body;
+        });
         return;
       }
-      this._paint(res.body, true);
+      await this._paint(res.body, true);
     }
 
     back() {
@@ -156,13 +188,58 @@
     }
 
     _paint(html, injectShim) {
-      this.frame.removeAttribute("src");
-      this.frame.srcdoc = injectShim ? html + SHIM : html;
+      return this._show((f) => {
+        f.removeAttribute("src");
+        f.srcdoc = injectShim ? html + SHIM : html;
+      });
+    }
+
+    /* Fill the hidden frame, wait for it, then swap the two.
+     *
+     * THE TIMEOUT IS NOT BELT AND BRACES
+     *
+     * If `load` never arrives, a swap that only happens on load would leave
+     * the previous page on screen for ever — the student presses a link,
+     * nothing changes, and there is no error anywhere to say why. A frozen
+     * preview is a far worse failure than the flash this replaces, so after
+     * a second the swap happens regardless.
+     *
+     * `seq` drops a slow paint that a newer one has overtaken. Without it,
+     * clicking two links quickly could finish in the wrong order and leave
+     * the earlier page showing under the later path in the address bar.
+     */
+    _show(fill) {
+      const back = this.frames[1 - this.live];
+      const mine = ++this._seq;
+
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          back.removeEventListener("load", finish);
+          if (mine === this._seq) this._swap();
+          resolve();
+        };
+        const timer = setTimeout(finish, 1000);
+        back.addEventListener("load", finish);
+        fill(back);
+      });
+    }
+
+    _swap() {
+      this.frames[this.live].classList.add("is-back");
+      this.live = 1 - this.live;
+      this.frames[this.live].classList.remove("is-back");
     }
 
     _fromPage(e) {
       const msg = e.data;
       if (!msg || !msg.__flaskide) return;
+      // Only the page on screen may steer. The hidden frame still holds the
+      // previous document, and a stray timer in a student's script must not
+      // be able to navigate from a page nobody is looking at.
       if (e.source !== this.frame.contentWindow) return;
 
       if (msg.kind === "navigate") {

@@ -212,6 +212,39 @@ check("  (and the scan found something to scan)",
 for src in re.findall(r"filename='([^']+)'", template):
     check("  static/%s exists" % src, (ROOT / "static" / src).is_file())
 
+# ------------------------------------------------- class names, both sides
+#
+# THE UNSTYLED CLASS. `paintTabs` set "tab-active" while the stylesheet had
+# only ".tab-on", so the open file had no highlight at all — for the whole
+# life of the editor. Nothing errors; the strip renders, and simply stops
+# telling a student which file they are editing. Both files look correct on
+# their own, which is exactly why nobody finds it by reading them.
+#
+# PyIDE and WebIDE both say tab-on on both sides. This one drifted in the
+# port, and a port is when this always happens.
+css = (ROOT / "static" / "style.css").read_text()
+styled = set(re.findall(r"\.([A-Za-z][\w-]*)", css))
+
+applied = set()
+for name in ("app.js", "account.js", "notes.js", "preview.js"):
+    path = ROOT / "static" / name
+    if not path.is_file():
+        continue
+    text = path.read_text()
+    # The whole right-hand side, then every literal in it. Matching only the
+    # first string after `className =` was the first version of this check,
+    # and it could not see the bug it exists for: the line reads
+    # `"tab" + (open ? " tab-on" : "")`, so it collected "tab" and stopped.
+    for rhs in re.findall(r'className\s*=\s*([^;]+);', text):
+        for lit in re.findall(r'"([^"]*)"', rhs):
+            applied |= set(lit.split())
+    for one in re.findall(r'classList\.(?:add|toggle|remove)\(\s*"([^"]+)"', text):
+        applied.add(one)
+
+unstyled = sorted(c for c in applied if c and c not in styled)
+check("every class the editor applies has a CSS rule", not unstyled, str(unstyled))
+check("  (and it applies some)", len(applied) >= 8, "%d classes" % len(applied))
+
 check("this editor's table is its own, not WebIDE's",
       A.Project.__tablename__ == "flask_projects", A.Project.__tablename__)
 check("and it books into the shared account tables under its own name",
