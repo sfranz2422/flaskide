@@ -12,6 +12,11 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
+<!-- Find and replace. dialog.min.css is NOT optional: search.js asks for the
+     search term through CodeMirror's dialog, and without the stylesheet that
+     bar is an unstyled input floating over the code. The feature still
+     works, which is what makes it easy to ship broken. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script>
   /* Runs before anything paints, so projecting in light mode never starts
@@ -247,6 +252,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closetag.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+<!-- Ctrl-F / Cmd-F to find, Ctrl-G / Cmd-G for the next one, Shift-Ctrl-F
+     (Cmd-Alt-F on a Mac) to replace, Shift-Ctrl-R to replace all.
+     CodeMirror's default keymaps already bind those keys to these commands;
+     loading the addons is the whole of turning the feature on. searchcursor
+     must come before search: search.js uses it and does not fetch it. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
 <script>
   window.FLASKIDE = {
     readonly: {{ 'true' if readonly else 'false' }},

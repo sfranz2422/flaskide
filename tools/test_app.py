@@ -274,4 +274,57 @@ check("this editor's table is its own, not WebIDE's",
 check("and it books into the shared account tables under its own name",
       A.APP_NAME == "flaskide", A.APP_NAME)
 
+# ------------------------------------------------- find and replace is wired
+#
+# Ctrl-F / Cmd-F comes from CodeMirror's own addons, which means the whole
+# feature is four files in the template and nothing else. Three ways that
+# goes wrong, none of which raises:
+#
+#   * search.js without searchcursor.js — search.js USES it and does not
+#     fetch it, so Ctrl-F throws inside CodeMirror and the key does nothing.
+#   * search.js without dialog.js — same, for the prompt.
+#   * everything but dialog.min.css — and this is the nasty one. The feature
+#     WORKS. Find, next, replace, all of it. The bar asking for the search
+#     term is just an unstyled input floating over the code, so it ships.
+template_text = (ROOT / "templates" / "index.html").read_text()
+for addon in ("addon/dialog/dialog.min.js",
+              "addon/search/searchcursor.min.js",
+              "addon/search/search.min.js",
+              "addon/dialog/dialog.min.css"):
+    check("the editor loads %s" % addon.split("/")[-1],
+          addon in template_text)
+
+# Order matters: search.js reads CodeMirror.fromTextArea's searchcursor at
+# call time, but registers against the API that searchcursor installs.
+check("  and searchcursor is loaded before search",
+      template_text.find("searchcursor.min.js") <
+      template_text.find("addon/search/search.min.js"))
+
+# The bar CodeMirror builds is about 130px wide for the search term, which
+# is four or five characters of it. Sized here rather than left alone.
+style_text = (ROOT / "static" / "style.css").read_text()
+EDITOR_SCRIPT = "app.js"
+# THE ADDONS MUST LOAD BEFORE THE EDITOR IS BUILT.
+#
+# search.js calls CodeMirror.defineOption("search", {bottom: false}), and a
+# default set by defineOption only reaches editors made AFTER it runs. An
+# editor built first has options.search undefined, and search.js then reads
+# `cm.options.search.bottom` with no guard:
+#
+#     TypeError: Cannot read properties of undefined (reading 'bottom')
+#
+# Found by loading the addons into the deployed editor by hand, where the
+# editor already existed: Ctrl-F threw that, which names neither the addon
+# nor the option nor anything a person would search for. In the page the
+# order is right; this is here so it stays right.
+check("  and the addons load before %s builds the editor" % EDITOR_SCRIPT,
+      template_text.find("addon/search/search.min.js")
+      < template_text.find(EDITOR_SCRIPT),
+      "search.js at %d, %s at %d"
+      % (template_text.find("addon/search/search.min.js"), EDITOR_SCRIPT,
+         template_text.find(EDITOR_SCRIPT)))
+
+check("  and the search bar is given a usable width",
+      ".CodeMirror-dialog input" in style_text)
+
 done()

@@ -832,3 +832,20 @@ body:not(.is-authoring) .notes-body a {
 .status-code.ok   { background: #1e6b4822; color: #1e6b48; }
 .status-code.warn { background: #8a6a0022; color: #8a6a00; }
 .status-code.bad  { background: #b23a4822; color: #b23a48; }
+
+/* ------------------------------------------------- find and replace bar --
+ *
+ * CodeMirror's dialog addon brings its own colours, and the editor theme
+ * colours them again, so both light and dark read fine without help here.
+ * What it does not bring is a usable width: the search input computes to
+ * about 130px, which is four or five characters of a search term with the
+ * rest scrolled out of sight. Everything below is size, not colour. */
+.CodeMirror-dialog {
+  padding: .4rem .7rem;
+  font-size: .95em;
+}
+.CodeMirror-dialog input {
+  width: min(28rem, 60%);
+  font-family: inherit;
+  padding: .15rem .3rem;
+}
