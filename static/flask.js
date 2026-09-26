@@ -153,6 +153,216 @@ def _flaskide_clear():
         sys.modules.pop(name, None)
 
 
+_FLASKIDE_DB = "data.db"
+_FLASKIDE_SCHEMA = "schema.sql"
+_FLASKIDE_QUERY = "query.sql"
+
+
+def _flaskide_sql_statements(text):
+    """Split SQL into statements, dropping the ones that are only comments.
+
+    NOT text.split(";"). A semicolon inside a string literal or a comment is
+    not the end of a statement, and splitting there produces two fragments
+    that are each a syntax error -- on a file that is perfectly valid. The
+    standard library already knows where a statement ends, so ask it.
+
+    Comment-only chunks are dropped because the last thing in a student's
+    file is very often a trailing note, and executing it reports an extra
+    empty result table under their real ones.
+    """
+    import sqlite3
+    out, start = [], 0
+    for i, ch in enumerate(text):
+        # Only a semicolon can end a statement, so only there is it worth
+        # asking. Cutting per LINE instead was the first version, and it put
+        # two statements written on one line into a single chunk -- which
+        # SQLite refuses with "You can only execute one statement at a time",
+        # an error naming nothing a student could act on.
+        if ch != ";":
+            continue
+        chunk = text[start:i + 1]
+        # False while the semicolon is inside a string or a comment, which is
+        # the whole reason this is not text.split(";").
+        if sqlite3.complete_statement(chunk):
+            out.append(chunk)
+            start = i + 1
+    tail = text[start:]
+    if tail.strip():
+        out.append(tail)
+    return [s.strip() for s in out if _flaskide_sql_has_code(s)]
+
+
+def _flaskide_sql_has_code(chunk):
+    """Is there anything here but comments and whitespace?
+
+    THE DOUBLED BACKSLASHES BELOW ARE NOT A TYPO. This whole bridge is a
+    JavaScript template literal, and JavaScript eats one level of escaping
+    before Python ever sees the text: \\* here arrives as \* there. Written
+    singly, the regex arrives as /*.*?*/ -- "nothing to repeat" -- and every
+    Run dies at import time, before a student has typed anything.
+    """
+    import re
+    bare = re.sub(r"/\\*.*?\\*/", " ", chunk, flags=re.S)
+    bare = re.sub(r"--[^\\n]*", " ", bare)
+    return bool(bare.strip().strip(";"))
+
+
+def _flaskide_connect():
+    """A connection to the project's database, with the constraints on.
+
+    SQLITE DOES NOT ENFORCE FOREIGN KEYS UNLESS YOU ASK, PER CONNECTION.
+
+    A schema can declare REFERENCES on every column and SQLite will happily
+    insert a course taught by teacher 4242, who does not exist, and report
+    success. The declaration is remembered and ignored. It is off by default
+    for backward compatibility, it is a property of the connection and not of
+    the file, and it has to be turned on again by anything else that opens
+    the same database -- including a student's own sqlite3.connect() in a
+    Flask app, which is why the starter says so in a comment.
+    """
+    import sqlite3
+    con = sqlite3.connect(_FLASKIDE_DB)
+    con.execute("PRAGMA foreign_keys = ON")
+    return con
+
+
+def _flaskide_build_db(files):
+    """Rebuild data.db from schema.sql. Run with the cwd inside the project.
+
+    Every Run, from nothing. A student can delete every row, drop every
+    table, or write something that half-succeeds, and the next Run puts it
+    back exactly as the file describes. The cost is that anything they
+    INSERT by hand is gone too, which is said out loud in the starter.
+
+    Returns None when there is no schema.sql -- a plain Flask project that
+    wants no database is not an error.
+    """
+    import os
+    if _FLASKIDE_SCHEMA not in files:
+        return None
+
+    # Belt and braces, and said plainly: _flaskide_clear() has already
+    # rmtree'd the whole project directory by the time anything reaches here,
+    # so in the normal path this line finds nothing to delete. It is kept
+    # because "the database is rebuilt from scratch" is a promise the starter
+    # makes to students, and it should not depend on a detail of a function
+    # three calls up that is really about something else.
+    if os.path.exists(_FLASKIDE_DB):
+        os.remove(_FLASKIDE_DB)
+
+    con = _flaskide_connect()
+    try:
+        for stmt in _flaskide_sql_statements(files[_FLASKIDE_SCHEMA]):
+            try:
+                con.execute(stmt)
+            except Exception as err:
+                return {"ok": False,
+                        "error": "schema.sql: %s" % err,
+                        "statement": stmt}
+        con.commit()
+        names = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+        tables = []
+        for name in names:
+            count = con.execute('SELECT COUNT(*) FROM "%s"' % name).fetchone()[0]
+            tables.append({"name": name, "rows": count})
+        return {"ok": True, "tables": tables}
+    finally:
+        con.close()
+
+
+#: No student query may return more than this many rows to the page. A
+#: SELECT with a join written the wrong way round is the normal way to ask
+#: for a million rows by accident, and the browser's answer to a million-row
+#: table is to stop responding -- which reads as "the editor crashed".
+_FLASKIDE_MAX_ROWS = 500
+
+
+def _flaskide_run_sql(files_json):
+    """Write the files, rebuild the database, and run query.sql.
+
+    Each statement gets its own result: columns and rows for the ones that
+    select, a count for the ones that change something. An error names the
+    statement it came from, because the file holds several and "syntax error
+    near FORM" does not say which one.
+    """
+    import json
+    import os
+
+    _flaskide_clear()
+    files = json.loads(files_json)
+    _flaskide_write(files)
+    os.chdir(_FLASKIDE_PROJECT)
+
+    built = _flaskide_build_db(files)
+    if built is None:
+        return json.dumps({"ok": False, "error":
+                           "There is no schema.sql, so there is no database "
+                           "to query. It is the file that describes the "
+                           "tables."})
+    if not built["ok"]:
+        return json.dumps({"ok": False, "error": built["error"],
+                           "statement": built.get("statement", "")})
+
+    if _FLASKIDE_QUERY not in files:
+        return json.dumps({"ok": False, "error":
+                           "There is no query.sql. It is the file that gets "
+                           "run."})
+
+    con = _flaskide_connect()
+    results = []
+    try:
+        for stmt in _flaskide_sql_statements(files[_FLASKIDE_QUERY]):
+            try:
+                cur = con.execute(stmt)
+            except Exception as err:
+                return json.dumps({"ok": False, "error": str(err),
+                                   "statement": stmt, "results": results,
+                                   "tables": built["tables"]})
+            if cur.description:
+                columns = [d[0] for d in cur.description]
+                rows = cur.fetchmany(_FLASKIDE_MAX_ROWS + 1)
+                clipped = len(rows) > _FLASKIDE_MAX_ROWS
+                rows = rows[:_FLASKIDE_MAX_ROWS]
+                results.append({
+                    "statement": stmt,
+                    "columns": columns,
+                    # Anything SQLite can hold that JSON cannot -- bytes from
+                    # a BLOB, mostly -- becomes its repr rather than blowing
+                    # up the whole run on the way out.
+                    "rows": [[_flaskide_sql_value(v) for v in row]
+                             for row in rows],
+                    "clipped": clipped,
+                })
+            else:
+                results.append({"statement": stmt, "changed": cur.rowcount})
+        con.commit()
+    finally:
+        con.close()
+
+    return json.dumps({"ok": True, "results": results,
+                       "tables": built["tables"]})
+
+
+def _flaskide_sql_value(value):
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, bytes):
+        return "<%d bytes>" % len(value)
+    return str(value)
+
+
+def _flaskide_write(files):
+    """Write a project's files into /project, making folders as needed."""
+    import os
+    for name, text in files.items():
+        path = os.path.join(_FLASKIDE_PROJECT, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write(text)
+
+
 def _flaskide_load(files_json):
     """Write the files, import app.py, and find the Flask object in it."""
     from flask import Flask
@@ -160,12 +370,7 @@ def _flaskide_load(files_json):
 
     _flaskide_clear()
     files = json.loads(files_json)
-
-    for name, text in files.items():
-        path = os.path.join(_FLASKIDE_PROJECT, name)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as fh:
-            fh.write(text)
+    _flaskide_write(files)
 
     if "app.py" not in files:
         return json.dumps({
@@ -175,6 +380,18 @@ def _flaskide_load(files_json):
         })
 
     os.chdir(_FLASKIDE_PROJECT)
+
+    # BEFORE the import, not after. A student's app.py may open the database
+    # at import time -- a module-level connection is the obvious way to write
+    # one -- and building it afterwards would make that fail on the first Run
+    # and work on the second, which is the worst shape a bug can have.
+    #
+    # A project with no schema.sql gets no database and that is not an error:
+    # most Flask projects here do not want one.
+    built = _flaskide_build_db(files)
+    if built is not None and not built["ok"]:
+        return json.dumps({"ok": False, "error": built["error"]})
+
     try:
         import importlib
         module = importlib.import_module("app")
@@ -216,7 +433,8 @@ def _flaskide_load(files_json):
         verbs = sorted(rule.methods - {"HEAD", "OPTIONS"})
         routes.append({"path": str(rule), "methods": verbs})
     routes.sort(key=lambda r: r["path"])
-    return json.dumps({"ok": True, "routes": routes})
+    return json.dumps({"ok": True, "routes": routes,
+                       "tables": (built or {}).get("tables", [])})
 
 
 def _flaskide_request(req_json):
@@ -277,5 +495,20 @@ def _flaskide_trace():
     return out.getvalue()
 `;
 
-  window.FlaskIDERuntime = { boot, run, request, setOutput, isReady, PROJECT };
+  /* Run a SQL project: rebuild the database from schema.sql, then run
+     query.sql statement by statement.
+     Boots Pyodide the same way a Flask run does, and waits the same way --
+     the first Run of a session is slow for both because that is when Python
+     arrives. sqlite3 itself costs nothing extra: it is in Pyodide's standard
+     library, so unlike Flask there is no package to install. */
+  async function runSql(files, note) {
+    const py = await boot(note);
+    py.globals.set("_files_json", JSON.stringify(files));
+    const raw = await py.runPythonAsync("_flaskide_run_sql(_files_json)");
+    py.globals.delete("_files_json");
+    return JSON.parse(raw);
+  }
+
+  window.FlaskIDERuntime = { boot, run, runSql, request, setOutput, isReady,
+                             PROJECT };
 })();

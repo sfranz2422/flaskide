@@ -849,3 +849,129 @@ body:not(.is-authoring) .notes-body a {
   font-family: inherit;
   padding: .15rem .3rem;
 }
+
+
+/* ==========================================================================
+   SQL mode
+   ==========================================================================
+   The editor is the same editor. What changes is the right-hand pane: the
+   address bar and the iframe are meaningless without a Flask app, and a grid
+   of results takes their place. The console stays in both, because that is
+   where an error goes either way.
+
+   Done with one class on <body> rather than by toggling four elements from
+   JavaScript. Four toggles is four chances to miss one, and a missed one
+   leaves an address bar floating above a table of query results. */
+
+body.is-sql .trail,
+body.is-sql .preview-frame { display: none; }
+
+body:not(.is-sql) .sql-pane { display: none; }
+
+.sql-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+}
+
+.sql-results { padding: 10px 12px 18px; }
+
+/* One block per statement. */
+.sql-result { margin-bottom: 18px; }
+
+.sql-result-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+/* The statement that produced the table under it, so a page of results can
+   be read against a file of queries without counting. */
+.sql-stmt {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.sql-count {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sql-table-wrap { overflow-x: auto; border: 1px solid var(--line);
+                  border-radius: 6px; }
+
+table.sql-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+  font-family: var(--mono);
+}
+
+table.sql-table th,
+table.sql-table td {
+  text-align: left;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+table.sql-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-head);
+  font-weight: 600;
+  z-index: 1;
+}
+
+table.sql-table tr:last-child td { border-bottom: 0; }
+table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
+
+/* NULL is not the empty string, and a table that renders both as nothing is
+   a table that teaches the wrong thing on the day LEFT JOIN is introduced. */
+.sql-null { color: var(--muted); font-style: italic; }
+
+.sql-empty { color: var(--muted); padding: 6px 10px; font-size: 12.5px; }
+
+.sql-clipped {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--amber);
+}
+
+/* What the database holds right now, under the results. Worth having on
+   screen: half of learning SQL is remembering what the tables are called. */
+.sql-schema {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.sql-schema code { font-size: 11.5px; }
+
+/* The chip by the project name. */
+.chip {
+  align-self: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chip[hidden] { display: none; }

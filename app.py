@@ -13,6 +13,7 @@ never imported, never executed and never reaches this machine.
 
 import json
 import os
+import pathlib
 import re
 import secrets
 from datetime import datetime, timezone
@@ -46,6 +47,25 @@ ID_LENGTH = 7
 
 # The file that IS the project. Without it there is nothing to run.
 ENTRY = "app.py"
+
+# THE TWO KINDS OF PROJECT, AND HOW ONE IS TOLD FROM THE OTHER
+#
+# FlaskIDE holds Flask apps and it holds SQL projects, and a project's kind is
+# not stored anywhere. It is read off the files: a project containing query.sql
+# is a SQL project, and anything else is a Flask app.
+#
+# Derived rather than stored on purpose. A `kind` column would have to be added
+# to projects, to drafts and to assignments -- and drafts and assignments are
+# SHARED with PyIDE and WebIDE, so a column here is a migration in three apps
+# for a fact the files already state. It would also be a second source of truth
+# that can disagree with the first, and the failure then is a project whose
+# stored kind says Flask while its files say SQL, which nothing can resolve.
+SQL_ENTRY = "query.sql"
+
+# Present in either kind: it is what a database gets built from. A Flask app
+# with a schema.sql gets a data.db it can open with plain sqlite3, which is the
+# whole point of putting SQL in this editor rather than in a separate one.
+SCHEMA = "schema.sql"
 
 # A Flask project has folders in it, which WebIDE's projects do not: a
 # template lives in templates/ and a stylesheet in static/, and Flask will
@@ -90,6 +110,49 @@ def add():
     if name:
         pets.append(name)
     return redirect(url_for("home"))
+
+
+# ---------------------------------------------------------------------------
+# USING A DATABASE INSTEAD OF A LIST
+#
+# Add a file called schema.sql to this project, put CREATE TABLE and INSERT
+# statements in it, and press Run. It is built into a real database called
+# data.db sitting next to this file, from scratch, every single time you Run
+# -- so you cannot break it, and anything you INSERT while the app is running
+# is gone on the next Run.
+#
+# Then delete the # from the lines below.
+#
+# import sqlite3
+#
+# def query(sql, args=()):
+#     con = sqlite3.connect("data.db")
+#
+#     # SQLite IGNORES FOREIGN KEYS UNLESS YOU ASK, ON EVERY CONNECTION.
+#     # Without this line it will happily store a row pointing at a teacher
+#     # who does not exist and tell you it worked. The REFERENCES in your
+#     # schema is remembered and not enforced.
+#     con.execute("PRAGMA foreign_keys = ON")
+#
+#     # Rows come back as tuples by default, so you write row[0]. This makes
+#     # them behave like dicts too, so a template can say {{ row["name"] }}.
+#     con.row_factory = sqlite3.Row
+#
+#     rows = con.execute(sql, args).fetchall()
+#     con.close()
+#     return rows
+#
+# @app.route("/teachers")
+# def teachers():
+#     rows = query("SELECT name, department FROM teachers ORDER BY name")
+#     return "<br>".join(r["name"] + " - " + r["department"] for r in rows)
+#
+# That returns a rough list so you can see it working straight away. Once it
+# does, add a template of your own under templates/ and hand the rows to it
+# with render_template, exactly the way the pet list above does.
+#
+# The + SQL button at the top opens a separate project for practising queries
+# against that same kind of database, with one already written for you.
 """,
 
     "templates/base.html": """<!doctype html>
@@ -144,6 +207,37 @@ form { margin-top: 24px; }
 
 input, button { font-size: 16px; padding: 6px 10px; }
 """,
+}
+
+
+# The SQL starter, read from examples/ rather than pasted in here.
+#
+# They are real .sql files on purpose: they can be opened, run against sqlite3
+# and edited like anything else, and tools/test_sql.py runs them to check that
+# the queries the starter shows actually return what the comments say. A
+# hundred lines of CREATE TABLE inside a Python string literal is a file
+# nobody can check and nobody wants to edit.
+EXAMPLES = pathlib.Path(__file__).resolve().parent / "examples"
+
+
+def _example(name):
+    """One of the starter files, or a loud failure at import time.
+
+    Read once, at startup. A missing example is a deployment that boots and
+    then hands every student an empty editor, so it stops the process here
+    instead -- Render shows a failed deploy and keeps serving the last good
+    one.
+    """
+    path = EXAMPLES / name
+    if not path.is_file():
+        raise RuntimeError("examples/%s is missing; the SQL starter needs it"
+                           % name)
+    return path.read_text()
+
+
+SQL_STARTER = {
+    SQL_ENTRY: _example("query.sql"),
+    SCHEMA: _example("schema.sql"),
 }
 
 
@@ -254,6 +348,16 @@ def clean(value, limit) -> str:
     return value[:limit]
 
 
+def kind_of(files):
+    """Which kind of project this is, read off the files themselves.
+
+    The client has the same rule in app.js. If you change one, change both --
+    a disagreement here means the editor runs a project one way and the server
+    saves it as the other.
+    """
+    return "sql" if SQL_ENTRY in files else "flask"
+
+
 def validate_files(raw):
     """Check an incoming {name: contents} map. Returns (files, error)."""
     if not isinstance(raw, dict) or not raw:
@@ -286,9 +390,17 @@ def validate_files(raw):
             return None, "Those files are too large to save together."
         files[name] = body
 
-    if ENTRY not in files:
-        return None, ("A project needs an %s — that is the file that runs."
-                      % ENTRY)
+    # Either entry will do. Which one decides the kind; having neither means
+    # there is nothing to run, whichever kind was intended.
+    if ENTRY not in files and SQL_ENTRY not in files:
+        return None, ("A project needs an %s (a Flask app) or a %s (a SQL "
+                      "project) — that is the file that runs."
+                      % (ENTRY, SQL_ENTRY))
+
+    # schema.sql is NOT required for a SQL project here, though the editor
+    # cannot run one without it. Saving is not running: a student halfway
+    # through writing a schema must be able to keep their work, and the
+    # runtime already says plainly what is missing when they press Run.
     return files, None
 
 
@@ -320,7 +432,31 @@ def project_shape():
     `helpers/thing.py` and then refuse to save it, which is a rule you learn
     by losing work.
     """
-    return {"entry": ENTRY, "folders": list(FOLDERS)}
+    return {"entry": ENTRY, "sqlEntry": SQL_ENTRY, "schema": SCHEMA,
+            "folders": list(FOLDERS)}
+
+
+@app.get("/sql")
+def new_sql():
+    """A new SQL project: the same editor, a different starter.
+
+    A separate address rather than a switch on the current project. The two
+    kinds have different entry files, so "switch this project to SQL" would
+    have to either throw away what is open or leave a project holding both
+    app.py and query.sql, with nothing to say which one Run should run. A
+    link that opens a new project has neither problem, and it is what the
+    + SQL button does.
+    """
+    return render_template(
+        "index.html",
+        files=SQL_STARTER,
+        title="Untitled query",
+        author="",
+        readonly=False,
+        authoring=True,
+        slug=None,
+        shared_at=None,
+    )
 
 
 @app.get("/")

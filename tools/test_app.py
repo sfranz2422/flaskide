@@ -317,14 +317,123 @@ EDITOR_SCRIPT = "app.js"
 # editor already existed: Ctrl-F threw that, which names neither the addon
 # nor the option nor anything a person would search for. In the page the
 # order is right; this is here so it stays right.
+# The SCRIPT TAG, not the string. An earlier version searched for "app.js"
+# and matched a comment mentioning it near the top of the template, so the
+# check compared a comment's position and failed on a correctly ordered page.
+EDITOR_TAG = "filename='%s'" % EDITOR_SCRIPT
+check("  (and the editor's script tag was found at all)",
+      EDITOR_TAG in template_text, EDITOR_TAG)
 check("  and the addons load before %s builds the editor" % EDITOR_SCRIPT,
       template_text.find("addon/search/search.min.js")
-      < template_text.find(EDITOR_SCRIPT),
+      < template_text.find(EDITOR_TAG),
       "search.js at %d, %s at %d"
-      % (template_text.find("addon/search/search.min.js"), EDITOR_SCRIPT,
-         template_text.find(EDITOR_SCRIPT)))
+      % (template_text.find("addon/search/search.min.js"), EDITOR_TAG,
+         template_text.find(EDITOR_TAG)))
 
 check("  and the search bar is given a usable width",
       ".CodeMirror-dialog input" in style_text)
+
+
+# ---------------------------------------------------------------- SQL mode
+#
+# FlaskIDE holds two kinds of project. Everything below is a way that split
+# ships half-done and looks fine on the screen you happen to be looking at.
+
+r = client.get("/sql")
+check("there is a SQL project to open", r.status_code == 200, "%d" % r.status_code)
+sql_page = r.data.decode()
+
+# The kind is DERIVED, not stored. app.js has the same rule, and if the two
+# ever disagree the editor runs a project one way while the server saves it
+# as the other, with nothing raised anywhere.
+for files, want in [({"app.py": "x"}, "flask"),
+                    ({"query.sql": "x"}, "sql"),
+                    ({"app.py": "x", "schema.sql": "y"}, "flask"),
+                    ({"query.sql": "x", "schema.sql": "y"}, "sql")]:
+    check("  kind_of(%s) is %s" % (sorted(files), want),
+          A.kind_of(files) == want, A.kind_of(files))
+
+js = (ROOT / "static" / "app.js").read_text()
+check("  and app.js decides it the same way, off query.sql",
+      'SQL_ENTRY in files' in js and 'cfg.sqlEntry' in js,
+      "app.js does not read the kind off the files")
+check("  using the name the server sent, not one typed again",
+      '"query.sql"' not in js.replace('cfg.sqlEntry || "query.sql"', ""),
+      "query.sql is hard-coded somewhere in app.js besides the fallback")
+
+# Either entry is a project; neither is not.
+for files, ok in [({"app.py": "x"}, True), ({"query.sql": "x"}, True),
+                  ({"schema.sql": "x"}, False)]:
+    got, err = A.validate_files(files)
+    check("  validate_files(%s) %s" % (sorted(files),
+                                       "accepts" if ok else "refuses"),
+          (err is None) == ok, err or "accepted")
+
+# The starter has to be a working project, not two empty files. It is read
+# from examples/ at import time, so a missing one is a boot failure rather
+# than an empty editor -- but a TRUNCATED one is neither.
+check("  the SQL starter is a real project",
+      set(A.SQL_STARTER) == {"query.sql", "schema.sql"}, str(sorted(A.SQL_STARTER)))
+check("    with a schema that makes tables",
+      A.SQL_STARTER["schema.sql"].count("CREATE TABLE") >= 4,
+      "%d CREATE TABLEs" % A.SQL_STARTER["schema.sql"].count("CREATE TABLE"))
+check("    and queries to run against them",
+      A.SQL_STARTER["query.sql"].upper().count("SELECT") >= 4)
+check("    and it is served by /sql",
+      "CREATE TABLE teachers" in sql_page)
+
+# CodeMirror colours .sql only if the mode is loaded. Without it the file is
+# plain grey text -- no error, nothing in the console, just a worse editor.
+check("  CodeMirror's sql mode is loaded", "mode/sql/sql.min.js" in template)
+check("    before app.js builds the editor",
+      template.find("mode/sql/sql.min.js") < template.find("filename='app.js'"))
+check("    and app.js asks for it on a .sql file",
+      '"text/x-sql"' in js)
+
+# The chip is a LABEL. A control here could only ever disagree with the files.
+check("  the mode chip is a span, not a button",
+      '<span id="mode-chip"' in template)
+
+check("  there is a button to the other kind", 'id="switch-kind"' in template)
+check("    and it asks before throwing unsaved work away",
+      "changedFromStarter" in js and "preventDefault" in js)
+
+# The panes. A missed toggle leaves an address bar floating over a grid of
+# query results, which is why this is one body class and not four toggles.
+css = (ROOT / "static" / "style.css").read_text()
+check("  a body class swaps the preview for the results",
+      "body.is-sql .preview-frame" in css and "body.is-sql .trail" in css)
+check("    and hides the results pane in Flask mode",
+      "body:not(.is-sql) .sql-pane" in css)
+check("    with app.js setting that class", 'classList.toggle("is-sql"' in js)
+
+# THE UNSTYLED CLASS. Every class app.js builds a node with is a bet that a
+# rule exists. A typo renders an unstyled rectangle saying the right words.
+import re as _re
+built = set()
+for value in _re.findall(r'className = "([^"]+)"', js):
+    built |= set(value.split())
+styled = set(_re.findall(r"\.([A-Za-z][\w-]*)", css))
+unstyled = sorted(c for c in built if c not in styled)
+check("  every class the results grid builds has a CSS rule", not unstyled,
+      str(unstyled))
+check("    (and the scan found classes to check)", len(built) >= 8,
+      "%d classes" % len(built))
+
+# NULL is not the empty string, and the LEFT JOIN lesson is the row with
+# nothing on one side.
+check("  NULL is rendered as the word, not an empty cell",
+      '"NULL"' in js and "sql-null" in js)
+# A database row can hold anything a student typed, and the grid must never
+# run it. textContent everywhere; innerHTML only ever to empty a pane.
+_writes = _re.findall(r"innerHTML\s*=\s*([^;]+);", js)
+check("  and a value never reaches the page as HTML",
+      all(w.strip() in ('""', "''") for w in _writes),
+      str([w.strip() for w in _writes if w.strip() not in ('""', "''")]))
+check("    (and innerHTML is used, so the rule is doing work)",
+      len(_writes) >= 1, "%d assignments" % len(_writes))
+
+check("  the runtime exposes runSql",
+      "runSql" in (ROOT / "static" / "flask.js").read_text())
 
 done()

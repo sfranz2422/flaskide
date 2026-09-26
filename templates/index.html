@@ -48,6 +48,10 @@
     <input id="author" class="field field-author" type="text"
            value="{{ author }}" placeholder="Your name" maxlength="80"
            {% if readonly %}readonly{% endif %}>
+    <!-- What kind of project this is. A LABEL, NOT A SWITCH: the files
+         decide the kind (a query.sql makes it a SQL project), so a control
+         here could only ever disagree with them. Set by app.js. -->
+    <span id="mode-chip" class="chip" title="What this project is"></span>
   </div>
 
   <div class="actions">
@@ -55,6 +59,14 @@
       <span class="btn-icon">▶</span><span id="run-label">Run</span>
     </button>
     <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
+    {% if not readonly %}
+      <!-- Goes to a NEW project of the other kind. It does not convert this
+           one: the two kinds have different entry files, so converting would
+           either throw this project away or leave it holding both app.py and
+           query.sql with nothing to say which Run should run. app.js sets the
+           text and the address, and asks before leaving unsaved work. -->
+      <a id="switch-kind" class="btn" href="/sql">+ SQL</a>
+    {% endif %}
     {% if not readonly %}
       <label class="toggle">
         <input type="checkbox" id="auto-run"> Auto
@@ -174,7 +186,7 @@
   <section class="pane pane-right">
     <div id="preview-view" class="subpane">
       <div class="pane-head">
-        <span>Preview</span>
+        <span id="right-title">Preview</span>
         <span class="hint">Ctrl+Enter to run</span>
       </div>
       <!-- Every URL here is imaginary — it exists only as a rule in the
@@ -187,6 +199,14 @@
                spellcheck="false" autocomplete="off">
         <span id="preview-status" class="status-code"></span>
       </div>
+      <!-- SQL results take the preview's place. Both exist in the page and
+           app.js shows one; building the pane on demand meant the grid's
+           first paint happened after the query had already run, which read
+           as the query being slow. -->
+      <div id="sql-pane" class="sql-pane">
+        <div id="sql-results" class="sql-results"></div>
+      </div>
+
       <div class="preview-frame">
         <!-- allow-scripts WITHOUT allow-same-origin: student JavaScript runs
              normally but on a null origin, so it cannot touch this page.
@@ -245,6 +265,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/jinja2/jinja2.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
@@ -267,6 +288,8 @@
     shareUrl: "{{ url_for('create_share') }}",
     files: {{ files | tojson }},
     entry: {{ entry | tojson }},
+    sqlEntry: {{ sqlEntry | tojson }},
+    schema: {{ schema | tojson }},
     folders: {{ folders | tojson }},
     signedIn: {{ 'true' if user else 'false' }},
     isTeacher: {{ 'true' if is_teacher else 'false' }},

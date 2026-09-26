@@ -123,6 +123,76 @@ not a feature to add later here the way it was for PyIDE; it is the starting
 point. Files are tabs, and the folder is implied by the name:
 `templates/index.html` is a tab called `templates/index.html`.
 
+## Two kinds of project: Flask, and SQL
+
+The **+ SQL** button opens a SQL project. Same editor, same accounts, same
+Publish and Turn in, same Render service — the bill does not change, because
+none of this runs on the server. Pyodide is already there for Flask, and
+`sqlite3` is in Python's standard library, so SQL mode downloads *nothing
+extra*: it is cheaper to start than Flask mode, which has to `micropip
+install flask`.
+
+**A project's kind is read off its files.** One containing `query.sql` is a
+SQL project; anything else is a Flask app. Nothing is stored — no `kind`
+column, no flag — because `drafts` and `assignments` are shared with PyIDE and
+WebIDE, so a column here would be a migration in three repositories for a fact
+the files already state, and a second source of truth that can disagree with
+the first. `kind_of()` in `app.py` and `isSql()` in `app.js` are the same rule
+written twice; **if you change one, change the other.**
+
+The chip beside the project name is a *label*, not a switch. Adding
+`query.sql` is how a project becomes a SQL project, so a control there could
+only ever disagree with the files.
+
+### schema.sql builds a real database
+
+Any project holding a `schema.sql` gets `data.db` built from it, from scratch,
+**before every Run** — in both kinds. That is the one rule, and it is what
+lets SQL live in this editor rather than a separate one:
+
+- A **SQL project** runs `query.sql` against it, one statement at a time, and
+  each statement gets its own table of results.
+- A **Flask app** opens it with `sqlite3.connect("data.db")` — ordinary
+  Python, nothing invented, transferable to any machine. The starter's `app.py`
+  carries the pattern commented out.
+
+So a class can learn the query on its own, then put a page in front of it.
+
+Rebuilt every Run means a student cannot wreck it: delete every row, drop
+every table, press Run, it is back. It also means anything they `INSERT` while
+experimenting is gone next Run, which the starter says in its first comment.
+
+### SQLite ignores foreign keys unless you ask
+
+`PRAGMA foreign_keys = ON`, **on every connection**. Without it SQLite stores
+a course taught by teacher 4242, who does not exist, and reports success; the
+`REFERENCES` in the schema is remembered and not enforced. It is a property of
+the connection, not of the file, so it has to be set again by anything else
+that opens the same database — including a student's own `sqlite3.connect()`
+in a Flask route. That is why the commented starter sets it and says why.
+
+The editor's own connections set it. `tools/test_sql.py` proves it by
+inserting a bad row and requiring the refusal.
+
+### The dataset
+
+`examples/schema.sql` — teachers, students, courses, enrollments — is shaped
+for what has to be taught rather than for realism:
+
+| | |
+|---|---|
+| one-to-many | three teachers have two courses each |
+| `JOIN` vs `LEFT JOIN` | 8 rows against 9 — Petrov teaches nothing |
+| many-to-many | `enrollments`, one row per student per course |
+| `GROUP BY`, `AVG` | students take different numbers of courses |
+
+Petrov is the point of the whole file. Give that row a course and the
+difference between `JOIN` and `LEFT JOIN` becomes invisible, which is why
+`tools/test_sql.py` fails if anybody does.
+
+They are real `.sql` files, not Python strings, so they can be opened, run
+against `sqlite3` and edited — and so the tests can run them.
+
 ## Accounts
 
 Shares PyIDE's database and the `users` / `assignments` / `drafts` /
@@ -150,6 +220,8 @@ saving works without it.
 ```bash
 python3 tools/test_bridge.py    # the runtime, on real Flask, no browser
 python3 tools/test_app.py       # this server, the file rules, the wiring
+python3 tools/test_sql.py       # SQL mode, on real SQLite
+python3 tools/test_tabstops.py  # Tab and Backspace in the editor
 ```
 
 `test_bridge.py` lifts the Python out of `static/flask.js` and runs it on
@@ -161,3 +233,17 @@ browser, found in a second rather than after a page load.
 in the template, and that every script the page loads is a file in the repo.
 Neither failure produces an error — the button is simply dead, or the editor
 simply does not start, and the page renders perfectly either way.
+
+`test_sql.py` runs the starter's queries on real SQLite and checks what the
+dataset claims: that `LEFT JOIN` returns more rows than `JOIN`, that exactly
+one teacher has none, that a bad foreign key is refused, that a 21,952-row
+runaway is clipped instead of handed to the browser, and that a Flask route
+can read the same `data.db`.
+
+**It executes the bridge the way the browser receives it** — template literal
+unescaped — rather than reading `static/flask.js` as if it were Python. That
+is not pedantry. JavaScript eats one level of escaping on the way through, so
+`\\*` in the file arrives at Python as `\*`; written singly, the
+comment-stripping regex arrives as `/*.*?*/` and raises `re.error: multiple
+repeat` at import, on the first Run, before a student has typed anything. A
+test reading the file as Python would have passed.

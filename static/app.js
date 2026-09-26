@@ -56,7 +56,23 @@
    * does the reverse. Templates are mostly HTML with a few tags in them, so
    * htmlmixed is the one that makes a page readable — and Jinja's braces
    * stand out anyway against it. */
+  /* WHICH KIND OF PROJECT THIS IS, read off the files.
+   *
+   * app.py's kind_of() has the same rule, and the two have to agree: this one
+   * decides what Run does, that one decides what the server will accept. If
+   * they ever disagree the editor runs a project one way and saves it as the
+   * other, and nothing reports anything.
+   *
+   * There is no stored flag and no toggle. A project containing query.sql IS
+   * a SQL project -- so adding that file is how you become one, and the chip
+   * follows the files rather than the files following the chip. */
+  var SQL_ENTRY = cfg.sqlEntry || "query.sql";
+  var SCHEMA = cfg.schema || "schema.sql";
+
+  function isSql() { return SQL_ENTRY in files; }
+
   function modeFor(name) {
+    if (/\.sql$/.test(name)) return "text/x-sql";
     if (/\.py$/.test(name)) return "python";
     if (/\.css$/.test(name)) return "css";
     if (/\.(html|htm|jinja2?)$/.test(name)) return "htmlmixed";
@@ -130,6 +146,7 @@
           delete files[name];
           if (current === name) openFile(tabOrder()[0]);
           else paintTabs();
+          applyKind();
           touched();
         });
         tab.appendChild(x);
@@ -179,6 +196,7 @@
       ? "{% extends \"base.html\" %}\n\n{% block body %}\n\n{% endblock %}\n"
       : "";
     openFile(name);
+    applyKind();
     touched();
   }
 
@@ -193,6 +211,21 @@
     };
   }
 
+  /* Has anything been typed since this project was opened?
+     Compared against the files the page was served with rather than a dirty
+     flag, so that typing a character and deleting it again does not count --
+     and so that a signed-in student whose draft has already autosaved is not
+     asked about work that is safely saved. */
+  function changedFromStarter() {
+    var now = readProject().files;
+    var was = cfg.files || {};
+    var names = Object.keys(now).concat(Object.keys(was));
+    for (var i = 0; i < names.length; i++) {
+      if (now[names[i]] !== was[names[i]]) return true;
+    }
+    return false;
+  }
+
   function touched() {
     if (account && account.noteEdit) account.noteEdit();
   }
@@ -205,6 +238,15 @@
     clearOutput();
 
     var project = readProject();
+    if (isSql()) {
+      try {
+        await runSqlProject(project);
+      } finally {
+        running = false;
+        if (btn) btn.disabled = false;
+      }
+      return;
+    }
     try {
       var res = await runtime.run(project.files, function (note) {
         if (note) say(note + "\n", "dim");
@@ -233,6 +275,184 @@
     } finally {
       running = false;
       if (btn) btn.disabled = false;
+    }
+  }
+
+  /* ----------------------------------------------------------------- SQL */
+
+  async function runSqlProject(project) {
+    var pane = $("sql-results");
+    try {
+      var res = await runtime.runSql(project.files, function (note) {
+        if (note) say(note + "\n", "dim");
+      });
+
+      if (!res.ok) {
+        if (pane) pane.innerHTML = "";
+        say("\n" + res.error + "\n", "err");
+        /* The statement it came from. A query file holds several, and
+           "near FORM: syntax error" does not say which one -- so the one
+           that failed is printed under the message rather than left for the
+           student to find by reading all of them. */
+        if (res.statement) {
+          say("\nin this statement:\n", "dim");
+          say(res.statement + "\n");
+        }
+        /* Whatever DID run still goes on screen. A file of six queries with
+           a typo in the fifth should still show you the first four. */
+        if (res.results && res.results.length) {
+          paintSql(res.results, res.tables || []);
+          say("\n" + res.results.length + " statement(s) ran before it.\n",
+              "dim");
+        }
+        return;
+      }
+
+      paintSql(res.results, res.tables);
+      var n = res.results.length;
+      say(n === 1 ? "1 statement.\n" : n + " statements.\n", "dim");
+      if (!n) {
+        say("\nquery.sql has no statements in it yet -- only comments.\n",
+            "dim");
+      }
+    } catch (err) {
+      say("\n" + (err && err.message ? err.message : String(err)) + "\n",
+          "err");
+    }
+  }
+
+  function paintSql(results, tables) {
+    var pane = $("sql-results");
+    if (!pane) return;
+    pane.innerHTML = "";
+
+    (results || []).forEach(function (r) {
+      var block = document.createElement("div");
+      block.className = "sql-result";
+
+      var head = document.createElement("div");
+      head.className = "sql-result-head";
+      var stmt = document.createElement("pre");
+      stmt.className = "sql-stmt";
+      stmt.textContent = r.statement;
+      head.appendChild(stmt);
+
+      var count = document.createElement("span");
+      count.className = "sql-count";
+      if (r.columns) {
+        count.textContent = r.rows.length === 1 ? "1 row"
+                                                : r.rows.length + " rows";
+      } else {
+        /* SQLite reports -1 for a statement whose row count it does not
+           track. Saying "-1 rows changed" is worse than saying nothing. */
+        count.textContent = r.changed >= 0 ? r.changed + " changed" : "done";
+      }
+      head.appendChild(count);
+      block.appendChild(head);
+
+      if (r.columns) block.appendChild(sqlTable(r));
+      pane.appendChild(block);
+    });
+
+    /* What the tables are called, under the results. Half of learning SQL is
+       remembering the names, and the schema is otherwise a file away. */
+    if (tables && tables.length) {
+      var foot = document.createElement("div");
+      foot.className = "sql-schema";
+      foot.appendChild(document.createTextNode("In the database: "));
+      tables.forEach(function (tbl, i) {
+        if (i) foot.appendChild(document.createTextNode(", "));
+        var code = document.createElement("code");
+        code.textContent = tbl.name;
+        foot.appendChild(code);
+        foot.appendChild(document.createTextNode(" (" + tbl.rows + ")"));
+      });
+      pane.appendChild(foot);
+    }
+  }
+
+  function sqlTable(r) {
+    var wrap = document.createElement("div");
+    wrap.className = "sql-table-wrap";
+
+    if (!r.rows.length) {
+      var none = document.createElement("div");
+      none.className = "sql-empty";
+      none.textContent = "No rows. (" + r.columns.join(", ") + ")";
+      wrap.appendChild(none);
+      return wrap;
+    }
+
+    var table = document.createElement("table");
+    table.className = "sql-table";
+    var thead = document.createElement("thead");
+    var hrow = document.createElement("tr");
+    r.columns.forEach(function (name) {
+      var th = document.createElement("th");
+      th.textContent = name;
+      hrow.appendChild(th);
+    });
+    thead.appendChild(hrow);
+    table.appendChild(thead);
+
+    var body = document.createElement("tbody");
+    r.rows.forEach(function (row) {
+      var tr = document.createElement("tr");
+      row.forEach(function (value) {
+        var td = document.createElement("td");
+        /* NULL IS NOT THE EMPTY STRING. Rendering both as a blank cell is
+           wrong on the exact day LEFT JOIN is taught, because the whole
+           lesson is the row that has nothing on one side. */
+        if (value === null) {
+          td.className = "sql-null";
+          td.textContent = "NULL";
+        } else {
+          /* textContent, never innerHTML: a row could hold anything, and
+             this grid must not run it. */
+          td.textContent = String(value);
+        }
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    table.appendChild(body);
+    wrap.appendChild(table);
+
+    if (r.clipped) {
+      var note = document.createElement("div");
+      note.className = "sql-clipped";
+      note.textContent = "Showing the first " + r.rows.length +
+        " rows. Add a LIMIT, or a WHERE, to see fewer.";
+      wrap.appendChild(note);
+    }
+    return wrap;
+  }
+
+  /* What the chrome says about the project. Called whenever the files change,
+     because adding or deleting query.sql is what changes the kind. */
+  function applyKind() {
+    var sql = isSql();
+    document.body.classList.toggle("is-sql", sql);
+
+    var chip = $("mode-chip");
+    if (chip) {
+      chip.textContent = sql ? "SQL" : "Flask";
+      chip.title = sql
+        ? "A SQL project: query.sql runs against the database schema.sql builds."
+        : "A Flask app: app.py runs and the preview shows its pages.";
+    }
+
+    var title = $("right-title");
+    if (title) title.textContent = sql ? "Results" : "Preview";
+
+    /* The button always offers the OTHER kind, which is what makes it read
+       as a switch. */
+    var swap = $("switch-kind");
+    if (swap) {
+      swap.textContent = sql ? "+ Flask app" : "+ SQL";
+      swap.href = sql ? "/" : "/sql";
+      swap.title = "Start a new " + (sql ? "Flask app" : "SQL project") +
+        ". This one stays where it is.";
     }
   }
 
@@ -396,7 +616,23 @@
       },
     });
 
+    applyKind();
     runtime.setOutput(function (text) { say(text); });
+
+    /* Leaving for the other kind throws away anything unsaved, so it asks --
+       but only when there IS something to lose. A confirm on every press is
+       a confirm people learn to click through. */
+    var switcher = $("switch-kind");
+    if (switcher) {
+      switcher.addEventListener("click", function (e) {
+        if (!changedFromStarter()) return;
+        if (!window.confirm(
+              "Start a new project? What is open here has unsaved changes, " +
+              "and they will be lost.")) {
+          e.preventDefault();
+        }
+      });
+    }
 
     if ($("run")) $("run").addEventListener("click", run);
     if ($("preview-back")) $("preview-back").addEventListener("click", function () {
