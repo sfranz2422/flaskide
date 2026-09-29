@@ -10,10 +10,11 @@ untouched.
 Four tables, chosen so they cannot collide with WebIDE, which lives in the
 same database and already owns `projects`:
 
-    users        one row per person who has ever signed in
-    assignments  a starter project a teacher hands out, with a link
-    drafts       a student's living copy — this is what autosaves
-    submissions  what a student turned in, and when
+    users          one row per person who has ever signed in
+    assignments    a starter project a teacher hands out, with a link
+    drafts         a student's living copy — this is what autosaves
+    submissions    what a student turned in, and when
+    live_sessions  a lesson the class is watching the teacher type
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -27,7 +28,8 @@ import secrets
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint,
+    BigInteger, Column, DateTime, ForeignKey, Integer, String, Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base
 
@@ -172,6 +174,89 @@ class Submission(Base):
 
 
 # --------------------------------------------------------------------------
+# Teaching live
+# --------------------------------------------------------------------------
+
+class LiveSession(Base):
+    """A lesson the class is watching: the teacher's editor, mirrored.
+
+    WHY THIS IS A TABLE AND NOT A DICTIONARY IN MEMORY
+
+    Every one of these apps runs `gunicorn --workers 2`: two separate
+    processes, each with its own memory, and nothing routes a given person to
+    a given one. Kept in a module-level dict, the teacher's keystrokes would
+    land in whichever worker served that request and be invisible to half the
+    class — and which half would change from poll to poll. It would work
+    perfectly on a laptop with one worker and fail in front of thirty people.
+
+    The same argument rules out WebSockets here: a socket lives in one worker,
+    so broadcasting across both needs a message broker, which is another
+    Render service and another bill. Polling a row costs nothing new.
+
+    ONE ROW PER SESSION, REWRITTEN IN PLACE. No history is kept, because what
+    a live mirror is for is what is on the screen now. `version` counts up on
+    every push and is what students poll against, so the usual reply is a bare
+    304-shaped "nothing new" rather than the whole program.
+    """
+    __tablename__ = "live_sessions"
+
+    id = Column(Integer, primary_key=True)
+    #: What students type in to join. Short and unambiguous, because it gets
+    #: read off a projector and typed by someone at the back.
+    code = Column(String(16), unique=True, index=True, nullable=False)
+    app = Column(String(16), nullable=False, default="pyide", index=True)
+    host_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    host_name = Column(String(160), nullable=False, default="")
+    title = Column(String(200), nullable=False, default="Live lesson")
+
+    #: The assignment this lesson is for, if the teacher picked one.
+    #:
+    #: WITHOUT IT THE CLASS CANNOT HAND ANYTHING IN. Turning work in needs a
+    #: draft with an assignment on it — see Submission and /api/submit — and
+    #: a project saved from the live page had none, so the button could never
+    #: appear. Nothing about that was visible: the lesson worked, the saving
+    #: worked, and the hand-in was simply impossible.
+    #:
+    #: With it set, a student's save on the live page creates or finds the
+    #: SAME draft row the assignment link would have made, so a student who
+    #: also opened /a/<slug> has one copy of the work rather than two.
+    assignment_id = Column(Integer, ForeignKey("assignments.id"),
+                           index=True, nullable=True)
+
+    #: What the class sees. `body` is the teacher's current file, whole —
+    #: not a diff. A diff stream is smaller and needs every update to arrive
+    #: in order and none to be missed, which polling cannot promise. Sending
+    #: the whole file means a student who misses ten polls is still correct
+    #: on the eleventh, and a student who joins late needs no catch-up path
+    #: at all: the first poll IS the catch-up.
+    body = Column(Text, nullable=False, default="")
+    filename = Column(String(200), nullable=False, default="main.py")
+
+    #: Counts up on every push, and is BOTH what students poll against and
+    #: what rejects a push that arrived late.
+    #:
+    #: The teacher's browser sends a stamp that only ever increases, and the
+    #: update is conditional on it being higher than the row's. Without that,
+    #: two pushes overtaking each other on a slow connection would leave the
+    #: OLDER text in the row with the HIGHER version — and the class would sit
+    #: looking at a line the teacher had already fixed, with nothing to
+    #: correct it until the next keystroke.
+    #:
+    #: BigInteger because the stamp is a millisecond clock reading, about
+    #: 1.8e12, and Postgres INTEGER stops at 2.1e9. As a plain Integer this
+    #: works on SQLite in development and raises NumericValueOutOfRange on
+    #: the first push in production.
+    version = Column(BigInteger, nullable=False, default=0)
+
+    started_at = Column(DateTime, nullable=False, default=now)
+    updated_at = Column(DateTime, nullable=False, default=now)
+    #: Set when the teacher stops. The row stays so that a student still on
+    #: the page is told the lesson ended, rather than watching a mirror that
+    #: has quietly stopped moving.
+    ended = Column(Integer, nullable=False, default=0)
+
+
+# --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
 
@@ -201,6 +286,11 @@ LATER_COLUMNS = [
     ("assignments", "app",
      "ALTER TABLE assignments ADD COLUMN app VARCHAR(16) NOT NULL "
      "DEFAULT 'pyide'"),
+    # Live lessons shipped before they could be tied to an assignment. NULL
+    # is the right default: a lesson that existed before this has no
+    # assignment, which is exactly what it was.
+    ("live_sessions", "assignment_id",
+     "ALTER TABLE live_sessions ADD COLUMN assignment_id INTEGER"),
 ]
 
 

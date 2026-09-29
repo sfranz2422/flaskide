@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if live %}{{ live.title }} — live{% else %}Join a live lesson{% endif %} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  /* Same as the editor: settle the theme and the code size before the first
+     paint, so a room projecting in light mode never flashes dark. */
+  (function () {
+    try {
+      var saved = localStorage.getItem("flaskide-theme");
+      if (saved === "light" || saved === "dark") {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
+      var size = parseInt(localStorage.getItem("flaskide-code-size"), 10);
+      if (size >= 11 && size <= 32) {
+        document.documentElement.style.setProperty("--code-size", size + "px");
+      }
+    } catch (e) { /* storage blocked; the CSS default still applies */ }
+  })();
+</script>
+</head>
+
+<body class="is-live">
+
+<header class="bar">
+  <div class="brand"><a class="brand-link" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+
+  <div class="meta">
+    {% if live %}
+      <span class="live-title">{{ live.title }}</span>
+      <span class="live-host">{{ live.host_name }}</span>
+    {% else %}
+      <span class="live-title">Join a live lesson</span>
+    {% endif %}
+  </div>
+
+  <div class="actions">
+    {% if live %}
+      <span id="live-state" class="chip live-chip" aria-live="polite">Connecting…</span>
+      <span class="chip live-code" title="The code your class types in">{{ live.code }}</span>
+      {% if is_host %}
+        <button id="live-stop" class="btn btn-stop-live">End lesson</button>
+      {% endif %}
+    {% endif %}
+    {% if joined and not is_host %}
+      {#  Signed in, their copy can go into their own projects and autosave
+          from then on — the same Save-once-then-it-is-yours the editor
+          already does. Signed out it is not offered, because there is
+          nowhere for it to go; that copy lives in their browser and the
+          page says so. #}
+      {% if user %}
+        <button id="live-save" class="btn"
+                title="Keep this in your projects. It saves itself from then on.">Save</button>
+        <span id="live-save-state" class="savestate" aria-live="polite" hidden></span>
+        {#  Only once it is saved, and only when the lesson is for an
+            assignment. A Turn in button with nothing behind it is worse
+            than none: a student presses it, sees an error they cannot act
+            on, and assumes their work is lost. #}
+        {% if assignment %}
+          <button id="live-turn-in" class="btn btn-primary" hidden
+                  title="Hand this in to {{ live.host_name }}. You can keep working and turn it in again.">
+            {% if submitted_at %}Turn in again{% else %}Turn in{% endif %}
+          </button>
+        {% endif %}
+        <a id="live-open" class="btn" hidden
+           title="Open this copy in the full editor">Open in editor</a>
+      {% endif %}
+      <button id="run" class="btn btn-run" disabled>
+        <span class="btn-icon">▶</span><span id="run-label">Loading…</span>
+      </button>
+      <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
+    {% endif %}
+  </div>
+</header>
+
+{% if not joined %}
+<main class="join-wrap">
+  <form class="join-card" method="get" action="{{ url_for('live_join') }}"
+        onsubmit="event.preventDefault(); var v=this.code.value.trim().toLowerCase(); if(v) location.href='/live/'+encodeURIComponent(v);">
+    <h1>Join a live lesson</h1>
+    <p class="dim">Type the code your teacher has on the board.</p>
+    {% if error %}<p class="join-error">{{ error }}</p>{% endif %}
+    <input class="field join-code" name="code" type="text" autocomplete="off"
+           autocapitalize="off" autocorrect="off" spellcheck="false"
+           placeholder="abcdefg" maxlength="16" autofocus>
+    <button class="btn btn-primary" type="submit">Join</button>
+  </form>
+</main>
+
+{% elif is_host %}
+<main class="join-wrap">
+  <div class="join-card">
+    <h1>Your class is watching</h1>
+    <p class="dim">Go back to the editor and teach. Everything you type in the
+      open file appears on their screens.</p>
+    <p class="live-bigcode">{{ live.code }}</p>
+    <p class="dim">They join at <strong>{{ url_for('live_join', _external=True) }}</strong>
+      and type that in.</p>
+    <a class="btn btn-primary" href="{{ url_for('index') }}">Back to the editor</a>
+  </div>
+</main>
+
+{% else %}
+{#  SAME SHAPE AS THE EDITOR: code on the left, what it does on the right.
+    The two editors stack down the left because they are read in that order —
+    watch this, now do it yourself — but the preview belongs beside them,
+    not under them. #}
+<main class="live-split">
+  <section class="pane live-left">
+    {#  THE MIRROR AND THE STUDENT'S EDITOR ARE TWO SEPARATE CODEMIRRORS.
+        Not one editor that changes mode, and not a shared document. Nothing
+        arriving from the network is ever given to the lower one, so there is
+        no path — not even a buggy one — by which a student loses their own
+        work because the teacher typed. #}
+    <div class="live-pane live-mirror">
+      <div class="pane-head">
+        <span>What {{ live.host_name or "your teacher" }} is typing</span>
+        <span id="mirror-name" class="dim">{{ live.filename }}</span>
+      </div>
+      <div id="mirror-wrap" class="editor-wrap"><textarea id="mirror"></textarea></div>
+      {#  A .md file the teacher opens is class notes, not code: it renders
+          here instead, so a link they put up is a link the class can click.
+          notes.js sanitises it and forces every link to open in a new tab,
+          which matters more here than anywhere else in the app — thirty
+          people click it at once and none of them should lose their work. #}
+      <div id="mirror-notes" class="notes-body prose" hidden></div>
+    </div>
+
+    <div class="live-pane live-mine">
+      <div class="pane-head">
+        <span>Your turn — type it yourself</span>
+        <span id="mine-saved" class="dim" aria-live="polite"></span>
+        {% if not user %}
+          <span class="dim">Kept in this browser — sign in to save it properly</span>
+        {% endif %}
+      </div>
+      <div class="editor-wrap"><textarea id="mine"></textarea></div>
+    </div>
+  </section>
+
+  <section class="pane pane-right live-right">
+    {#  The student's own page, rendered. Same sandboxed frame the editor
+        uses — no same-origin access, so nothing they write can reach this
+        page or the lesson. #}
+    <div id="preview-view" class="subpane">
+      <div class="pane-head">
+        <span>Your app</span>
+        <span id="preview-status" class="status-code"></span>
+      </div>
+      {#  A path bar, because this is a server: the page you are looking at
+          is a route's answer, and which route matters. #}
+      <div class="preview-bar">
+        <button id="preview-back" class="linkbtn" title="Back">◀</button>
+        <input id="preview-path" class="field field-path" value="/"
+               spellcheck="false" autocomplete="off">
+      </div>
+      <div class="preview-wrap">
+        <iframe id="preview" title="Page preview"
+                sandbox="allow-scripts allow-forms"></iframe>
+      </div>
+    </div>
+
+    <div id="output-view" class="subpane live-console">
+      <div class="pane-head">
+        <span>Console</span>
+        <button id="clear" class="linkbtn">Clear</button>
+      </div>
+      <pre id="output" class="output"><span class="dim">Press Run to see your page.</span>
+</pre>
+    </div>
+  </section>
+</main>
+{% endif %}
+
+<script>
+  window.FLASKIDE_LIVE = {
+    code: {{ (code or '') | tojson }},
+    joined: {{ 'true' if joined else 'false' }},
+    isHost: {{ 'true' if is_host else 'false' }},
+    version: {{ (live.version if live else 0) | tojson }},
+    body: {{ (live.body if live else '') | tojson }},
+    filename: {{ (live.filename if live else 'main.py') | tojson }},
+    ended: {{ 'true' if (live and live.ended) else 'false' }},
+    title: {{ (live.title if live else '') | tojson }},
+    signedIn: {{ 'true' if user else 'false' }},
+    assignment: {{ (assignment.slug if assignment else '') | tojson }},
+    assignmentTitle: {{ (assignment.title if assignment else '') | tojson }},
+    submittedAt: {{ (submitted_at or '') | tojson }}
+  };
+</script>
+{#  Only a student following the lesson needs an editor and Python. The join
+    card and the host's "your class is watching" page are two paragraphs and
+    a code, and making a projector download Pyodide to show them would be
+    several megabytes for nothing. #}
+{% if joined and not is_host %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js"></script>
+<script src="{{ url_for('static', filename='flask.js') }}"></script>
+<script src="{{ url_for('static', filename='preview.js') }}"></script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+{% endif %}
+<script src="{{ url_for('static', filename='live.js') }}"></script>
+
+</body>
+</html>

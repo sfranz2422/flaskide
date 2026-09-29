@@ -100,6 +100,15 @@
         </button>
       {% endif %}
 
+      {#  Teach live. Teachers only, and a toggle rather than a link because
+          the point is that you stay in this editor and carry on working —
+          the class watches this file, whatever you do to it. #}
+      {% if is_teacher %}
+        <button id="go-live" class="btn"
+                title="Put this file on your class's screens while you teach.">Go live</button>
+        <span id="live-code" class="chip live-code" hidden></span>
+      {% endif %}
+
       {% if is_teacher %}
         <label class="hidecode"
                title="Share a link that shows the finished page with no source on it and no way to copy it.">

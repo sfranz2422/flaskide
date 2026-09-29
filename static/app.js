@@ -705,4 +705,230 @@
     up.addEventListener("click", function () { set(size() + 1); });
     down.addEventListener("click", function () { set(size() - 1); });
   }
+  // ------------------------------------------------------------ teach live
+  //
+  // Go live and carry on working. Whatever file is open here is what the
+  // class sees at /live/<code>; switching tabs switches what they are
+  // watching, which is what a teacher means by "look at this bit".
+  //
+  // The file is sent WHOLE, every time, rather than as a diff. A diff stream
+  // is smaller and needs every update to arrive, in order — which polling
+  // cannot promise. Sending the whole file means a student whose wifi drops
+  // ten updates is correct again on the eleventh, and a student who joins in
+  // the middle needs no catch-up path at all.
+
+  var liveBtn = $("go-live");
+  var liveChip = $("live-code");
+
+  if (liveBtn) {
+    var liveCode = null;
+    var liveTimer = null;
+    var lastSent = null;
+    var lastVersion = 0;
+    var liveFor = "";           // assignment title, for the chip's tooltip
+    var PUSH_MS = 400;
+
+    /* A stamp that only ever goes up, and the server refuses anything lower
+       than the row already has. Two pushes overtaking each other on a slow
+       connection would otherwise leave the OLDER text on screen with the
+       newer version number, and the class would sit looking at a line that
+       had already been fixed.
+
+       Date.now() rather than a counter starting at 1, so that reloading this
+       page mid-lesson does not start numbering below what the row has
+       reached — which would get every push after the reload rejected, with
+       the mirror silently frozen and the button still saying Live. The
+       max() covers a machine whose clock is behind the one that started it. */
+    function nextSeq() {
+      lastVersion = Math.max(Date.now(), lastVersion + 1);
+      return lastVersion;
+    }
+
+    function pushNow() {
+      if (!liveCode) return;
+      var name = current;
+      var text = (name === current) ? editor.getValue() : (files[name] || "");
+      var stamp = name + "\u0000" + text;
+      if (stamp === lastSent) return;      // nothing typed since last time
+      lastSent = stamp;
+      fetch("/api/live/" + encodeURIComponent(liveCode) + "/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: text, filename: name, seq: nextSeq() })
+      }).then(function (res) {
+        if (res.status === 403 || res.status === 409) stopLive(true);
+      }).catch(function () {
+        // A dropped push is fine: the next one carries the whole file.
+      });
+    }
+
+    function paintLive() {
+      if (liveCode) {
+        liveBtn.textContent = "End lesson";
+        liveBtn.classList.add("btn-live-on");
+        liveChip.hidden = false;
+        liveChip.textContent = liveCode;
+        liveChip.title = "Your class joins at /live and types " + liveCode
+          + (liveFor ? "\nThey can turn in to: " + liveFor
+                     : "\nNo assignment, so they cannot turn work in.");
+      } else {
+        liveBtn.textContent = "Go live";
+        liveBtn.classList.remove("btn-live-on");
+        liveChip.hidden = true;
+      }
+    }
+
+    function stopLive(quietly) {
+      var code = liveCode;
+      liveCode = null;
+      if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+      lastSent = null;
+      paintLive();
+      try { localStorage.removeItem("flaskide-live-host"); } catch (e) {}
+      if (code && !quietly) {
+        fetch("/api/live/" + encodeURIComponent(code) + "/stop", { method: "POST" });
+      }
+    }
+
+    /* Which assignment this lesson is for, asked once when Go live is
+       pressed.
+
+       IT IS NOT A NICETY. Turning work in needs a draft with an assignment
+       on it, so a lesson with none is a lesson the class cannot hand
+       anything in from — and nothing about that is visible while it is
+       happening. Asking here is the one moment the teacher is thinking
+       about the lesson anyway. */
+    function chooseAssignment() {
+      return fetch("/api/live/assignments")
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var list = (data && data.assignments) || [];
+          if (!list.length) return "";       // nothing published yet
+          /* WORDED AS WHAT IT DOES. "Which assignment is this lesson for?"
+             read like it was about to open the assignment, and it is not —
+             it decides where the CLASS's work goes when they press Save.
+             Loading the starter is offered separately below, because that
+             one does replace what is on screen. */
+          var lines = ["Where should the class turn this work in?",
+                       "(This does not change what is in your editor.)", "",
+                       "0 — nowhere (they can still save, but not turn in)"];
+          list.forEach(function (a, i) {
+            lines.push((i + 1) + " — " + a.title);
+          });
+          var pick = window.prompt(lines.join("\n"), "1");
+          if (pick === null) return null;    // cancelled: do not go live
+          var n = parseInt(pick, 10);
+          if (!n || n < 1 || n > list.length) return "";
+          return list[n - 1].slug;
+        })
+        .catch(function () { return ""; });
+    }
+
+    /* Open an assignment's starter in the editor.
+     *
+     * ASKED, NEVER SILENT. This replaces everything open, so a teacher who
+     * pressed Go live in the middle of a lesson to resume a broadcast would
+     * otherwise lose what they were demonstrating. It is offered only when
+     * an assignment was actually chosen, and only on a fresh Go live — the
+     * reload-resume path never reaches here.
+     */
+    function offerStarter(slug) {
+      if (!slug) return Promise.resolve();
+      return fetch("/api/live/assignment/" + encodeURIComponent(slug))
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.error) return;
+          if (!window.confirm(
+                "Open the starter for \u201c" + data.title + "\u201d?\n\n"
+                + "This replaces what is in your editor now.")) {
+            return;
+          }
+          loadStarter(data.files);
+        })
+        .catch(function () { /* the lesson still goes live without it */ });
+    }
+
+    function loadStarter(incoming) {
+      incoming = incoming || {};
+      Object.keys(files).forEach(function (name) { delete files[name]; });
+      Object.keys(incoming).forEach(function (name) {
+        files[name] = incoming[name];
+      });
+      /* A FlaskIDE project is one of two kinds, and which one it is comes
+         from the files themselves. Opening a SQL assignment must not leave
+         the editor pointed at an app.py that is not there.
+         
+         The two entry names come from the server, never typed again here:
+         the app decides what its entry files are called, and a second copy
+         of those strings in the editor is a second thing to keep in step.
+         test_app.py checks for exactly that. */
+      var flaskEntry = cfg.entry || "app.py";
+      var entry = files[SQL_ENTRY] !== undefined ? SQL_ENTRY : flaskEntry;
+      if (files[entry] === undefined) files[entry] = "";
+      current = entry;
+      editor.setValue(files[current]);
+      editor.setOption("mode", /\.py$/i.test(current) ? "python" : "text/plain");
+      paintTabs();
+      applyKind();
+      touched();
+    }
+
+    function startLive(assignment) {
+      var name = current;
+      var text = (name === current) ? editor.getValue() : (files[name] || "");
+      fetch("/api/live/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(assignment === undefined
+          ? { body: text, filename: name,
+              title: ($("title") && $("title").value) || "Live lesson" }
+          /* `assignment` present — even as "" — is what tells the server this
+             was a deliberate choice. Left out, a resumed session keeps the
+             assignment it already had rather than silently losing it on a
+             page reload, which would leave the class unable to hand in with
+             nothing on screen to say why. */
+          : { body: text, filename: name, assignment: assignment,
+              title: ($("title") && $("title").value) || "Live lesson" })
+      }).then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (data.error) { window.alert(data.error); return; }
+          liveCode = data.code;
+          liveFor = data.assignment_title || "";
+          lastVersion = data.version || 0;
+          lastSent = null;
+          try { localStorage.setItem("flaskide-live-host", liveCode); } catch (e) {}
+          paintLive();
+          pushNow();
+          liveTimer = setInterval(pushNow, PUSH_MS);
+        })
+        .catch(function () {
+          window.alert("Could not start the live lesson. Check your connection.");
+        });
+    }
+
+    liveBtn.addEventListener("click", function () {
+      if (liveCode) {
+        if (window.confirm("End the lesson? Your class stops seeing this editor.")) {
+          stopLive(false);
+        }
+      } else {
+        chooseAssignment().then(function (slug) {
+          if (slug === null) return;        // they cancelled the chooser
+          // Offer the starter first, so the file that goes out on the very
+          // first push is the one they are about to teach from.
+          offerStarter(slug).then(function () { startLive(slug); });
+        });
+      }
+    });
+
+    /* Reloading the editor mid-lesson must not silently stop the broadcast.
+       The session is still open server-side — /api/live/start hands back the
+       one already running rather than inventing a second code — so this puts
+       the button back into its Live state and resumes pushing. */
+    try {
+      // Resuming after a reload: no assignment argument at all, so the
+      // server keeps whatever the session already had.
+      if (localStorage.getItem("flaskide-live-host")) startLive();
+    } catch (e) { /* storage blocked: press Go live again */ }
+  }
 })();

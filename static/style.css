@@ -975,3 +975,200 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 }
 
 .chip[hidden] { display: none; }
+
+/* ------------------------------------------------------------ teaching live
+ *
+ * Two editors stacked with the output under them. Deliberately NOT the
+ * side-by-side .split the editor uses: the mirror and the student's own copy
+ * have to be read one under the other, in that order, or the page stops
+ * saying "watch this, then do it yourself".
+ */
+
+.btn-live-on {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.live-code {
+  font-family: var(--mono);
+  letter-spacing: .08em;
+  text-transform: lowercase;
+}
+
+.live-chip { min-width: 84px; text-align: center; }
+.live-chip.live-on { border-color: var(--green); color: var(--green); }
+.live-chip.live-wait { border-color: var(--accent); color: var(--accent); }
+.live-chip.live-off { border-color: var(--red); color: var(--red); }
+
+.btn-stop-live {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.live-title { font-weight: 600; }
+.live-host { color: var(--muted); }
+
+.live-split {
+  display: flex;
+  height: calc(100vh - var(--bar-h));
+  min-height: 0;
+}
+
+/* Code on the left, what it does on the right — the same 58/42 the editor
+ * uses, so moving between the two pages does not move everything about.
+ *
+ * This was three panes stacked down the page to begin with. It read fine
+ * until a kaypy lesson: the canvas is 800x600, so the game took the middle
+ * of the screen, the student's own editor was squeezed to a few lines at the
+ * bottom, and Run was up in the header a long way from the code it ran.
+ */
+.live-left {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 58%;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+}
+
+.live-right { flex: 1 1 42%; background: var(--bg-panel); }
+
+.live-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The mirror is a little shorter than the student's own editor on purpose:
+ * the page is for typing, not for watching. */
+.live-mirror {
+  flex: 1 1 45%;
+  border-bottom: 1px solid var(--line);
+}
+.live-mine { flex: 1 1 55%; }
+
+.live-mirror .CodeMirror { background: var(--bg-head); }
+
+/* THE TEACHER'S CODE IS NOT SELECTABLE.
+ *
+ * Same bargain as the notes above, and the same reason: the exercise is
+ * typing it. A student who can drag across the mirror and press Ctrl+C has
+ * the whole lesson in their own editor in two seconds, and nothing has been
+ * learnt. There is no copy button for exactly this reason, and a button is
+ * not much use if a selection does the same job.
+ *
+ * readOnly: "nocursor" on the mirror already stops it taking focus, so
+ * Ctrl+A and Ctrl+C inside it do nothing. This covers the other way in: a
+ * drag that starts outside the mirror and sweeps across it.
+ *
+ * IT IS A SPEED BUMP, NOT A LOCK, and it is worth being clear about that.
+ * The page is sent the file in order to display it, so developer tools and
+ * the poll's own address will always show the text to anyone who goes
+ * looking. What this removes is the ordinary path, which is the one thirty
+ * people would otherwise take. */
+.live-mirror,
+.live-mirror .CodeMirror,
+.live-mirror .CodeMirror-code {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Notes shown in the mirror scroll and sit in the pane like the editor does.
+ * The selection rules above still apply to them — they are the teacher's
+ * content — and the existing `.notes-body a` rule keeps links selectable, so
+ * a link put up for the class is still a link they can use. */
+.live-mirror .notes-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+.live-mirror .notes-body[hidden] { display: none; }
+
+/* The student's own editor is theirs: select, copy and paste normally. This
+ * is written out rather than left to inheritance because the rule above sits
+ * one container away, and a future change to the markup could quietly drag
+ * the lower editor into it — which would be a horrible bug to meet mid
+ * lesson, and a silent one. */
+.live-mine,
+.live-mine .CodeMirror,
+.live-mine .CodeMirror-code {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Narrow enough that side by side would give both halves nothing: stack the
+ * lot and let the page scroll, rather than three unusable slivers. */
+@media (max-width: 860px) {
+  .live-split { flex-direction: column; height: auto; }
+  .live-left { flex: none; border-right: 0; }
+  .live-right { flex: none; min-height: 320px; }
+  .live-pane { height: 44vh; }
+}
+
+/* The join card, and the host's "your class is watching" page. */
+.join-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - var(--bar-h));
+  padding: 24px;
+}
+
+.join-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 28px 32px;
+  max-width: 460px;
+  width: 100%;
+  text-align: center;
+}
+
+.join-card h1 { font-size: 22px; margin: 0 0 6px; }
+.join-card p { margin: 0 0 14px; }
+
+.join-code {
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: .18em;
+  text-align: center;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.join-error { color: var(--red); }
+
+.live-bigcode {
+  font-family: var(--mono);
+  font-size: 40px;
+  letter-spacing: .12em;
+  color: var(--accent);
+  margin: 10px 0 18px;
+}
+
+.brand-link { color: inherit; text-decoration: none; }
+
+/* The student's own page, under the console strip. */
+.preview-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #fff;
+}
+.preview-wrap iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.live-console { flex: 0 0 28%; min-height: 90px; }
+
+/* The path bar over the live preview, the same shape the editor's has. */
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-head);
+}
+.preview-bar .field-path { flex: 1 1 auto; font-family: var(--mono); }
