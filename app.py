@@ -770,6 +770,21 @@ def _draft_payload(db, draft, extra=None):
         shared_at=None,
         draft_slug=draft.slug,
     )
+    # HAS THIS COPY BEEN WORKED ON YET?
+    #
+    # Used by the rescue in the editor: a student who typed while signed out
+    # and then signed in gets that work put back, and this decides whether it
+    # can happen silently. A draft still identical to the starter has nothing
+    # to lose, which is the ordinary case — the draft was made moments ago by
+    # the very click that signed them in. Anything else gets asked about,
+    # because restoring would destroy real work.
+    ctx["draft_fresh"] = True
+    if draft.assignment_id:
+        starter = db.query(accounts.Assignment).filter_by(
+            id=draft.assignment_id).first()
+        if starter is not None:
+            ctx["draft_fresh"] = (draft.code == starter.code
+                                  and draft.file_map() == starter.file_map())
     ctx.update(extra or {})
     return ctx
 

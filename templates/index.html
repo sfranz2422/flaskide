@@ -306,7 +306,8 @@
     assignmentSlug: {{ (assignment_slug or '') | tojson }},
     submittedAt: {{ (submitted_at or '') | tojson }},
     editingAssignment: {{ (editing_assignment or '') | tojson }},
-    editingStarted: {{ (editing_started or 0) | tojson }}
+    editingStarted: {{ (editing_started or 0) | tojson }},
+    draftFresh: {{ 'true' if draft_fresh else 'false' }}
   };
 
 </script>
@@ -315,6 +316,7 @@
 <script src="{{ url_for('static', filename='flask.js') }}"></script>
 <script src="{{ url_for('static', filename='preview.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='rescue.js') }}"></script>
 <script src="{{ url_for('static', filename='account.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

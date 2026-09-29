@@ -31,6 +31,7 @@
   var current = cfg.entry || "app.py";
   var editor = null;
   var account = null;
+  var rescue = null;
   var preview = null;
   var running = false;
 
@@ -228,6 +229,7 @@
 
   function touched() {
     if (account && account.noteEdit) account.noteEdit();
+    if (rescue && rescue.noteEdit) rescue.noteEdit();
   }
 
   async function run() {
@@ -657,6 +659,39 @@
     wireFontSize();
 
     if (window.FlaskIDEAccount) {
+      /* The safety net for anyone not signed in — before the account module,
+         so a rescued project is in the editor before autosave forms an
+         opinion about what the project is. */
+      rescue = window.IDERescue.attach({
+        app: "flaskide",
+        cfg: {
+          signedIn: cfg.signedIn,
+          assignmentSlug: cfg.assignmentSlug,
+          draftSlug: cfg.draftSlug,
+          draftFresh: cfg.draftFresh
+        },
+        readAll: function () { return readProject().files; },
+        writeAll: function (incoming) {
+          Object.keys(files).forEach(function (name) { delete files[name]; });
+          Object.keys(incoming).forEach(function (name) {
+            files[name] = incoming[name];
+          });
+          /* Which kind of project this is comes from the files themselves,
+             and the entry names come from the server rather than being
+             typed again here. */
+          var flaskEntry = cfg.entry || "app.py";
+          var entry = files[SQL_ENTRY] !== undefined ? SQL_ENTRY : flaskEntry;
+          if (files[entry] === undefined) files[entry] = "";
+          current = entry;
+          editor.setValue(files[current]);
+          editor.setOption("mode",
+                           /\.py$/i.test(current) ? "python" : "text/plain");
+          paintTabs();
+          applyKind();
+        },
+        onRestored: function () { touched(); }
+      });
+
       account = window.FlaskIDEAccount.attach({ read: readProject, say: say });
     }
     if (window.FlaskIDENotes && window.FlaskIDENotes.boot) {
