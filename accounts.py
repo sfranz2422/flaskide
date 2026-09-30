@@ -248,6 +248,21 @@ class LiveSession(Base):
     #: the first push in production.
     version = Column(BigInteger, nullable=False, default=0)
 
+    #: A few lines the teacher chose to hand the class — highlighted and sent
+    #: with "Send to students". The ONLY thing a student can put into their
+    #: own editor with a button; the mirror stays type-it-yourself. Empty
+    #: means nothing is out, and "take it back" is writing it empty.
+    #:
+    #: `snippet_seq` is the push stamp it went out with, so a student's page
+    #: can tell a new snippet from the one it already showed (or they closed)
+    #: — the same text sent twice is still a second send. BigInteger for the
+    #: same reason as `version`.
+    #:
+    #: Sending also moves `version`, which is what makes it arrive at all:
+    #: students poll against `version` and get a bare 304 otherwise.
+    snippet = Column(Text, nullable=False, default="")
+    snippet_seq = Column(BigInteger, nullable=False, default=0)
+
     started_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
     #: Set when the teacher stops. The row stays so that a student still on
@@ -291,6 +306,13 @@ LATER_COLUMNS = [
     # assignment, which is exactly what it was.
     ("live_sessions", "assignment_id",
      "ALTER TABLE live_sessions ADD COLUMN assignment_id INTEGER"),
+    # Sent snippets. Empty and 0 are true of every earlier lesson: nothing
+    # was ever sent in them.
+    ("live_sessions", "snippet",
+     "ALTER TABLE live_sessions ADD COLUMN snippet TEXT NOT NULL DEFAULT ''"),
+    ("live_sessions", "snippet_seq",
+     "ALTER TABLE live_sessions ADD COLUMN snippet_seq BIGINT NOT NULL "
+     "DEFAULT 0"),
 ]
 
 
