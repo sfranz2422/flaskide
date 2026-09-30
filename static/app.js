@@ -726,17 +726,28 @@
       return lastVersion;
     }
 
+    /* The project's notes: its first .md in tab order. Sent on every push so the class keeps
+       them beside the lesson whichever tab is open here — before this, they
+       reached the class only while the .md tab was selected. */
+    function liveNotes() {
+      var md = tabOrder().filter(window.FlaskIDENotes.isMarkdown);
+      if (!md.length) return "";
+      return md[0] === current ? editor.getValue() : (files[md[0]] || "");
+    }
+
     function pushNow() {
       if (!liveCode) return;
       var name = current;
       var text = (name === current) ? editor.getValue() : (files[name] || "");
-      var stamp = name + "\u0000" + text;
+      var notes = liveNotes();
+      var stamp = name + "\u0000" + text + "\u0000" + notes;
       if (stamp === lastSent) return;      // nothing typed since last time
       lastSent = stamp;
       fetch("/api/live/" + encodeURIComponent(liveCode) + "/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: text, filename: name, seq: nextSeq() })
+        body: JSON.stringify({ body: text, filename: name, notes: notes,
+                               seq: nextSeq() })
       }).then(function (res) {
         if (res.status === 403 || res.status === 409) stopLive(true);
       }).catch(function () {

@@ -1172,3 +1172,13 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
   background: var(--bg-head);
 }
 .preview-bar .field-path { flex: 1 1 auto; font-family: var(--mono); }
+
+/* The project's notes on the live page, under the console. A fixed share of
+ * the column, like the console's, so the preview keeps the most room and
+ * long notes scroll inside their own pane rather than pushing it away. */
+.live-right .live-notes {
+  flex: 0 0 30%;
+  min-height: 110px;
+  border-top: 1px solid var(--line);
+}
+.live-right .live-notes[hidden] { display: none; }

@@ -263,6 +263,13 @@ class LiveSession(Base):
     snippet = Column(Text, nullable=False, default="")
     snippet_seq = Column(BigInteger, nullable=False, default=0)
 
+    #: The project's notes — its first .md file, whole — sent with every push
+    #: whichever file is open. `body` is only the open file, so notes used to
+    #: reach the class only while the teacher had the .md tab selected, and
+    #: vanished the moment they went back to the code they were explaining.
+    #: Empty when the project has none.
+    notes = Column(Text, nullable=False, default="")
+
     started_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
     #: Set when the teacher stops. The row stays so that a student still on
@@ -313,6 +320,10 @@ LATER_COLUMNS = [
     ("live_sessions", "snippet_seq",
      "ALTER TABLE live_sessions ADD COLUMN snippet_seq BIGINT NOT NULL "
      "DEFAULT 0"),
+    # Notes shown beside the lesson. Empty is true of every earlier lesson:
+    # none of them sent any.
+    ("live_sessions", "notes",
+     "ALTER TABLE live_sessions ADD COLUMN notes TEXT NOT NULL DEFAULT ''"),
 ]
 
 

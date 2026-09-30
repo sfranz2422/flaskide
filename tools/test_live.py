@@ -194,6 +194,50 @@ r = stranger.get("/api/live/nosuchcode")
 check("an unknown code is a clean 404", r.status_code == 404, r.status_code)
 
 
+# ------------------------------------------------------ the notes pane
+print("\nThe project's notes")
+
+def poll_json():
+    return stranger.get("/api/live/%s?v=-1" % CODE).get_json()
+
+base = poll_json()
+r = teacher.post("/api/live/%s/push" % CODE,
+                 json={"body": base.get("body"), "filename": base.get("filename"),
+                       "notes": "# Today\nRoutes, [docs](https://example.org)",
+                       "seq": 4200})
+got = poll_json()
+check("notes pushed with the open file reach the class",
+      r.status_code == 200 and got.get("notes", "").startswith("# Today"),
+      repr(got.get("notes")))
+check("  while the open file is still what the mirror shows",
+      got.get("body") == base.get("body"))
+
+# An editor still running the old code sends no notes, and must not wipe
+# the ones already there.
+teacher.post("/api/live/%s/push" % CODE,
+             json={"body": "typing on", "seq": 4201})
+check("a push without notes leaves them in place",
+      poll_json().get("notes", "").startswith("# Today"),
+      repr(poll_json().get("notes")))
+
+page = stranger.get("/live/%s" % CODE).get_data(as_text=True)
+check("a student who joins now gets them in the page",
+      re.search(r'^\s*notes: "# Today', page, re.M) is not None)
+check("  with a pane to show them in",
+      'id="live-notes-view"' in page and 'id="live-notes"' in page)
+
+r = teacher.post("/api/live/%s/push" % CODE,
+                 json={"body": "x", "notes": "#" * (F.MAX_FILE_BYTES + 1),
+                       "seq": 4202})
+check("oversized notes are refused", r.status_code == 413, r.status_code)
+
+teacher.post("/api/live/%s/push" % CODE,
+             json={"body": base.get("body"), "filename": base.get("filename"),
+                   "notes": "", "seq": 4300})
+check("a project with no notes clears them",
+      poll_json().get("notes") == "", repr(poll_json().get("notes")))
+
+
 # -------------------------------------------------------------- the pages
 print("\nThe pages")
 
@@ -954,6 +998,32 @@ check("  and forgets it when the server says that lesson is over",
 check("  and forgets it on any page with no Go live button",
       re.search(r"\}\s*else\s*\{\s*try\s*\{\s*localStorage\.removeItem\(\"flaskide-live-host\"\)",
                 _app_code) is not None)
+
+# The notes pane: the editor sends the project's first .md on every push,
+# and changing only the notes still counts as something to push — otherwise
+# a teacher editing the notes while another file is open would send nothing.
+_push = code_only(open(os.path.join(HERE, "..", "static", "app.js")).read())
+_push_fn = _push[_push.index("function pushNow"):]
+_push_fn = _push_fn[:_push_fn.index("\n    }\n")]
+check("the editor sends the notes with every push",
+      "notes: notes" in _push_fn and "var notes = liveNotes();" in _push_fn)
+check("  and a change to the notes alone is pushed",
+      re.search(r"var stamp = [^;]*\bnotes\b", _push_fn) is not None,
+      "editing the notes with another file open would reach nobody")
+check("  and they are the project's first .md",
+      re.search(r"function liveNotes\(\)[\s\S]{0,200}tabOrder\(\)\.filter\(window\.FlaskIDENotes\.isMarkdown\)[\s\S]{0,160}md\[0\]", _push) is not None)
+_mirror_fn = live_code[live_code.index("function showMirror"):]
+_mirror_fn = _mirror_fn[:_mirror_fn.index("\n  }\n")]
+check("the live page shows them on every update, not only the first",
+      "showNotes(data);" in _mirror_fn)
+check("  and on the page's first paint, before any poll",
+      re.search(r"showMirror\(\{[^}]*notes: L\.notes", live_code) is not None,
+      "the first poll answers 304, so a late joiner would never see them")
+_notes_fn = live_code[live_code.index("function showNotes"):]
+_notes_fn = _notes_fn[:_notes_fn.index("\n  }\n")]
+check("  re-rendering only when they change",
+      "if (data.notes === shownNotes) return;" in _notes_fn,
+      "a re-render every second replaces the link a student is clicking")
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

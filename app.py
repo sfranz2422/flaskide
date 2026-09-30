@@ -1636,15 +1636,24 @@ def live_push(code):
 
         filename = clean(data.get("filename"), 200) or live.filename
 
+        fields = {"body": body, "filename": filename,
+                  "version": seq, "updated_at": _live_now()}
+        # The project's notes ride along on every push (see LiveSession.notes).
+        # Only when sent: an editor tab still running the code from before
+        # this existed sends none, and must not wipe them.
+        notes = data.get("notes")
+        if isinstance(notes, str):
+            if len(notes.encode("utf-8")) > MAX_FILE_BYTES:
+                return jsonify(error="Those notes are too large to share live."), 413
+            fields["notes"] = notes
+
         # One statement, so two workers cannot interleave a read and a write.
         # `version < seq` is what drops a stale push, and it is also why this
         # cannot be an ORM assignment followed by a commit.
         changed = (db.query(accounts.LiveSession)
                      .filter(accounts.LiveSession.id == live.id,
                              accounts.LiveSession.version < seq)
-                     .update({"body": body, "filename": filename,
-                              "version": seq, "updated_at": _live_now()},
-                             synchronize_session=False))
+                     .update(fields, synchronize_session=False))
         db.commit()
         if not changed:
             # Not an error: a push that lost the race has nothing to say, and
@@ -1703,6 +1712,7 @@ def live_poll(code):
             title=live.title,
             host=live.host_name,
             ended=bool(live.ended),
+            notes=live.notes or "",
         )
     finally:
         db.close()
