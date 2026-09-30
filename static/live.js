@@ -97,12 +97,30 @@
     indentWithTabs: false,
     matchBrackets: true,
     autoCloseBrackets: true,
+    /* The same keys as the main editor. This editor was once configured on
+       its own with Tab unbound, which in CodeMirror means a literal tab
+       character — next to auto-indent's spaces, that is a TabError on a
+       line that looks perfectly aligned. */
     extraKeys: {
+      Tab: window.FlaskIDETabStops.indentToTabStop,
+      Backspace: window.FlaskIDETabStops.backspaceToTabStop,
+      "Shift-Tab": function (cm) { cm.indentSelection("subtract"); },
       "Ctrl-/": "toggleComment",
       "Cmd-/": "toggleComment",
       "Ctrl-Enter": function () { run(); },
       "Cmd-Enter": function () { run(); }
     }
+  });
+
+  /* Completion of the student's own names, as in the editor. Their own code
+     is the only source — never the teacher's pane, which would be the copy
+     button by another route — and nothing is offered in a SQL lesson. The
+     check is a function because isSql() is defined further down and reads
+     the lesson's filename at the moment of typing. */
+  window.FlaskIDEComplete.attach(mine, function () {
+    return !isSql();
+  }, function () {
+    return [mine.getValue()];
   });
 
   /* The student's own work, in their browser only. There is no account

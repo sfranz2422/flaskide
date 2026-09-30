@@ -496,77 +496,11 @@
   }
 
   /* ----------------------------------------------------------- tab stops
-   *
-   * THIS EDITOR WAS INSERTING LITERAL TAB CHARACTERS.
-   *
-   * With no Tab binding at all, CodeMirror falls back to its own default:
-   * defaultTab -> insertTab -> replaceSelection("\t"). Checked against a
-   * live CodeMirror 5, not from memory. So every Tab a student pressed put
-   * a hard tab in the file, while Enter's auto-indent put spaces — and
-   * Python 3 rejects that mixture outright with a TabError, on a line that
-   * looks perfectly aligned on screen. In a Flask project the traceback
-   * arrives in the preview pane, one step removed from the line that caused
-   * it, which makes it about as hard to find as it gets.
-   *
-   * Binding Tab fixes that on its own. Aligning both keys to stops is the
-   * rest of the change: Tab goes to the next multiple of the indent unit
-   * rather than always inserting four, and Backspace comes back to the
-   * previous one rather than eating a single space at a time.
-   *
-   * Same pair as PyIDE, WebIDE and the playground. The unit is read from
-   * the editor rather than written down, because it is four here and two in
-   * WebIDE.
-   */
-  function spaces(n) {
-    return new Array(n + 1).join(" ");
-  }
-
-  function indentToTabStop(cm) {
-    if (cm.somethingSelected()) {
-      cm.indentSelection("add");
-      return;
-    }
-    var unit = cm.getOption("indentUnit");
-    // More than one caret: no single column to align to, so fall back to a
-    // whole unit at each. Rare enough not to be worth a wrong answer.
-    if (cm.listSelections().length > 1) {
-      cm.replaceSelection(spaces(unit), "end");
-      return;
-    }
-    var head = cm.getCursor();
-    var col = CodeMirror.countColumn(cm.getLine(head.line), head.ch,
-                                     cm.getOption("tabSize"));
-    // Never 0 and never more than a full unit: at a stop it moves a whole
-    // one, off a stop it moves just enough to land on the next.
-    cm.replaceSelection(spaces(unit - (col % unit)), "end");
-  }
-
-  function backspaceToTabStop(cm) {
-    if (cm.somethingSelected() || cm.listSelections().length > 1) {
-      return CodeMirror.Pass;
-    }
-    var head = cm.getCursor();
-    var before = cm.getLine(head.line).slice(0, head.ch);
-
-    /* ONLY IN THE INDENTATION, AND ONLY SPACES.
-     *
-     * With anything but spaces to the left, this is ordinary typing and one
-     * press must delete one character — a Backspace that swallowed four
-     * characters of a word would be unusable. A literal tab is excluded
-     * too, and this editor will have files full of them from before Tab was
-     * bound: one tab is one character but four columns, so "delete back to
-     * the stop" has two different right answers and the wrong one eats
-     * code. Both fall through to CodeMirror. */
-    if (before.length === 0 || !/^ +$/.test(before)) {
-      return CodeMirror.Pass;
-    }
-
-    var unit = cm.getOption("indentUnit");
-    var col = before.length;
-    var target = (col % unit === 0) ? col - unit : col - (col % unit);
-    if (target < 0) target = 0;
-    cm.replaceRange("", { line: head.line, ch: target }, head, "+delete");
-  }
+   * Shared with the live-lesson editor, so they live in tabstops.js — read
+   * the comment there before unbinding Tab: this editor used to insert
+   * literal tab characters, and Python rejects the mix with a TabError. */
+  var indentToTabStop = window.FlaskIDETabStops.indentToTabStop;
+  var backspaceToTabStop = window.FlaskIDETabStops.backspaceToTabStop;
 
   /* ---------------------------------------------------------------- boot */
 
@@ -598,6 +532,19 @@
       },
     });
     editor.setValue(files[current] || "");
+
+    /* Completion of the student's own names, in .py files only — the open
+       file is asked on every keystroke, because switching tabs changes it
+       under the same editor. Every .py in the project counts, so a name
+       defined in models.py is offered in app.py. */
+    window.FlaskIDEComplete.attach(editor, function () {
+      return !cfg.readonly && window.FlaskIDEComplete.isPy(current);
+    }, function () {
+      files[current] = editor.getValue();
+      return Object.keys(files).filter(window.FlaskIDEComplete.isPy)
+        .map(function (name) { return files[name]; });
+    });
+
     editor.on("change", function () {
       files[current] = editor.getValue();
       touched();

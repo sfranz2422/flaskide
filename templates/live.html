@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script>
   /* Same as the editor: settle the theme and the code size before the first
@@ -79,6 +80,17 @@
         <span class="btn-icon">▶</span><span id="run-label">Loading…</span>
       </button>
       <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
+    {% endif %}
+    {#  The same Sign in the editor has. Without it a student who wanted to
+        Save or Turn in had no way to get there from the lesson — those
+        buttons only appear once signed in, so the page simply showed less
+        and never said why. `next` brings them straight back to this lesson,
+        and their typing is in localStorage under the lesson's code, so
+        nothing is lost on the round trip. #}
+    {% if login_enabled and not user %}
+      <a class="btn btn-primary"
+         href="{{ url_for('login', next=request.path) }}"
+         title="Sign in with your school Google account to save your work and turn it in">Sign in</a>
     {% endif %}
   </div>
 </header>
@@ -211,11 +223,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js"></script>
 <script src="{{ url_for('static', filename='flask.js') }}"></script>
 <script src="{{ url_for('static', filename='preview.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='complete.js') }}"></script>
+<script src="{{ url_for('static', filename='tabstops.js') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='live.js') }}"></script>
 

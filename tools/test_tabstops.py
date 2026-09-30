@@ -45,7 +45,9 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent
+TABSTOPS = ROOT / "static" / "tabstops.js"
 APPJS = ROOT / "static" / "app.js"
+LIVEJS = ROOT / "static" / "live.js"
 
 results = []
 
@@ -62,11 +64,13 @@ def done():
     sys.exit(1 if bad else 0)
 
 
-app = APPJS.read_text()
+app = TABSTOPS.read_text()
+main_js = APPJS.read_text()
+live_js = LIVEJS.read_text()
 
 
 def lift(name):
-    """The named function, exactly as it ships, brace-matched out of app.js."""
+    """The named function, exactly as it ships, brace-matched out of tabstops.js."""
     start = app.find("function %s(cm) {" % name)
     if start < 0:
         return ""
@@ -89,22 +93,31 @@ if not spaces_fn:
     m = re.search(r"function spaces\(n\) \{.*?\n  \}", app, re.S)
     spaces_fn = m.group(0) if m else ""
 
-check("indentToTabStop was found in app.js", len(tab_fn) > 100, "%d chars" % len(tab_fn))
-check("backspaceToTabStop was found in app.js", len(back_fn) > 100,
+check("indentToTabStop was found in tabstops.js", len(tab_fn) > 100, "%d chars" % len(tab_fn))
+check("backspaceToTabStop was found in tabstops.js", len(back_fn) > 100,
       "%d chars" % len(back_fn))
 check("  and the helper it uses", "new Array(n + 1).join" in spaces_fn)
-check("both are actually bound to the keys", "Tab: indentToTabStop" in app
-      and "Backspace: backspaceToTabStop" in app)
+# Both editors a student types into. The live-lesson editor went without
+# these because it was configured separately and nothing here looked at it.
+check("both are bound to the keys in the main editor",
+      "Tab: indentToTabStop" in main_js
+      and "Backspace: backspaceToTabStop" in main_js
+      and "FlaskIDETabStops.indentToTabStop" in main_js)
+check("both are bound to the keys in the live-lesson editor",
+      "Tab: window.FlaskIDETabStops.indentToTabStop" in live_js
+      and "Backspace: window.FlaskIDETabStops.backspaceToTabStop" in live_js)
 
 # THE ONE THAT WAS ACTUALLY BROKEN. Leave Tab unbound and CodeMirror inserts
 # a literal tab, which no check about columns would ever notice: every
 # handler below would still be correct, still be tested, and never run.
-check("  so CodeMirror's tab-character default cannot come back",
-      re.search(r"extraKeys:\s*\{[^}]*\bTab:", app, re.S) is not None)
-# And the other half of the same mistake: auto-indent must write spaces too,
-# or the file still ends up with both kinds on different lines.
-check("  and auto-indent writes spaces, not tabs",
-      "indentWithTabs: false" in app)
+# In BOTH editors — the live one had exactly this bug.
+for _name, _js in (("editor", main_js), ("live editor", live_js)):
+    check("  %s: CodeMirror's tab-character default cannot come back" % _name,
+          re.search(r"extraKeys:\s*\{[^}]*\bTab:", _js, re.S) is not None)
+    # And the other half of the same mistake: auto-indent must write spaces
+    # too, or the file still ends up with both kinds on different lines.
+    check("  %s: and auto-indent writes spaces, not tabs" % _name,
+          "indentWithTabs: false" in _js)
 
 # A stand-in editor: one line, one caret, the options the real editor uses.
 HARNESS = r"""
