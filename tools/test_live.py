@@ -569,6 +569,48 @@ check("starting again makes a NEW lesson, not the ended one",
       after["code"] != CODE, after["code"])
 
 
+# ------------------------------------------- resuming, and signing out
+print("\nResuming after a reload, and signing out")
+
+def open_lessons(uid):
+    db = F.SessionLocal()
+    try:
+        return db.query(accounts.LiveSession).filter_by(
+            host_id=uid, app=F.APP_NAME, ended=0).count()
+    finally:
+        db.close()
+
+r = teacher.post("/api/live/start", json={"body": "x", "resume": after["code"]})
+check("a reload resumes the lesson it was broadcasting",
+      r.get_json().get("code") == after["code"], r.get_json())
+
+# THE BUG: the editor resumed by calling start like a fresh Go live, so an
+# ended lesson in the browser's memory put the teacher back on the air in a
+# brand-new lesson just for opening the editor — "sign in and I'm live".
+teacher.post("/api/live/%s/stop" % after["code"])
+r = teacher.post("/api/live/start", json={"body": "x", "resume": after["code"]})
+check("resuming a lesson that has ended starts nothing",
+      r.get_json().get("resumed") is False and "code" not in r.get_json(),
+      r.get_json())
+check("  and no lesson was opened behind the teacher's back",
+      open_lessons(TEACHER) == 0, "%d open" % open_lessons(TEACHER))
+
+fresh = teacher.post("/api/live/start", json={"body": "x"}).get_json()
+r = teacher.post("/api/live/start", json={"body": "x", "resume": CODE})
+check("  nor does resuming an old code while a different lesson is open",
+      r.get_json().get("resumed") is False, r.get_json())
+check("  and the open one is left alone",
+      open_lessons(TEACHER) == 1)
+
+teacher.get("/logout")
+check("signing out ends the lesson being broadcast",
+      open_lessons(TEACHER) == 0, "%d open" % open_lessons(TEACHER))
+r = stranger.get("/api/live/%s" % fresh["code"])
+check("  and the class is told it ended",
+      r.get_json().get("ended") is True, r.get_json())
+teacher = client(TEACHER)                  # signed back in for what follows
+
+
 # --------------------------------------------------- how it is built at all
 print("\nHow it is built")
 
@@ -763,7 +805,7 @@ check("  and loading the starter is a separate, confirmed step",
       is not None,
       "it replaces the editor, so it cannot be silent")
 check("  which the reload-resume path never takes",
-      re.search(r'localStorage\.getItem\("flaskide-live-host"\)\) startLive\(\)',
+      re.search(r'if \(resumeCode\) startLive\(undefined, resumeCode\);',
                 app_code) is not None,
       "resuming a broadcast must not wipe what is being demonstrated")
 
@@ -846,6 +888,18 @@ check("the Run button comes back when the request is answered",
 check("a finished lesson stops the polling",
       'throw new Error("ended")' in live_code,
       "thirty browsers polling an ended lesson until home time")
+
+# Resuming (see "Resuming after a reload" above): the editor's half.
+_app_code = code_only(open(os.path.join(HERE, "..", "static", "app.js")).read())
+check("the editor sends the remembered code when it resumes",
+      re.search(r"startLive\(undefined, resumeCode\)", _app_code) is not None
+      and "resume: resume" in _app_code)
+check("  and forgets it when the server says that lesson is over",
+      re.search(r"data\.resumed === false\)\s*\{[^}]*removeItem\(\"flaskide-live-host\"\)",
+                _app_code) is not None)
+check("  and forgets it on any page with no Go live button",
+      re.search(r"\}\s*else\s*\{\s*try\s*\{\s*localStorage\.removeItem\(\"flaskide-live-host\"\)",
+                _app_code) is not None)
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

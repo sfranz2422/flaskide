@@ -855,14 +855,14 @@
       touched();
     }
 
-    function startLive(assignment) {
+    function startLive(assignment, resume) {
       var name = current;
       var text = (name === current) ? editor.getValue() : (files[name] || "");
       fetch("/api/live/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(assignment === undefined
-          ? { body: text, filename: name,
+          ? { body: text, filename: name, resume: resume || "",
               title: ($("title") && $("title").value) || "Live lesson" }
           /* `assignment` present — even as "" — is what tells the server this
              was a deliberate choice. Left out, a resumed session keeps the
@@ -873,7 +873,13 @@
               title: ($("title") && $("title").value) || "Live lesson" })
       }).then(function (res) { return res.json(); })
         .then(function (data) {
+          if (resume && data.error) return;   // no alert for a quiet resume
           if (data.error) { window.alert(data.error); return; }
+          if (data.resumed === false) {
+            // That lesson is over. Forget it, and stay off the air.
+            try { localStorage.removeItem("flaskide-live-host"); } catch (e) {}
+            return;
+          }
           liveCode = data.code;
           liveFor = data.assignment_title || "";
           lastVersion = data.version || 0;
@@ -884,6 +890,7 @@
           liveTimer = setInterval(pushNow, PUSH_MS);
         })
         .catch(function () {
+          if (resume) return;
           window.alert("Could not start the live lesson. Check your connection.");
         });
     }
@@ -909,8 +916,15 @@
        the button back into its Live state and resumes pushing. */
     try {
       // Resuming after a reload: no assignment argument at all, so the
-      // server keeps whatever the session already had.
-      if (localStorage.getItem("flaskide-live-host")) startLive();
+      // server keeps whatever the session already had. The code is sent so
+      // the server can refuse anything but that same lesson — see live_start.
+      var resumeCode = localStorage.getItem("flaskide-live-host");
+      if (resumeCode) startLive(undefined, resumeCode);
     } catch (e) { /* storage blocked: press Go live again */ }
+  } else {
+    /* No Go live button: signed out, or not a teacher. Whatever lesson this
+       browser remembers is not one this person can resume, so forget it
+       here rather than let it wait for the next teacher to sign in. */
+    try { localStorage.removeItem("flaskide-live-host"); } catch (e) {}
   }
 })();

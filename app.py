@@ -733,6 +733,28 @@ def auth_callback():
 
 @app.get("/logout")
 def logout():
+    """Signing out ends any lesson this teacher is broadcasting here.
+
+    The browser remembers a lesson so a reload resumes it, and nothing here
+    can reach into localStorage to forget it. Ending the lesson is what makes
+    that memory harmless: the next sign-in finds nothing open to resume. It
+    is also what signing out means — nobody is at the keyboard any more, and
+    the class should be told the lesson ended rather than watch a mirror that
+    has quietly stopped.
+    """
+    uid = session.get("uid")
+    if uid:
+        db = SessionLocal()
+        try:
+            (db.query(accounts.LiveSession)
+               .filter_by(host_id=uid, app=APP_NAME, ended=0)
+               .update({"ended": 1, "updated_at": _live_now()},
+                       synchronize_session=False))
+            db.commit()
+        except Exception:
+            db.rollback()      # signing out must work even if this does not
+        finally:
+            db.close()
     session.clear()
     return redirect(request.args.get("next") or url_for("index"))
 
@@ -1509,6 +1531,18 @@ def live_start():
         live = (db.query(accounts.LiveSession)
                   .filter_by(host_id=user.id, app=APP_NAME, ended=0)
                   .order_by(accounts.LiveSession.started_at.desc()).first())
+
+        # A RESUME ONLY EVER REATTACHES. The editor remembers the lesson it
+        # was broadcasting so a reload carries on, and used to resume by
+        # calling this route like a fresh Go live — so when that lesson had
+        # ended (or been swept), a teacher who merely opened the editor was
+        # put on their class's screens in a brand-new lesson they never
+        # started. It showed up as "sign in and I'm live". Now a resume names
+        # the lesson it means, and gets that one, still open, or nothing.
+        resume = clean(data.get("resume"), 16)
+        if resume and (live is None or live.code != resume):
+            return jsonify(resumed=False)
+
         if live is None:
             live = accounts.LiveSession(
                 code=accounts.new_id(db, accounts.LiveSession, "code"),
