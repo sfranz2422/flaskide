@@ -129,10 +129,18 @@
      twenty lines they have typed. Every read and write is wrapped, because
      localStorage throws outright in a private window and on a locked-down
      school laptop. */
+  /* Nothing kept here, and the lesson is for an assignment: start from what
+     the handout link would have opened — their own draft of it, or its
+     starter (the server decides which; see live_page). What they typed in
+     this browser always wins over both, so a reload never puts the starter
+     back over twenty minutes of typing. `null` rather than falsy: an editor
+     they emptied on purpose stays empty. */
+  var kept = null;
   try {
-    var kept = window.localStorage.getItem(DRAFT_KEY);
-    if (kept) mine.setValue(kept);
-  } catch (e) { /* nothing kept; an empty editor is a fine starting point */ }
+    kept = window.localStorage.getItem(DRAFT_KEY);
+  } catch (e) { /* storage blocked: fall back to the starting point */ }
+  var start = kept !== null ? kept : (L.starter || "");
+  if (start) mine.setValue(start);
   mine.clearHistory();
 
   var saveTimer = null;

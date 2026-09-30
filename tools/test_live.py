@@ -389,6 +389,31 @@ check("  and reloading the editor does not drop it",
       again2.get("assignment") == hw,
       "the class would silently lose the ability to hand in")
 
+
+def starter_of(page):
+    """What the page tells live.js to start the student's editor with."""
+    m = re.search(r"^\s*starter: (.*)$", page, re.M)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(1))
+    except ValueError:
+        return "<not JSON: %s>" % m.group(1)   # fail the check, don't crash
+
+# THE STARTER, as the handout link would give it. A lesson for an assignment
+# used to hand every student an empty editor, so the class retyped the
+# starter the teacher had already written for them.
+check("a lesson for an assignment starts the class on its app.py",
+      starter_of(stranger.get("/live/%s" % LESSON).get_data(as_text=True))
+      == '# starter app')
+check("  signed in with no draft of it yet, the same",
+      starter_of(student.get("/live/%s" % LESSON).get_data(as_text=True))
+      == '# starter app')
+r = stranger.get("/api/live/%s" % LESSON)
+check("  and it is in the page, never on the poll",
+      "starter" not in r.get_json() and '# starter app' not in r.get_data(as_text=True),
+      "the poll is the teacher's channel; the starter is the student's")
+
 # The assignment ships more than one file, which is the normal WebIDE case.
 db = F.SessionLocal()
 try:
@@ -404,6 +429,17 @@ check("a student's save lands in the assignment's own draft",
       r.status_code == 200 and r.get_json()["can_turn_in"] is True,
       r.get_json())
 KEPT = r.get_json()["slug"]
+
+# THE DRAFT, NOT THE STARTER, once they have one. Saving here overwrites the
+# draft's file with the live editor, so a student who did half of it from the
+# link this morning and was handed the bare starter now would lose the
+# morning on their first Save.
+_mine = starter_of(student.get("/live/%s" % LESSON).get_data(as_text=True))
+check("a student with a draft of the assignment starts from their draft",
+      _mine == '# my work', repr(_mine))
+check("  while everyone else still gets the starter",
+      starter_of(stranger.get("/live/%s" % LESSON).get_data(as_text=True))
+      == '# starter app')
 
 def drafts_for(uid):
     db = F.SessionLocal()
@@ -503,6 +539,8 @@ page = student.get("/live/%s" % bare["code"]).get_data(as_text=True)
 check("  and offers no Turn in button at all",
       'id="live-turn-in"' not in page,
       "a button that cannot work reads as lost work")
+check("  and starts the student's editor empty, as it always did",
+      starter_of(page) == "", repr(starter_of(page)))
 
 r = stranger.post("/api/live/%s/keep" % bare["code"], json={"code": "x"})
 check("signed out, saving says to sign in", r.status_code == 401, r.status_code)
@@ -535,6 +573,16 @@ check("  and lands in query.sql, not a stray app.py",
       sorted(kept_sql))
 check("  while the schema that came with the assignment survives",
       "schema.sql" in kept_sql, sorted(kept_sql))
+
+# The live editor starts from the same file Save writes back to. Seeded from
+# app.py in a SQL lesson, the student would start on the wrong thing — and
+# their first Save would put it into query.sql.
+_sql = starter_of(student.get("/live/%s" % sql_lesson).get_data(as_text=True))
+check("a SQL lesson starts the student on their query.sql",
+      _sql == "SELECT a FROM t;", repr(_sql))
+_sql = starter_of(stranger.get("/live/%s" % sql_lesson).get_data(as_text=True))
+check("  and a newcomer on the assignment's query.sql",
+      _sql == "SELECT 1;", repr(_sql))
 
 # And again on the update path, which is a different branch entirely.
 r = student.post("/api/live/%s/keep" % sql_lesson,
@@ -669,14 +717,20 @@ mine_calls = re.findall(r"mine\.setValue\(([^)]*)\)", live_code)
 check("  the student's editor is written to exactly once",
       len(mine_calls) == 1, "%d times" % len(mine_calls))
 arg = (mine_calls[0].strip() if mine_calls else "")
-from_storage = bool(arg) and re.search(
-    r"\b(var\s+)?%s\s*=\s*window\.localStorage\.getItem" % re.escape(arg),
-    live_code) is not None
-check("  and what goes in came out of their own browser, not the wire",
-      from_storage,
-      "mine.setValue(%s) — %s" % (arg or "nothing",
-                                  "read from localStorage" if from_storage
-                                  else "NOT traced to localStorage"))
+# What goes in is their own browser's copy, or — only when there is none —
+# the starting point the PAGE was rendered with (L.starter: their draft or
+# the assignment's starter). Traced through one variable, and nothing else
+# may feed it: not the poll's data, not the mirror.
+assigned = re.findall(r"\b(?:var\s+)?%s\s*=\s*([^;]+);" % re.escape(arg),
+                      live_code) if arg else []
+source_ok = (len(assigned) == 1
+             and re.fullmatch(r"kept !== null \? kept : \(L\.starter \|\| \"\"\)",
+                              assigned[0].strip()) is not None)
+kept_ok = re.search(r"\bkept\s*=\s*window\.localStorage\.getItem\(DRAFT_KEY\)",
+                    live_code) is not None
+check("  and what goes in is their browser's copy, else the page's starter",
+      source_ok and kept_ok,
+      "mine.setValue(%s) = %s" % (arg or "nothing", assigned))
 
 after_mirror = live_code[live_code.index("function showMirror"):]
 # What gets saved has to be the student's editor. Saving the mirror would

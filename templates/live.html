@@ -207,7 +207,8 @@
     signedIn: {{ 'true' if user else 'false' }},
     assignment: {{ (assignment.slug if assignment else '') | tojson }},
     assignmentTitle: {{ (assignment.title if assignment else '') | tojson }},
-    submittedAt: {{ (submitted_at or '') | tojson }}
+    submittedAt: {{ (submitted_at or '') | tojson }},
+    starter: {{ (starter or '') | tojson }}
   };
 </script>
 {#  Only a student following the lesson needs an editor and Python. The join
