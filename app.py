@@ -1905,6 +1905,12 @@ def live_page(code):
         # starting point, like opening the link, not the teacher reaching into
         # their editor.
         starter = ""
+        # The lesson's schema.sql, from the same place. The live editor holds
+        # one file, and without this a student's Run had no database at all:
+        # in a SQL lesson every Run stopped at "There is no schema.sql", and
+        # a Flask app that opens data.db found it empty. Same rule as the
+        # starter — their draft's copy if they have one, else the assignment's.
+        schema = ""
         if item is not None:
             source = item.file_map()
             if user is not None:
@@ -1914,6 +1920,7 @@ def live_page(code):
                     source = mine.file_map()
             entry = SQL_ENTRY if SQL_ENTRY in source else ENTRY
             starter = source.get(entry, "")
+            schema = source.get(SCHEMA, "")
 
         ctx = user_context(db)
         ctx.update(
@@ -1924,6 +1931,7 @@ def live_page(code):
             assignment=item,
             submitted_at=submitted_at,
             starter=starter,
+            schema=schema,
             error="",
         )
         return render_template("live.html", **ctx)

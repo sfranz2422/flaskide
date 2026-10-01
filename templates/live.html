@@ -248,6 +248,7 @@
     assignment: {{ (assignment.slug if assignment else '') | tojson }},
     assignmentTitle: {{ (assignment.title if assignment else '') | tojson }},
     submittedAt: {{ (submitted_at or '') | tojson }},
+    schema: {{ (schema or '') | tojson }},
     starter: {{ (starter or '') | tojson }}
   };
 </script>

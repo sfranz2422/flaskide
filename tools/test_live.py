@@ -706,6 +706,25 @@ _sql = starter_of(stranger.get("/live/%s" % sql_lesson).get_data(as_text=True))
 check("  and a newcomer on the assignment's query.sql",
       _sql == "SELECT 1;", repr(_sql))
 
+# THE DATABASE. The live editor holds one file, and the student's Run used
+# to send only that — so in a SQL lesson every Run stopped at "There is no
+# schema.sql", and nobody on the live page had ever seen a query result.
+def schema_of(page):
+    m = re.search(r'^\s*schema: (".*?"(?<!\\")),\s*$', page, re.M)
+    return json.loads(m.group(1)) if m else None
+
+check("a SQL lesson gives the student's Run the assignment's schema.sql",
+      schema_of(stranger.get("/live/%s" % sql_lesson).get_data(as_text=True))
+      == "CREATE TABLE t (a);")
+# Their draft's schema made different from the assignment's, or this could
+# not tell the two apart.
+_mine = dict(kept_sql, **{"schema.sql": "CREATE TABLE t (a, b);"})
+student.post("/api/draft/%s" % r.get_json()["slug"], json={"files": _mine})
+check("  and their own draft's copy once they have one",
+      schema_of(student.get("/live/%s" % sql_lesson).get_data(as_text=True))
+      == "CREATE TABLE t (a, b);",
+      "the same file /a/<slug> would run their query against")
+
 # And again on the update path, which is a different branch entirely.
 r = student.post("/api/live/%s/keep" % sql_lesson,
                  json={"code": "SELECT a, b FROM t;"})
@@ -1167,9 +1186,56 @@ check("the preview remembers the page it painted, before the shim",
       and 'this.shown = "";\n        await this._show(' in _pv,
       "an image would leave the last page standing as 'the page'")
 
-# The splitter, run for real on the notes this feature was asked for.
+# A student's SQL Run on the live page, built.
+_run = fn_body(live_code, "run")
+check("the live Run sends the lesson's schema.sql with their query",
+      'if (L.schema) project["schema.sql"] = L.schema;' in _run)
+check("  prints the query results, not the schema's table list",
+      "writeSqlResults(out.results);" in _run and "out.tables" not in _run,
+      "tables is names and row counts; printed as results it was blank lines")
+check("  and with no database says so rather than 'add a schema.sql'",
+      re.search(r"if \(isSql\(\) && !L\.schema\) \{[\s\S]{0,400}return;", _run)
+      is not None,
+      "there is no way to add a file on the live page")
+
 import shutil
 import subprocess
+
+# And for real: the bridge's own SQL run (as the browser receives it — see
+# test_sql.py), handed to the live page's own printer in node.
+sys.path.insert(0, HERE)
+_tsql = open(os.path.join(HERE, "test_sql.py")).read()
+_ns = {"__name__": "lifted", "ROOT": __import__("pathlib").Path(FLASKIDE),
+       "re": re, "sys": sys, "types": __import__("types")}
+for _name in ("unescape_template_literal", "load_bridge"):
+    _m = re.search(r"^def %s\([\s\S]*?(?=^\S)" % _name, _tsql, re.M)
+    exec(_m.group(0), _ns)
+_bridge = _ns["load_bridge"](tempfile.mkdtemp(prefix="flaskide-live-"))
+_out = json.loads(_bridge._flaskide_run_sql(json.dumps({
+    "schema.sql": "CREATE TABLE pet (id INTEGER, name TEXT, owner TEXT);"
+                  "INSERT INTO pet VALUES (1, 'Rex', 'Ana'), (22, 'Bo', NULL);",
+    "query.sql": "SELECT id, name, owner FROM pet; UPDATE pet SET id = 3 WHERE id = 1;"})))
+_print = fn_body(live_code, "writeSqlResults")
+_print = _print and _print + "\n  }"       # fn_body stops before the brace
+if shutil.which("node") and _print:
+    harness = ("var lines = [];\nfunction write(t) { lines.push(t); }\n%s\n"
+               "writeSqlResults(%s);\nconsole.log(JSON.stringify(lines.join('')));"
+               % (_print, json.dumps(_out.get("results"))))
+    res = subprocess.run(["node", "-e", harness], capture_output=True, text=True)
+    try:
+        shown = json.loads(res.stdout)
+    except ValueError:
+        shown = ""
+    check("a real query's rows reach the student's console",
+          "id | name | owner" in shown and "22 | Bo   | NULL" in shown
+          and "1  | Rex  | Ana" in shown,
+          repr(shown or res.stderr[-300:]))
+    check("  with a row count, and what an UPDATE changed",
+          "2 rows" in shown and "1 changed" in shown, repr(shown))
+else:
+    check("node is available to run writeSqlResults", False, "brew install node")
+
+# The splitter, run for real on the notes this feature was asked for.
 notes_js = open(os.path.join(HERE, "..", "static", "notes.js")).read()
 if shutil.which("node"):
     sample = (

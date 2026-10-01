@@ -625,6 +625,41 @@
     runBtn.disabled = on;
   }
 
+  /* Query results as text, in the console — the live page has no results
+     grid. Columns are padded to line up, because "id | name" over rows of
+     different widths is unreadable after the third row. */
+  function writeSqlResults(results) {
+    (results || []).forEach(function (r) {
+      write("\n" + r.statement + "\n", "dim");
+      if (!r.columns) {
+        write(r.changed >= 0 ? r.changed + " changed\n" : "done\n", "dim");
+        return;
+      }
+      var cells = [r.columns].concat(r.rows).map(function (row) {
+        return row.map(function (v) { return v === null ? "NULL" : String(v); });
+      });
+      var widths = r.columns.map(function (_, i) {
+        return Math.max.apply(null, cells.map(function (row) {
+          return row[i].length;
+        }));
+      });
+      cells.forEach(function (row, n) {
+        write(row.map(function (v, i) {
+          return v + new Array(widths[i] - v.length + 1).join(" ");
+        }).join(" | ").replace(/\s+$/, "") + "\n");
+        if (n === 0) {
+          write(widths.map(function (w) {
+            return new Array(w + 1).join("-");
+          }).join("-+-") + "\n", "dim");
+        }
+      });
+      var n = r.rows.length;
+      write((n === 1 ? "1 row" : n + " rows")
+            + (r.clipped ? " (only the first " + n + " shown)" : "") + "\n",
+            "dim");
+    });
+  }
+
   async function run() {
     if (running) return;
     // Their Run, their console and their app.
@@ -634,21 +669,39 @@
     clearOutput();
     var project = {};
     project[entryName()] = mine.getValue();   // theirs, never the mirror's
+    // The lesson's database, rendered into the page (see live_page). Never
+    // the teacher's copy from the network: what their query runs against is
+    // the assignment's, exactly as at /a/<slug>.
+    if (L.schema) project["schema.sql"] = L.schema;
     try {
+      if (isSql() && !L.schema) {
+        /* A lesson with no assignment has no database to give them, and
+           runSql's own message says to add a schema.sql — which this page
+           has no way to do. Say what is actually wrong, and whose move it is. */
+        write("This lesson has no database for your query to run against.\n"
+              + "Your teacher can fix it by going live with an assignment "
+              + "that has a schema.sql.\n", "err");
+        return;
+      }
       if (isSql()) {
         var out = await runtime.runSql(project, function (note) {
           if (note) write(note + "\n", "dim");
         });
+        /* `results`, NOT `tables`. `tables` is the schema's table names and
+           row counts; this used to print it as if it were query results, so
+           every Run showed a few blank lines and no answer. Whatever ran
+           before an error is still shown, as the editor does — a typo in the
+           fifth query should not hide the first four. */
+        writeSqlResults(out.results);
         if (!out.ok) {
           write("\n" + out.error + "\n", "err");
-        } else {
-          (out.tables || []).forEach(function (tbl) {
-            write("\n" + (tbl.sql || "") + "\n", "dim");
-            write((tbl.columns || []).join(" | ") + "\n");
-            (tbl.rows || []).forEach(function (row) {
-              write(row.join(" | ") + "\n");
-            });
-          });
+          if (out.statement) {
+            write("\nin this statement:\n", "dim");
+            write(out.statement + "\n");
+          }
+        } else if (!(out.results || []).length) {
+          write("query.sql has no statements in it yet — only comments.\n",
+                "dim");
         }
         return;
       }
