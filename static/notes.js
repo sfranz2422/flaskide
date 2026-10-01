@@ -84,19 +84,28 @@ window.FlaskIDENotes = (function () {
     });
   }
 
-  /* Notes cut into slides for a live lesson: every `## ` heading starts one,
-     and whatever comes before the first (a `# Title`, usually) is a slide of
-     its own. `---` rules at the edges of a slide are dropped — they are how
-     the same file reads as slides in an ordinary markdown viewer, and on
-     their own they would put a stray line at the top and bottom of every
-     slide.
+  /* Notes cut into slides for a live lesson: a `---` line on its own ends
+     one slide and starts the next, and nothing else does. Headings are just
+     headings — a slide can hold a `##` and a `###` under it, or have none.
 
-     Fenced code is skipped over, because `## ` is also a Python comment and
-     `---` is a line of output. Without that a slide whose example printed a
-     divider, or commented a line with two hashes, would be cut in half in
-     front of the class with no sign of why.
+     It cut at every `## ` heading once, and only trimmed the `---` rules
+     off the edges. Notes written as a deck, with a `---` between slides,
+     then ended slides in the wrong places: a slide whose own heading was a
+     `###` was glued onto the slide before it, and a slide holding two `##`
+     sections was cut in half. The `---` is what the author drew; it is the
+     only thing that decides.
 
-     Returns [] for notes with no `## ` at all — one slide is not slides, and
+     Every `---` counts, including one straight under a line of text, which
+     an ordinary markdown viewer would read as underlining that line into a
+     heading. In notes written as slides it is a divider far more often than
+     a heading, and a slide that runs past the line drawn under it is the
+     bug this was rewritten for.
+
+     Fenced code is skipped over, because `---` is also a line of output.
+     Without that a slide whose example printed a divider would be cut in
+     half in front of the class with no sign of why.
+
+     Returns [] for notes with no `---` at all — one slide is not slides, and
      the caller then sends the notes whole, as it always did. */
   function slides(md) {
     var lines = String(md || "").replace(/\r\n?/g, "\n").split("\n");
@@ -107,20 +116,20 @@ window.FlaskIDENotes = (function () {
         if (fence === null) fence = f[1];
         else if (f[1].charAt(0) === fence.charAt(0)
                  && f[1].length >= fence.length) fence = null;
-      } else if (fence === null && /^##(\s|$)/.test(ln)) {
+      } else if (fence === null && /^ {0,3}-{3,}\s*$/.test(ln)) {
         out.push(cur);
         cur = [];
         cuts++;
+        return;                               // the rule itself is not shown
       }
       cur.push(ln);
     });
     out.push(cur);
     if (!cuts) return [];
 
-    var edge = /^\s*(-{3,}\s*)?$/;          // blank, or a --- rule
     return out.map(function (s) {
-      while (s.length && edge.test(s[0])) s.shift();
-      while (s.length && edge.test(s[s.length - 1])) s.pop();
+      while (s.length && !s[0].trim()) s.shift();
+      while (s.length && !s[s.length - 1].trim()) s.pop();
       return s.join("\n");
     }).filter(function (s) { return s.trim(); });
   }

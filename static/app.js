@@ -748,7 +748,7 @@
     }
 
     /* ------------------------------------------------------------ slides
-       Notes with `## ` headings are slides, and the class is sent ONE: the
+       Notes with `---` dividers are slides, and the class is sent ONE: the
        one this teacher is on. Here the whole file stays in the editor, as
        ever. The cutting happens in this browser, so the server stores and
        students render exactly what they did before — the only new thing on
@@ -756,11 +756,12 @@
 
        `slideAt` is an index that survives editing the notes mid-lesson, and
        is clamped when slides are deleted out from under it. Two slides at
-       least, or it is not slides: a file with a single `## ` goes whole.
+       least, or it is not slides: a file whose one `---` leaves only one
+       slide with anything on it goes whole.
 
        `wholeNotes` is Show all: the class gets the whole file, as if it had
-       no `## ` at all. For notes that are a page of directions rather than
-       a deck, whose headings would otherwise chop them into pieces the
+       no `---` at all. For notes that are a page of directions rather than
+       a deck, whose rules would otherwise chop them into pieces the
        class can only see one at a time. slideAt is kept, so turning it off
        goes back to the slide the class was on. Remembered for this lesson
        across a reload of this page — otherwise a reload would snap thirty

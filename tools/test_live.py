@@ -1390,18 +1390,23 @@ else:
 # The splitter, run for real on the notes this feature was asked for.
 notes_js = open(os.path.join(HERE, "..", "static", "notes.js")).read()
 if shutil.which("node"):
+    # Cut where the author drew a ---, and nowhere else. The first version
+    # cut at every `## ` heading, and this sample is what it got wrong: the
+    # ### slide was glued onto the one before it, the slide with two ##
+    # sections was cut in half, and the --- straight under a line of text
+    # did not end its slide at all.
     sample = (
         "# Looping Over a List\n\n---\n\n## for Each Item\n\n"
-        "```python\n## not a slide\nfor e in enemies:\n    print(e)\n```\n\n"
+        "```python\n## a comment\nfor e in enemies:\n    print(e)\n```\n\n"
         "```text\n---\n```\n\n---\n\n"
-        "## enumerate()\n\nPosition and item.\n\n---\n\n"
-        "### still enumerate\n\n---\n\n"
+        "## enumerate()\n\nPosition and item.\n\n## zip()\n\nTwo lists.\n\n---\n\n"
+        "### still a slide of its own\nNo blank line before the rule.\n---\n"
         "## ✏ Mini Assignment\n\n> Extension\n")
     harness = "var window = {};\n" + notes_js + """
 var N = window.FlaskIDENotes;
 console.log(JSON.stringify({
   cut: N.slides(%s),
-  none: N.slides("# Just notes\\n\\nNo sections here."),
+  none: N.slides("# Just notes\\n\\n## A section\\n\\n## Another\\n"),
   crlf: N.slides("## A\\r\\nx\\r\\n---\\r\\n## B\\r\\ny")
 }));
 """ % json.dumps(sample)
@@ -1411,22 +1416,29 @@ console.log(JSON.stringify({
     except ValueError:
         got = {}
     cut = got.get("cut") or []
-    check("notes split into a title and one slide per ## heading",
-          len(cut) == 4 and cut[0] == "# Looping Over a List"
+    check("notes split into slides at each --- and nowhere else",
+          len(cut) == 5 and cut[0] == "# Looping Over a List"
           and cut[1].startswith("## for Each Item")
-          and cut[3].startswith("## ✏ Mini Assignment"),
+          and cut[4].startswith("## ✏ Mini Assignment"),
           repr([c[:20] for c in cut] or res.stderr[-200:]))
+    check("  a slide holding two ## sections stays one slide",
+          len(cut) > 2 and cut[2].startswith("## enumerate()")
+          and cut[2].endswith("Two lists."),
+          repr(cut[2] if len(cut) > 2 else ""))
+    check("  a slide headed by ### is its own slide",
+          len(cut) > 3 and cut[3].startswith("### still a slide of its own"),
+          repr(cut[3] if len(cut) > 3 else ""))
+    check("  a --- straight under a line of text still ends the slide",
+          len(cut) > 3 and cut[3].endswith("No blank line before the rule."),
+          repr(cut[3] if len(cut) > 3 else ""))
     check("  ## and --- inside a code fence do not cut it",
-          len(cut) > 1 and "## not a slide" in cut[1]
+          len(cut) > 1 and "## a comment" in cut[1]
           and "```text\n---\n```" in cut[1],
-          "a Python comment would cut a slide in half")
-    check("  the --- between slides is dropped from both sides",
+          "a line of output would cut a slide in half")
+    check("  the --- itself is not shown on either side",
           all(not c.startswith("---") and not c.endswith("---") for c in cut),
           repr(cut[1][-12:] if len(cut) > 1 else ""))
-    check("  a ### stays inside its slide, rules and all",
-          len(cut) > 2 and cut[2].endswith("### still enumerate"),
-          repr(cut[2] if len(cut) > 2 else ""))
-    check("  notes with no ## are not slides at all",
+    check("  notes with ## headings but no --- are not slides at all",
           got.get("none") == [], repr(got.get("none")))
     check("  Windows line endings split the same way",
           got.get("crlf") == ["## A\nx", "## B\ny"], repr(got.get("crlf")))
