@@ -165,30 +165,56 @@
         uses — no same-origin access, so nothing they write can reach this
         page or the lesson. #}
     <div id="preview-view" class="subpane">
+      {#  The student's app and the teacher's, as two tabs, because the
+          column has no room for another pane. The teacher's tab appears
+          once they press Run, and comes to the front when their page
+          changes; pressing Run here goes back to the student's own.
+
+          THE TEACHER'S PAGE IS A PICTURE. Their app runs in their browser,
+          so nothing here can answer a link or a form on it. Its frame is
+          sandboxed with nothing allowed — no scripts, no forms, no popups —
+          and a <base target="_blank"> goes in front of it, so a click on a
+          link is a blocked popup rather than the frame navigating itself to
+          an error page. The path is in the tab so nobody mistakes it for a
+          site they can use. #}
       <div class="pane-head">
-        <span>Your app</span>
+        <span class="out-tabs">
+          <button id="page-mine" class="out-tab is-on" type="button">Your app</button>
+          <button id="page-teacher" class="out-tab" type="button" hidden
+                  title="A snapshot of {{ live.host_name or 'your teacher' }}'s page. Its links and forms do nothing here.">{{ live.host_name or "Teacher" }}'s page</button>
+        </span>
         <span id="preview-status" class="status-code"></span>
       </div>
       {#  A path bar, because this is a server: the page you are looking at
           is a route's answer, and which route matters. #}
-      <div class="preview-bar">
+      <div id="preview-bar" class="preview-bar">
         <button id="preview-back" class="linkbtn" title="Back">◀</button>
         <input id="preview-path" class="field field-path" value="/"
                spellcheck="false" autocomplete="off">
       </div>
-      <div class="preview-wrap">
+      <div id="preview-mine" class="preview-wrap">
         <iframe id="preview" title="Page preview"
                 sandbox="allow-scripts allow-forms"></iframe>
+      </div>
+      <div id="teacher-page-wrap" class="preview-wrap" hidden>
+        <iframe id="teacher-page" title="Your teacher's page" sandbox=""></iframe>
       </div>
     </div>
 
     <div id="output-view" class="subpane live-console">
+      {#  Same arrangement for the console: theirs and the teacher's, two
+          separate <pre>s, never one. #}
       <div class="pane-head">
-        <span>Console</span>
+        <span class="out-tabs">
+          <button id="out-mine" class="out-tab is-on" type="button">Console</button>
+          <button id="out-teacher" class="out-tab" type="button" hidden
+                  title="What {{ live.host_name or 'your teacher' }}'s Run printed">{{ live.host_name or "Teacher" }}'s console</button>
+        </span>
         <button id="clear" class="linkbtn">Clear</button>
       </div>
       <pre id="output" class="output"><span class="dim">Press Run to see your page.</span>
 </pre>
+      <pre id="teacher-output" class="output" hidden></pre>
     </div>
 
     {#  The project's notes, always in view — not only while the teacher has
@@ -196,7 +222,8 @@
         opens every link in a new tab, so thirty students clicking a link at
         once lose nothing. Hidden when the project has no notes. #}
     <div id="live-notes-view" class="subpane live-notes" hidden>
-      <div class="pane-head"><span>Notes</span></div>
+      <div class="pane-head"><span>Notes</span>
+        <span id="live-slide" class="dim" aria-live="polite"></span></div>
       <div id="live-notes" class="notes-body prose"></div>
     </div>
   </section>
@@ -213,6 +240,9 @@
     filename: {{ (live.filename if live else 'main.py') | tojson }},
     ended: {{ 'true' if (live and live.ended) else 'false' }},
     notes: {{ (live.notes if live else '') | tojson }},
+    slide: {{ (live.slide if live else '') | tojson }},
+    output: {{ (live.output if live else '') | tojson }},
+    page: {{ (live.page if live else '') | tojson }},
     title: {{ (live.title if live else '') | tojson }},
     signedIn: {{ 'true' if user else 'false' }},
     assignment: {{ (assignment.slug if assignment else '') | tojson }},

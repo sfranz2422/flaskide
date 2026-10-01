@@ -41,6 +41,7 @@ APP_NAME = "flaskide"       # this editor, in the shared account tables
 
 MAX_FILES = 16
 MAX_FILE_BYTES = 200_000          # per file
+LIVE_OUTPUT_BYTES = 20_000        # the tail of a Run, sent to the class
 MAX_FILES_TOTAL = 600_000         # all files together
 ID_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # no look-alike characters
 ID_LENGTH = 7
@@ -1572,6 +1573,9 @@ def live_start():
                                    _slug_of_assignment(db, live.assignment_id)),
                        assignment_title=(item.title if item else
                                          _title_of_assignment(db, live.assignment_id)),
+                       # so a reload carries on from the same slide rather
+                       # than sending the class back to the title
+                       slide=live.slide or "",
                        url=url_for("live_page", code=live.code, _external=True))
 
     finally:
@@ -1647,6 +1651,33 @@ def live_push(code):
                 return jsonify(error="Those notes are too large to share live."), 413
             fields["notes"] = notes
 
+        # Which slide those notes are, "3/5", or "" when they are not slides.
+        # Same rule as notes: only when sent.
+        slide = data.get("slide")
+        if isinstance(slide, str):
+            fields["slide"] = slide if re.fullmatch(r"\d{1,4}/\d{1,4}", slide) else ""
+
+        # What the teacher's Run printed to the console. Trimmed here rather
+        # than refused: a runaway loop is exactly when the output is huge,
+        # and a 413 would throw away the code that came with it, freezing the
+        # mirror for as long as the loop ran. The tail is what anyone reads.
+        output = data.get("output")
+        if isinstance(output, str):
+            raw = output.encode("utf-8")
+            if len(raw) > LIVE_OUTPUT_BYTES:
+                output = raw[-LIVE_OUTPUT_BYTES:].decode("utf-8", "ignore")
+            fields["output"] = output
+
+        # The page the teacher's preview is showing. Too big, it is dropped
+        # rather than refused, for the same reason as the output: a 413 here
+        # would take the code down with it, and the mirror would freeze for
+        # the rest of the lesson over a picture nobody asked to be big. Half
+        # a page would be worse than none — cut HTML renders as nonsense —
+        # so it is all or nothing.
+        page = data.get("page")
+        if isinstance(page, str):
+            fields["page"] = page if len(page.encode("utf-8")) <= MAX_FILE_BYTES else ""
+
         # One statement, so two workers cannot interleave a read and a write.
         # `version < seq` is what drops a stale push, and it is also why this
         # cannot be an ORM assignment followed by a commit.
@@ -1713,6 +1744,9 @@ def live_poll(code):
             host=live.host_name,
             ended=bool(live.ended),
             notes=live.notes or "",
+            slide=live.slide or "",
+            output=live.output or "",
+            page=live.page or "",
         )
     finally:
         db.close()

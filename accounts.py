@@ -270,6 +270,25 @@ class LiveSession(Base):
     #: Empty when the project has none.
     notes = Column(Text, nullable=False, default="")
 
+    #: Where the teacher is in those notes when they are cut into slides, as
+    #: the class should read it: "3/5". Only the current slide goes out in
+    #: `notes`, so this is the one thing that says there are others. Empty
+    #: when the notes are not slides, which is every lesson before this.
+    slide = Column(String(16), nullable=False, default="")
+
+    #: What the teacher's last Run printed, the tail of it, so the class can
+    #: see the program they just watched being written actually work. Text
+    #: only: a kaypy game's picture is drawn on the teacher's canvas and is
+    #: not sent, only whatever it printed. Empty until they press Run.
+    output = Column(Text, nullable=False, default="")
+
+    #: The teacher's rendered page after their last Run, as HTML, for the
+    #: apps whose Run makes a page rather than text: WebIDE sends the page it
+    #: built, FlaskIDE the response its preview is showing. The class sees it
+    #: in a sandboxed frame beside their own. PyIDE has no page and never
+    #: sets it. Empty until the teacher presses Run.
+    page = Column(Text, nullable=False, default="")
+
     started_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
     #: Set when the teacher stops. The row stays so that a student still on
@@ -324,6 +343,16 @@ LATER_COLUMNS = [
     # none of them sent any.
     ("live_sessions", "notes",
      "ALTER TABLE live_sessions ADD COLUMN notes TEXT NOT NULL DEFAULT ''"),
+    # Slides and the teacher's output. Empty is true of every earlier
+    # lesson: none had slides, and none ever sent what a Run printed.
+    ("live_sessions", "slide",
+     "ALTER TABLE live_sessions ADD COLUMN slide VARCHAR(16) NOT NULL "
+     "DEFAULT ''"),
+    ("live_sessions", "output",
+     "ALTER TABLE live_sessions ADD COLUMN output TEXT NOT NULL DEFAULT ''"),
+    # The teacher's rendered page. Empty is true of every earlier lesson.
+    ("live_sessions", "page",
+     "ALTER TABLE live_sessions ADD COLUMN page TEXT NOT NULL DEFAULT ''"),
 ]
 
 

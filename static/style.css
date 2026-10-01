@@ -530,7 +530,7 @@ html, body {
 }
 
 .console-head { border-top: 1px solid var(--line); }
-#output { flex: 0 1 38%; min-height: 84px; }
+#output, #teacher-output { flex: 0 1 38%; min-height: 84px; }
 .output .warn { color: var(--amber); }
 
 /* ----------------------------------------------------- completion popup */
@@ -1160,6 +1160,10 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
   border: 0;
   display: block;
 }
+/* .preview-wrap sets no display, but say so: the teacher's page and the
+   student's take turns in the same place, and a rule that set display later
+   would put both on screen at once. */
+.preview-wrap[hidden] { display: none; }
 .live-console { flex: 0 0 28%; min-height: 90px; }
 
 /* The path bar over the live preview, the same shape the editor's has. */
@@ -1172,6 +1176,9 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
   background: var(--bg-head);
 }
 .preview-bar .field-path { flex: 1 1 auto; font-family: var(--mono); }
+/* Put away while the teacher's page is in front: it drives the student's
+   app, and on the teacher's snapshot it would look like it drove that. */
+.preview-bar[hidden] { display: none; }
 
 /* The project's notes on the live page, under the console. A fixed share of
  * the column, like the console's, so the preview keeps the most room and
@@ -1182,3 +1189,41 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
   border-top: 1px solid var(--line);
 }
 .live-right .live-notes[hidden] { display: none; }
+
+/* Slides, on the teacher's bar while live: ◀ 3 / 5 ▶. */
+.slide-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.slide-ctl[hidden] { display: none; }
+.slide-ctl .btn { padding-left: 8px; padding-right: 8px; }
+.slide-at {
+  min-width: 44px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* The student's own and the teacher's, as two tabs in one pane head — for
+ * the page and for the console. Styled like the head's own label so the
+ * pane does not look busier than it did with one; the one in front is the
+ * one in full colour. */
+.out-tabs { display: inline-flex; gap: 14px; }
+.out-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0 0 2px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.out-tab:hover { color: var(--text); }
+.out-tab.is-on { color: var(--text); border-bottom-color: var(--accent); }
+/* Changed while the student's own app was running, so it did not jump to
+ * the front; a dot says there is something new behind it. */
+.out-tab.has-new::after { content: " •"; color: var(--accent); }

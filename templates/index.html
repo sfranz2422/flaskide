@@ -107,6 +107,14 @@
         <button id="go-live" class="btn"
                 title="Put this file on your class's screens while you teach.">Go live</button>
         <span id="live-code" class="chip live-code" hidden></span>
+        {#  Only while live, and only when the notes have two or more `## `
+            sections. The class sees the one slide; this editor keeps the
+            whole file. #}
+        <span id="live-slides" class="slide-ctl" hidden>
+          <button id="slide-prev" class="btn" title="Previous slide for the class">◀</button>
+          <span id="slide-at" class="slide-at" title="The slide your class is on"></span>
+          <button id="slide-next" class="btn" title="Next slide for the class">▶</button>
+        </span>
       {% endif %}
 
       {% if is_teacher %}

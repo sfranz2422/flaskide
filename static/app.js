@@ -232,9 +232,16 @@
     if (rescue && rescue.noteEdit) rescue.noteEdit();
   }
 
+  /* Whether anything here has been run yet. Until it has, the console and
+     the preview hold nothing of the teacher's, and a live lesson sends
+     neither — otherwise every class would be shown loading messages, or an
+     empty page, as if it were the program. */
+  var hasRun = false;
+
   async function run() {
     if (running) return;
     running = true;
+    hasRun = true;
     var btn = $("run");
     if (btn) btn.disabled = true;
     clearOutput();
@@ -729,10 +736,99 @@
     /* The project's notes: its first .md in tab order. Sent on every push so the class keeps
        them beside the lesson whichever tab is open here — before this, they
        reached the class only while the .md tab was selected. */
-    function liveNotes() {
+    function notesFile() {
       var md = tabOrder().filter(window.FlaskIDENotes.isMarkdown);
-      if (!md.length) return "";
-      return md[0] === current ? editor.getValue() : (files[md[0]] || "");
+      return md.length ? md[0] : null;
+    }
+
+    function liveNotes() {
+      var md = notesFile();
+      if (!md) return "";
+      return md === current ? editor.getValue() : (files[md] || "");
+    }
+
+    /* ------------------------------------------------------------ slides
+       Notes with `## ` headings are slides, and the class is sent ONE: the
+       one this teacher is on. Here the whole file stays in the editor, as
+       ever. The cutting happens in this browser, so the server stores and
+       students render exactly what they did before — the only new thing on
+       the wire is "3/5".
+
+       `slideAt` is an index that survives editing the notes mid-lesson, and
+       is clamped when slides are deleted out from under it. Two slides at
+       least, or it is not slides: a file with a single `## ` goes whole. */
+    var slideAt = 0;
+    var slideCtl = $("live-slides");
+    var slideLabel = $("slide-at");
+
+    function currentSlides() {
+      var cut = window.FlaskIDENotes.slides(liveNotes());
+      return cut.length >= 2 ? cut : null;
+    }
+
+    function paintSlides(cut) {
+      if (!slideCtl) return;
+      slideCtl.hidden = !(liveCode && cut);
+      if (slideCtl.hidden) return;
+      slideLabel.textContent = (slideAt + 1) + " / " + cut.length;
+      $("slide-prev").disabled = slideAt <= 0;
+      $("slide-next").disabled = slideAt >= cut.length - 1;
+    }
+
+    function moveSlide(by) {
+      var cut = currentSlides();
+      if (!liveCode || !cut) return;
+      slideAt = Math.max(0, Math.min(cut.length - 1, slideAt + by));
+      pushNow();                 // now, not on the next tick
+    }
+
+    if (slideCtl) {
+      $("slide-prev").addEventListener("click", function () { moveSlide(-1); });
+      $("slide-next").addEventListener("click", function () { moveSlide(1); });
+    }
+
+    /* The tail of what the console says. Trimmed here as well as on the
+       server, so a runaway loop does not send 200 KB every 400ms. */
+    var OUTPUT_CHARS = 16000;
+    function liveOutput() {
+      if (!hasRun || !out) return "";
+      var text = out.textContent || "";
+      return text.length > OUTPUT_CHARS ? text.slice(-OUTPUT_CHARS) : text;
+    }
+
+    /* What the class sees of the teacher's Run, beside their own.
+
+       A Flask project sends the page the preview is showing, and the path it
+       is showing it for — sent again whenever either changes, so following a
+       link here moves the class along too. It is a picture of the page and
+       nothing more: on their side the links and forms go nowhere, because
+       the app that would answer them is running in this browser.
+
+       A SQL project has no page; its answer is the results grid, which never
+       touches the console. So the grid goes instead, with just enough style
+       to read as a table. Built with textContent throughout (see paintSql),
+       and shown in a frame with no scripts, so a row holding markup is still
+       only text.
+
+       Wrapped in JSON so the path and the kind ride with the HTML. The
+       server stores it as an opaque string. */
+    var SQL_PAGE_STYLE = "<style>body{font:13px ui-monospace,Menlo,monospace;"
+      + "margin:10px 12px;color:#222}.sql-result{margin-bottom:18px}"
+      + ".sql-result-head{display:flex;justify-content:space-between;gap:12px;"
+      + "color:#777;font-size:11.5px}.sql-stmt{white-space:pre-wrap;margin:0}"
+      + "table{border-collapse:collapse;width:100%}th,td{text-align:left;"
+      + "padding:4px 10px;border-bottom:1px solid #ddd;white-space:nowrap}"
+      + "th{background:#f3f3f3}.sql-null{color:#999;font-style:italic}"
+      + "</style>";
+    function livePage() {
+      if (!hasRun) return "";
+      if (isSql()) {
+        var grid = $("sql-results");
+        var html = grid ? grid.innerHTML : "";
+        return html ? JSON.stringify({ sql: true, html: SQL_PAGE_STYLE + html }) : "";
+      }
+      if (!preview || !preview.shown) return "";
+      return JSON.stringify({ path: preview.path || "/", html: preview.shown });
     }
 
     function pushNow() {
@@ -740,13 +836,28 @@
       var name = current;
       var text = (name === current) ? editor.getValue() : (files[name] || "");
       var notes = liveNotes();
-      var stamp = name + "\u0000" + text + "\u0000" + notes;
+      var slide = "";
+      var cut = currentSlides();
+      if (cut) {
+        slideAt = Math.min(slideAt, cut.length - 1);
+        notes = cut[slideAt];
+        slide = (slideAt + 1) + "/" + cut.length;
+        /* With the notes tab open, the mirror shows that file too — whole,
+           which would put every slide on screen at once and defeat the
+           point. It gets the current slide like the notes pane does. */
+        if (name === notesFile()) text = notes;
+      }
+      paintSlides(cut);
+      var output = liveOutput();
+      var page = livePage();
+      var stamp = [name, text, notes, slide, output, page].join("\u0000");
       if (stamp === lastSent) return;      // nothing typed since last time
       lastSent = stamp;
       fetch("/api/live/" + encodeURIComponent(liveCode) + "/push", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: text, filename: name, notes: notes,
+                               slide: slide, output: output, page: page,
                                seq: nextSeq() })
       }).then(function (res) {
         if (res.status === 403 || res.status === 409) stopLive(true);
@@ -768,6 +879,7 @@
         liveBtn.textContent = "Go live";
         liveBtn.classList.remove("btn-live-on");
         liveChip.hidden = true;
+        paintSlides(null);
       }
     }
 
@@ -894,6 +1006,10 @@
           liveCode = data.code;
           liveFor = data.assignment_title || "";
           lastVersion = data.version || 0;
+          // Back on the slide the class is looking at, after a reload. A
+          // fresh lesson has none and starts at the beginning.
+          var at = /^(\d+)\//.exec(data.slide || "");
+          slideAt = at ? Math.max(0, parseInt(at[1], 10) - 1) : 0;
           lastSent = null;
           try { localStorage.setItem("flaskide-live-host", liveCode); } catch (e) {}
           paintLive();

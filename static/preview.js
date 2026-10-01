@@ -127,6 +127,12 @@
       this.bar = opts.bar || null;             // where the path is shown
       this.onStatus = opts.onStatus || (() => {});
       this.path = "/";
+      /* The HTML of the page on screen, as the app returned it — before the
+         shim goes in. A live lesson sends this to the class, and reads it
+         rather than the frame because the frame cannot be read: no
+         allow-same-origin. "" for an image or a download, which are not
+         pages anyone can be shown second-hand. */
+      this.shown = "";
       this.history = [];
       this._seq = 0;
 
@@ -150,8 +156,9 @@
       try {
         res = await runtime.request(method || "GET", path, form || null);
       } catch (err) {
-        this._paint("<pre>" + escapeHtml(String(err && err.message || err)) +
-                    "</pre>", false);
+        this.shown = "<pre>" + escapeHtml(String(err && err.message || err)) +
+                     "</pre>";
+        this._paint(this.shown, false);
         return;
       }
 
@@ -173,12 +180,14 @@
       if (!res.isText) {
         // An image or a download. Nothing to intercept inside it.
         const kind = res.headers["Content-Type"] || "application/octet-stream";
+        this.shown = "";
         await this._show((f) => {
           f.removeAttribute("srcdoc");
           f.src = "data:" + kind + ";base64," + res.body;
         });
         return;
       }
+      this.shown = res.body;
       await this._paint(res.body, true);
     }
 

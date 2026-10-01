@@ -392,6 +392,8 @@
     }
     seen = data.version;
     showNotes(data);
+    showTeacherOutput(data, data.initial);
+    showTeacherPage(data, data.initial);
   }
 
   /* The project's notes, in their own pane under the console. Re-rendered
@@ -402,12 +404,125 @@
   var notesBody = $("live-notes");
   var shownNotes = null;
 
+  var slideMark = $("live-slide");
+  var shownSlide = null;
+
+  /* Slides need nothing special here. When the teacher's notes are cut into
+     slides, `notes` is only the current one — the editor does the cutting —
+     and `slide` says where it is ("3/5"). A new slide is new notes, so it
+     renders through the same path; all this adds is the marker, and going
+     back to the top, because the last slide's scroll position means nothing
+     on the next one and a class would start reading it halfway down. */
   function showNotes(data) {
     if (!notesView || typeof data.notes !== "string") return;
-    if (data.notes === shownNotes) return;
+    var slide = typeof data.slide === "string" ? data.slide : "";
+    if (data.notes === shownNotes && slide === shownSlide) return;
+    var moved = slide !== shownSlide;
     shownNotes = data.notes;
+    shownSlide = slide;
+    if (slideMark) {
+      var m = slide.match(/^(\d+)\/(\d+)$/);
+      slideMark.textContent = m ? "Slide " + m[1] + " of " + m[2] : "";
+    }
     notesView.hidden = !data.notes.trim();
-    if (!notesView.hidden) window.FlaskIDENotes.render(notesBody, data.notes);
+    if (notesView.hidden) return;
+    window.FlaskIDENotes.render(notesBody, data.notes).then(function () {
+      if (moved) notesBody.scrollTop = 0;
+    });
+  }
+
+  // ------------------------------------------- what the teacher's Run made
+  //
+  // Their console and their page, each beside the student's own and never
+  // in it: the student's console is theirs, and their preview frame is what
+  // their own app answers into. Nothing from the network goes in either.
+  //
+  // Each comes to the front when it changes — that is the teacher pressing
+  // Run, or following a link, and wanting the class to look — unless the
+  // student's own app is running, when snatching the pane away would hide
+  // what they are waiting for. Then the tab is only marked.
+
+  var teacherOut = $("teacher-output");
+  var outMineTab = $("out-mine");
+  var outTeacherTab = $("out-teacher");
+  var clearBtn = $("clear");
+  var shownOutput = null;
+
+  function showOutputTab(teachers) {
+    if (!teacherOut) return;
+    teacherOut.hidden = !teachers;
+    outputEl.hidden = teachers;
+    outMineTab.classList.toggle("is-on", !teachers);
+    outTeacherTab.classList.toggle("is-on", teachers);
+    if (teachers) outTeacherTab.classList.remove("has-new");
+    clearBtn.hidden = teachers;               // Clear is for their own
+  }
+
+  function showTeacherOutput(data, quietly) {
+    if (!teacherOut || typeof data.output !== "string") return;
+    if (data.output === shownOutput) return;
+    shownOutput = data.output;
+    teacherOut.textContent = data.output;
+    teacherOut.scrollTop = teacherOut.scrollHeight;
+    if (!data.output) return;
+    outTeacherTab.hidden = false;
+    if (quietly) return;
+    if (running) outTeacherTab.classList.add("has-new");
+    else showOutputTab(true);
+  }
+
+  var teacherFrame = $("teacher-page");
+  var teacherWrap = $("teacher-page-wrap");
+  var pageMineTab = $("page-mine");
+  var pageTeacherTab = $("page-teacher");
+  var pageLabel = pageTeacherTab ? pageTeacherTab.textContent : "";
+  var shownPage = null;
+
+  function showPageTab(teachers) {
+    if (!teacherWrap) return;
+    teacherWrap.hidden = !teachers;
+    $("preview-mine").hidden = teachers;
+    var bar = $("preview-bar");
+    if (bar) bar.hidden = teachers;           // it drives their app, not this
+    var status = $("preview-status");
+    if (status) status.style.visibility = teachers ? "hidden" : "";
+    pageMineTab.classList.toggle("is-on", !teachers);
+    pageTeacherTab.classList.toggle("is-on", teachers);
+    if (teachers) pageTeacherTab.classList.remove("has-new");
+  }
+
+  /* `page` is JSON from the teacher's editor: {path, html} for a Flask page,
+     {sql: true, html} for a results grid. srcdoc is assigned only when it
+     changes, because every assignment rebuilds the frame and flashes white
+     — once a second, for a whole lesson, on thirty screens. */
+  function showTeacherPage(data, quietly) {
+    if (!teacherFrame || typeof data.page !== "string") return;
+    if (data.page === shownPage) return;
+    shownPage = data.page;
+    var got = {};
+    try { got = data.page ? JSON.parse(data.page) : {}; } catch (e) { got = {}; }
+    var html = typeof got.html === "string" ? got.html : "";
+    if (!html) return;
+    pageTeacherTab.textContent = got.sql
+      ? pageLabel.replace(/page$/, "results")
+      : pageLabel + (got.path ? " — " + got.path : "");
+    /* Links open "in a new tab", which the sandbox refuses as a popup: a
+       click does nothing, rather than navigating the frame to an error
+       page for a path only the teacher's app can answer. */
+    teacherFrame.srcdoc = '<base target="_blank">' + html;
+    pageTeacherTab.hidden = false;
+    if (quietly) return;
+    if (running) pageTeacherTab.classList.add("has-new");
+    else showPageTab(true);
+  }
+
+  if (teacherOut) {
+    outMineTab.addEventListener("click", function () { showOutputTab(false); });
+    outTeacherTab.addEventListener("click", function () { showOutputTab(true); });
+  }
+  if (teacherWrap) {
+    pageMineTab.addEventListener("click", function () { showPageTab(false); });
+    pageTeacherTab.addEventListener("click", function () { showPageTab(true); });
   }
 
   function setState(text, kind) {
@@ -418,7 +533,11 @@
 
   if (typeof L.body === "string") {
     showMirror({ body: L.body, version: L.version, filename: L.filename,
-                 notes: L.notes });
+                 notes: L.notes, slide: L.slide, output: L.output,
+                 page: L.page,
+                 // joining mid-lesson: offer the teacher's output and page,
+                 // but leave the student looking at their own until they change
+                 initial: true });
   }
 
   var POLL_MS = 1000;
@@ -508,6 +627,9 @@
 
   async function run() {
     if (running) return;
+    // Their Run, their console and their app.
+    showOutputTab(false);
+    showPageTab(false);
     setBusy(true);
     clearOutput();
     var project = {};
