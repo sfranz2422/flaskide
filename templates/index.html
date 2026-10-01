@@ -249,6 +249,18 @@
       </div>
       <div id="notes-body" class="notes-body prose"></div>
     </div>
+
+    {#  While live: the notes exactly as the class's Notes pane has them —
+        the one slide, when they are cut into slides. Without it the only
+        way to know what the class was reading was to walk over and look at
+        a student's screen. Same place as on theirs, under the right pane. #}
+    {% if is_teacher %}
+      <div id="class-view" class="subpane class-view" hidden>
+        <div class="pane-head"><span>Class sees</span>
+          <span id="class-slide" class="dim"></span></div>
+        <div id="class-notes" class="notes-body prose"></div>
+      </div>
+    {% endif %}
   </section>
 
 </main>

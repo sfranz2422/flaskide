@@ -381,6 +381,12 @@ check("the editor offers Go live to a teacher", 'id="go-live"' in
 r = student.get("/")
 check("  and does not offer it to a student", 'id="go-live"' not in
       r.get_data(as_text=True))
+check("  nor a copy of what the class's notes pane shows",
+      'id="class-view"' not in r.get_data(as_text=True))
+r = teacher.get("/")
+check("the teacher's editor has a pane showing the slide the class is on",
+      'id="class-view"' in r.get_data(as_text=True)
+      and 'id="class-notes"' in r.get_data(as_text=True))
 
 
 # ------------------------------------------------ keeping their own copy
@@ -1281,6 +1287,22 @@ console.log(JSON.stringify({
 else:
     check("node is available to run the slide splitter", False,
           "brew install node")
+
+# The teacher sees what the class's Notes pane shows, fed from what is sent.
+check("the teacher sees what the class's notes pane shows",
+      "paintClassView(notes, slide);" in _push_fn
+      and _push_fn.index("notes = cut[slideAt];")
+          < _push_fn.index("paintClassView(notes, slide);")
+          < _push_fn.index("if (stamp === lastSent) return;"),
+      "fed anything but what is sent, it can show a slide the class is not on")
+_class_fn = fn_body(_push, "paintClassView")
+check("  re-rendered only when it changes",
+      "if (notes === classShownNotes && slide === classShownSlide) return;"
+      in _class_fn,
+      "pushNow runs every tick; re-rendering resets the teacher's scroll")
+check("  and put away when the lesson ends",
+      re.search(r"function paintLive\(\)[\s\S]*?\} else \{[\s\S]*?paintClassView\(null, \"\"\);",
+                _push) is not None)
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

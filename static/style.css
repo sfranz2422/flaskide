@@ -1227,3 +1227,12 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 /* Changed while the student's own app was running, so it did not jump to
  * the front; a dot says there is something new behind it. */
 .out-tab.has-new::after { content: " •"; color: var(--accent); }
+
+/* The teacher's copy of the class's Notes pane, under the preview while
+ * live. A fixed share of the column, as on the student's page, so neither
+ * one can squeeze the other to nothing. */
+.pane-right .class-view {
+  flex: 1 1 45%;
+  border-top: 1px solid var(--line);
+}
+.pane-right .class-view[hidden] { display: none; }
