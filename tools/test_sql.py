@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SQL mode, run against real SQLite.
+r"""SQL mode, run against real SQLite.
 
     python3 tools/test_sql.py
 
@@ -102,6 +102,23 @@ def load_bridge(project_dir):
 project = tempfile.mkdtemp(prefix="flaskide-test-")
 bridge = load_bridge(project)
 check("the bridge imports the way the browser receives it", True)
+
+# And without a warning. A SyntaxWarning prints on every Run in the browser's
+# console and nobody reads it, and newer Pythons are making an invalid escape
+# an error -- at which point every Run dies at import. It happened once: a
+# docstring explaining the doubled backslashes contained one itself.
+import warnings
+_bridge_src = unescape_template_literal(re.search(
+    r"const BRIDGE = `([\s\S]*?)\n`;",
+    (ROOT / "static" / "flask.js").read_text()).group(1))
+with warnings.catch_warnings():
+    warnings.simplefilter("error")
+    try:
+        compile(_bridge_src, "flask.js:BRIDGE", "exec")
+        _warned = ""
+    except SyntaxError as err:
+        _warned = str(err)
+check("  and compiles with no SyntaxWarning", not _warned, _warned)
 
 SCHEMA = (EXAMPLES / "schema.sql").read_text()
 QUERY = (EXAMPLES / "query.sql").read_text()

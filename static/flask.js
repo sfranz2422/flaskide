@@ -193,14 +193,18 @@ def _flaskide_sql_statements(text):
 
 
 def _flaskide_sql_has_code(chunk):
-    """Is there anything here but comments and whitespace?
-
-    THE DOUBLED BACKSLASHES BELOW ARE NOT A TYPO. This whole bridge is a
-    JavaScript template literal, and JavaScript eats one level of escaping
-    before Python ever sees the text: \\* here arrives as \* there. Written
-    singly, the regex arrives as /*.*?*/ -- "nothing to repeat" -- and every
-    Run dies at import time, before a student has typed anything.
-    """
+    # Is there anything here but comments and whitespace?
+    #
+    # THE DOUBLED BACKSLASHES BELOW ARE NOT A TYPO. This whole bridge is a
+    # JavaScript template literal, and JavaScript eats one level of escaping
+    # before Python ever sees the text: \\* here arrives as \* there. Written
+    # singly, the regex arrives as /*.*?*/ -- "nothing to repeat" -- and every
+    # Run dies at import time, before a student has typed anything.
+    #
+    # A comment and not a docstring, for the same reason: a docstring is a
+    # string, so the \* above reached Python as an invalid escape and every
+    # Run printed a SyntaxWarning -- which newer Pythons are turning into an
+    # error. Comments are not parsed for escapes at all.
     import re
     bare = re.sub(r"/\\*.*?\\*/", " ", chunk, flags=re.S)
     bare = re.sub(r"--[^\\n]*", " ", bare)
