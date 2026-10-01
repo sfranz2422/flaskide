@@ -1152,19 +1152,39 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .preview-wrap {
   flex: 1 1 auto;
   min-height: 0;
+  position: relative;
   background: #fff;
 }
+/* STACKED, like .preview-frame in the editor, because it is the same
+ * preview.js and it double-buffers: the first Run adds a second iframe
+ * beside the first. Left in the flow, that second frame sat UNDER the
+ * first — below the preview, over the console and the notes — so the
+ * student's page was painted across the panes beneath it and the preview
+ * itself stayed blank. */
 .preview-wrap iframe {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   border: 0;
   display: block;
 }
+.preview-wrap iframe.is-back {
+  opacity: 0;
+  pointer-events: none;
+}
 /* .preview-wrap sets no display, but say so: the teacher's page and the
    student's take turns in the same place, and a rule that set display later
    would put both on screen at once. */
 .preview-wrap[hidden] { display: none; }
-.live-console { flex: 0 0 28%; min-height: 90px; }
+/* The console is a strip, not a pane. At 28% it took more of the column
+ * than the notes under it, and on a classroom laptop the notes were left a
+ * hand's width of text — the part of the page the lesson is actually in.
+ * Its <pre>s fill the strip here rather than taking the 38% the editor's
+ * console takes, which inside a strip this short left a gap under them. */
+.live-console { flex: 0 0 16%; min-height: 80px; }
+.live-console #output,
+.live-console #teacher-output { flex: 1 1 auto; min-height: 0; }
 
 /* The path bar over the live preview, the same shape the editor's has. */
 .preview-bar {
@@ -1184,11 +1204,33 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
  * the column, like the console's, so the preview keeps the most room and
  * long notes scroll inside their own pane rather than pushing it away. */
 .live-right .live-notes {
-  flex: 0 0 30%;
+  flex: 0 0 38%;
   min-height: 110px;
   border-top: 1px solid var(--line);
 }
 .live-right .live-notes[hidden] { display: none; }
+
+/* The student's file tabs share the pane head with "Your turn" and the
+ * saved note, so the tabs are the part that gives: they scroll sideways,
+ * and the notes beside them shorten with an ellipsis rather than wrapping
+ * the head onto two lines. */
+.mine-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding-left: 14px;
+}
+.mine-label,
+.mine-head .linkbtn { flex: 0 0 auto; white-space: nowrap; }
+.live-mine .pane-head-tabs > .dim {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Slides, in the head of the teacher's Class sees pane while live:
  * ◀ 3 / 5 ▶ Show all. Sized down to fit a pane head rather than the top bar,

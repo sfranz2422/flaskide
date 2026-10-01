@@ -112,15 +112,17 @@
     }
   });
 
-  /* Completion of the student's own names, as in the editor. Their own code
-     is the only source — never the teacher's pane, which would be the copy
-     button by another route — and nothing is offered in a SQL lesson. The
-     check is a function because isSql() is defined further down and reads
-     the lesson's filename at the moment of typing. */
+  /* Completion of the student's own names, as in the editor. Their own
+     Python is the only source — never the teacher's pane, which would be the
+     copy button by another route — and only while a .py tab is open: a word
+     typed into a template or a query is not a Python name. The check is a
+     function because it must read the tab open at the moment of typing. */
   window.FlaskIDEComplete.attach(mine, function () {
-    return !isSql();
+    return window.FlaskIDEComplete.isPy(active);
   }, function () {
-    return [mine.getValue()];
+    return Object.keys(docs).filter(function (n) {
+      return /\.py$/i.test(n);
+    }).map(function (n) { return docs[n].getValue(); });
   });
 
   /* The student's own work, in their browser only. There is no account
@@ -143,19 +145,165 @@
   if (start) mine.setValue(start);
   mine.clearHistory();
 
+  /* ------------------------------------------------------------ their files
+   *
+   * The entry file and the rest of their project, each its own CodeMirror
+   * document swapped into `mine`, as the editor keeps them — so switching
+   * tabs keeps the caret and the undo history, and there is still only the
+   * one editor a student types in. The mirror never fills any of these.
+   *
+   * WHICH FILE IS THE ENTRY comes from the server (L.entry), which reads it
+   * off the project's own files the way the rest of FlaskIDE does: query.sql
+   * present means SQL. It is never retyped here. Only a lesson with no
+   * assignment has no files to ask, and the server then goes by the
+   * teacher's open file, which is the rule this page always used.
+   *
+   * The other files are kept in this browser beside the entry, under their
+   * own key, and the same rule decides where they start: what this browser
+   * has wins, else the project's own files (their draft's, or the
+   * assignment's). The entry's key is unchanged, so a browser that kept a
+   * lesson before tabs existed still gets its typing back.
+   *
+   * A .md file stays out of the strip. It is the project's notes, which the
+   * class already reads in the Notes pane, but it is still saved: a save
+   * that left it out would delete the assignment's notes. */
+  var MAIN = L.entry || "app.py";
+  var NAME_OK = /^(?:(?:templates|static)\/)?[A-Za-z0-9][A-Za-z0-9 _-]{0,50}\.[A-Za-z0-9]{1,8}$/;
+  var FILES_KEY = DRAFT_KEY + "-files";
+  var docs = {};
+  var active = MAIN;
+  var tabsEl = $("mine-tabs");
+  docs[MAIN] = mine.getDoc();
+  mine.setOption("mode", modeFor(MAIN));
+
+  var keptFiles = null;
+  try {
+    keptFiles = JSON.parse(window.localStorage.getItem(FILES_KEY) || "null");
+  } catch (e) { /* blocked, or not ours to read: the project's own files */ }
+  var startFiles = (keptFiles && typeof keptFiles === "object")
+    ? keptFiles : (L.starterFiles || {});
+  Object.keys(startFiles).forEach(function (name) {
+    if (name !== MAIN && typeof startFiles[name] === "string") {
+      docs[name] = CodeMirror.Doc(startFiles[name], modeFor(name));
+    }
+  });
+
+  // The same modes the editor gives each kind of file (see app.js).
+  function modeFor(name) {
+    if (/\.sql$/i.test(name)) return "text/x-sql";
+    if (/\.py$/i.test(name)) return "python";
+    if (/\.css$/i.test(name)) return "css";
+    if (/\.(html|htm|jinja2?)$/i.test(name)) return "htmlmixed";
+    return "text/plain";
+  }
+
+  /* The entry file, whichever tab is open. NOT mine.getValue(): with a
+     template showing, that is the template, and Save would put HTML into
+     app.py. */
+  function mainSource() { return docs[MAIN].getValue(); }
+
+  function dataFiles() {
+    var out = {};
+    Object.keys(docs).forEach(function (n) {
+      if (n !== MAIN) out[n] = docs[n].getValue();
+    });
+    return out;
+  }
+
+  /* The whole project, as the runtime and /api/draft both want it. */
+  function allFiles() {
+    var out = dataFiles();
+    out[MAIN] = mainSource();
+    return out;
+  }
+
+  function isNotes(name) {
+    return window.FlaskIDENotes && window.FlaskIDENotes.isMarkdown(name);
+  }
+
+  function renderTabs() {
+    if (!tabsEl) return;
+    tabsEl.textContent = "";
+    var names = [MAIN].concat(Object.keys(docs).filter(function (n) {
+      return n !== MAIN && !isNotes(n);
+    }).sort());
+    names.forEach(function (name) {
+      var tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "tab" + (name === active ? " tab-on" : "");
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(name === active));
+      tab.textContent = name;
+      tab.addEventListener("click", function () { switchTo(name); });
+      tabsEl.appendChild(tab);
+    });
+  }
+
+  function switchTo(name) {
+    if (!docs[name] || name === active) return;
+    active = name;
+    mine.swapDoc(docs[name]);
+    mine.setOption("mode", modeFor(name));
+    renderTabs();
+    mine.focus();
+  }
+
+  function keepInBrowser() {
+    try {
+      window.localStorage.setItem(DRAFT_KEY, mainSource());
+      window.localStorage.setItem(FILES_KEY, JSON.stringify(dataFiles()));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /* A file of their own, for following a teacher who makes one mid-lesson —
+     a second template, a stylesheet. Same names the editor allows, and the
+     server checks again. No way to delete one here, on purpose: the server
+     reads an empty map from this page as "leave the files alone" (see
+     live_keep), which is only safe while nothing on this page can empty it. */
+  var newFileBtn = $("mine-new-file");
+  if (newFileBtn) {
+    newFileBtn.addEventListener("click", function () {
+      var name = window.prompt(
+        "New file. A template goes in templates/ and a stylesheet in " +
+        "static/ — that is where Flask looks for them.\n\n" +
+        "For example: templates/about.html", "templates/");
+      if (name === null) return;
+      name = name.trim();
+      if (!name) return;
+      if (docs[name]) { switchTo(name); return; }
+      if (!NAME_OK.test(name) || isNotes(name)
+          || name === L.entry || name === L.sqlEntry) {
+        window.alert("'" + name + "' will not work.\n\nUse letters, digits, " +
+                     "dashes and underscores, end with an extension like " +
+                     ".py, .html or .css, and put it either at the top level " +
+                     "or in templates/ or static/.");
+        return;
+      }
+      docs[name] = CodeMirror.Doc("", modeFor(name));
+      switchTo(name);
+      changed();
+    });
+  }
+
+  renderTabs();
+
   var saveTimer = null;
-  mine.on("change", function () {
+  /* Every change in any tab, and a new file, which fires no editor event. */
+  function changed() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
-      try {
-        window.localStorage.setItem(DRAFT_KEY, mine.getValue());
+      if (keepInBrowser()) {
         note("Saved on this computer");
-      } catch (e) {
+      } else {
         note("Could not save here — keep this tab open");
       }
       autosave();
     }, 500);
-  });
+  }
+  mine.on("change", changed);
 
   /* ------------------------------------------------- into their projects
    *
@@ -221,11 +369,10 @@
     turnInBtn.disabled = true;
     /* SAVE FIRST, THEN HAND IN WHAT WAS SAVED.
        
-       A WebIDE project is its files, and turning in replaces them with what
-       is posted. This pane edits one file, so posting just that would drop
-       any other file the assignment shipped — at the exact moment the work
-       is handed in, and without a word. Keeping first merges the edit into
-       the draft and hands back the whole map; that map is what goes in. */
+       A FlaskIDE project is its files, and turning in replaces them with
+       what is posted. Keeping first writes every tab into the draft and
+       hands back the whole map as saved; that map is what goes in, so what
+       the teacher receives is exactly what the draft holds. */
     keep().then(function (saved) {
       if (!saved) {
         turnInBtn.disabled = false;
@@ -255,7 +402,8 @@
     return fetch("/api/live/" + encodeURIComponent(L.code) + "/keep", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: mine.getValue() })
+      body: JSON.stringify({ code: mainSource(), files: dataFiles(),
+                             entry: MAIN })
     }).then(function (res) { return res.json(); })
       .then(function (data) { return data && !data.error ? data : null; });
   }
@@ -264,7 +412,7 @@
 
   function startDraft() {
     if (!L.signedIn || pendingSave) return;
-    var text = mine.getValue();
+    var text = mainSource();
     if (!text.trim()) { note("Type something first"); return; }
     pendingSave = true;
     /* /api/live/<code>/keep, NOT /api/draft.
@@ -279,7 +427,8 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         code: text,                       // theirs, never the mirror's
-        files: {}
+        files: dataFiles(),
+        entry: MAIN
       })
     }).then(function (res) { return res.json(); })
       .then(function (data) {
@@ -302,8 +451,12 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        code: mine.getValue(),            // theirs, never the mirror's
-        files: {},
+        /* Every file, entry included, because this route REPLACES the
+           project with what it is sent — and refuses a map without an entry.
+           It was sent `files: {}` once, when the page had one editor, and
+           every autosave from the live page came back 400 and saved nothing;
+           the "Saved" on screen was the last explicit Save, never updated. */
+        files: allFiles(),
         title: L.title || "Live lesson"
       })
     }).then(function (res) {
@@ -368,8 +521,11 @@
       mirrorNotes.hidden = true;
       var wasHidden = mirrorWrap.hidden;
       mirrorWrap.hidden = false;
-      // The ONLY setValue on the mirror, and there is no setValue on `mine`
-      // anywhere below this line.
+      // A template the teacher opens is coloured as HTML, a query as SQL.
+      var mode = modeFor(data.filename || "");
+      if (mirror.getOption("mode") !== mode) mirror.setOption("mode", mode);
+      // The ONLY setValue on the mirror. `mine` is never given anything from
+      // the network: its tabs are filled from the page and their browser.
       if (typeof data.body === "string" && data.body !== mirror.getValue()) {
         var scroll = mirror.getScrollInfo();
         mirror.setValue(data.body);
@@ -598,8 +754,8 @@
   // address bar: the page on screen is one route's answer.
   //
   // A project here can also be SQL rather than Flask. Which one this is is
-  // decided by the file the lesson is editing, not by a setting, so a SQL
-  // lesson and a Flask lesson need nothing switched by hand.
+  // decided by the student's own entry file (see MAIN), not by a setting, so
+  // a SQL lesson and a Flask lesson need nothing switched by hand.
 
   function write(text, cls) {
     var span = document.createElement("span");
@@ -615,8 +771,7 @@
   var preview = null;
   var running = false;
 
-  function isSql() { return /\.sql$/i.test(L.filename || ""); }
-  function entryName() { return isSql() ? "query.sql" : "app.py"; }
+  function isSql() { return MAIN === L.sqlEntry; }
 
   function setBusy(on) {
     running = on;
@@ -667,17 +822,17 @@
     showPageTab(false);
     setBusy(true);
     clearOutput();
-    var project = {};
-    project[entryName()] = mine.getValue();   // theirs, never the mirror's
-    // The lesson's database, rendered into the page (see live_page). Never
-    // the teacher's copy from the network: what their query runs against is
-    // the assignment's, exactly as at /a/<slug>.
-    if (L.schema) project["schema.sql"] = L.schema;
+    /* EVERY TAB, not the entry alone. Run once sent only the one editor, so
+       an app calling render_template("index.html") failed on a template that
+       was sitting in their project, and a SQL lesson had no schema.sql to
+       build its database from. The database is their own schema.sql, from
+       the page (see live_page) — never the teacher's copy from the network. */
+    var project = allFiles();                 // theirs, never the mirror's
     try {
-      if (isSql() && !L.schema) {
-        /* A lesson with no assignment has no database to give them, and
-           runSql's own message says to add a schema.sql — which this page
-           has no way to do. Say what is actually wrong, and whose move it is. */
+      if (isSql() && !project["schema.sql"]) {
+        /* A lesson with no assignment has no database to give them. + File
+           could add a schema.sql, but writing the lesson's database is not
+           the student's job — say what is actually wrong, and whose move it is. */
         write("This lesson has no database for your query to run against.\n"
               + "Your teacher can fix it by going live with an assignment "
               + "that has a schema.sql.\n", "err");

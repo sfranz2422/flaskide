@@ -1788,6 +1788,16 @@ def live_keep(code):
         if len(source.encode("utf-8")) > MAX_FILE_BYTES:
             return jsonify(error="That program is too large to save."), 413
 
+        # The project's other files, from the tabs on the live page. An EMPTY
+        # or missing map means "leave them alone", never "delete them all":
+        # the live page has no way to remove a file, so an empty map can only
+        # be an editor tab still running the code from before it had tabs —
+        # which sent `files: {}` — and taken at its word it would strip the
+        # templates out of a Flask assignment without a word.
+        rest = data.get("files")
+        if not isinstance(rest, dict) or not rest:
+            rest = None
+
         item = None
         if live.assignment_id:
             item = db.query(accounts.Assignment).filter_by(
@@ -1801,24 +1811,38 @@ def live_keep(code):
             draft = db.query(accounts.Draft).filter_by(
                 owner_id=user.id, assignment_id=item.id).first()
 
-        # WEBIDE KEEPS EVERYTHING IN `files`, and `code` is always "" — see
-        # /api/draft. The live pane edits one file, the entry page, so the
-        # rest of a project are left exactly as they were: an assignment that
-        # ships a style.css must not lose it because a student typed in the
-        # HTML pane.
+        # WHICH FILE THE PANE EDITS. FlaskIDE has two kinds of project and
+        # they have different entry points; a live save into a SQL assignment
+        # must land in query.sql, not create a stray app.py beside it that
+        # nothing runs. The project already saved decides when there is one.
+        # Only a lesson with no project behind it at all takes the page's
+        # word for it (`entry`, which live_page chose from the teacher's file).
+        base = (draft.file_map() if draft is not None else
+                item.file_map() if item is not None else {})
+        if SQL_ENTRY in base or ENTRY in base:
+            entry = SQL_ENTRY if SQL_ENTRY in base else ENTRY
+        else:
+            entry = data.get("entry") if data.get("entry") in (ENTRY, SQL_ENTRY) \
+                else ENTRY
+
+        project = dict(rest if rest is not None else base)
+        project[entry] = source
+        # Checked whole, the way /api/draft checks it, so a name the editor
+        # would refuse cannot get into a project through this door instead.
+        project, file_error = validate_files(project)
+        if file_error:
+            return jsonify(error=file_error), 400
+
+        # FLASKIDE KEEPS EVERYTHING IN `files`, and `code` is always "" — see
+        # /api/draft. With no tabs sent, the rest of the project is left
+        # exactly as it was: an assignment that ships templates/index.html
+        # must not lose it because a student typed in app.py.
         if draft is None:
-            # SEEDED FROM THE ASSIGNMENT, exactly as /a/<slug> seeds one.
-            # Without this a student who joins the lesson without ever
-            # opening the handout link gets a project missing every file
-            # the assignment shipped — the stylesheet, the images list —
-            # and only finds out when their page renders unstyled.
-            start = dict(item.file_map()) if item is not None else {}
-            # WHICH FILE THE PANE EDITS. FlaskIDE has two kinds of project
-            # and they have different entry points; a live save into a SQL
-            # assignment must land in query.sql, not create a stray app.py
-            # beside it that nothing runs.
-            entry = SQL_ENTRY if SQL_ENTRY in start else ENTRY
-            start[entry] = source
+            # SEEDED FROM THE ASSIGNMENT, exactly as /a/<slug> seeds one
+            # (`base` above). Without this a student who joins the lesson
+            # without ever opening the handout link gets a project missing
+            # every file the assignment shipped — the templates, the schema —
+            # and only finds out when render_template cannot find a page.
             draft = accounts.Draft(
                 slug=accounts.new_id(db, accounts.Draft),
                 owner_id=user.id,
@@ -1826,14 +1850,11 @@ def live_keep(code):
                 app=APP_NAME,
                 title=(item.title if item else (live.title or "Live lesson")),
                 code="",
-                files=json.dumps(start),
+                files=json.dumps(project),
             )
             db.add(draft)
         else:
-            keep = draft.file_map()
-            entry = SQL_ENTRY if SQL_ENTRY in keep else ENTRY
-            keep[entry] = source
-            draft.files = json.dumps(keep)
+            draft.files = json.dumps(project)
             draft.updated_at = accounts.now()
 
         db.commit()
@@ -1905,12 +1926,20 @@ def live_page(code):
         # starting point, like opening the link, not the teacher reaching into
         # their editor.
         starter = ""
-        # The lesson's schema.sql, from the same place. The live editor holds
-        # one file, and without this a student's Run had no database at all:
-        # in a SQL lesson every Run stopped at "There is no schema.sql", and
-        # a Flask app that opens data.db found it empty. Same rule as the
-        # starter — their draft's copy if they have one, else the assignment's.
-        schema = ""
+        # THE REST OF THE PROJECT, from the same place, shown as tabs beside
+        # the entry: templates/, static/, schema.sql. The live page was the
+        # entry file alone once, and a student could not see the template the
+        # lesson was about — nor run an app that rendered it, because Run sent
+        # app.py on its own and render_template had nothing to find. Before
+        # that it was worse in a SQL lesson: no schema.sql, so every Run
+        # stopped at "There is no schema.sql".
+        starter_files = {}
+        # Which file is the entry, decided here so live.js never has to guess
+        # it: the project's own files say, as everywhere else in FlaskIDE.
+        # Only a lesson with no assignment has no files to ask, and then the
+        # teacher's open file says — the rule this page always used.
+        entry = SQL_ENTRY if (live.filename or "").lower().endswith(".sql") \
+            else ENTRY
         if item is not None:
             source = item.file_map()
             if user is not None:
@@ -1920,7 +1949,7 @@ def live_page(code):
                     source = mine.file_map()
             entry = SQL_ENTRY if SQL_ENTRY in source else ENTRY
             starter = source.get(entry, "")
-            schema = source.get(SCHEMA, "")
+            starter_files = {k: v for k, v in source.items() if k != entry}
 
         ctx = user_context(db)
         ctx.update(
@@ -1931,7 +1960,9 @@ def live_page(code):
             assignment=item,
             submitted_at=submitted_at,
             starter=starter,
-            schema=schema,
+            starter_files=starter_files,
+            entry=entry,
+            sql_entry=SQL_ENTRY,
             error="",
         )
         return render_template("live.html", **ctx)

@@ -187,10 +187,18 @@ check("  and attaches it to the editor, for .py files only",
 check("the live page loads it and the popup",
       "complete.js" in live and "show-hint.min.js" in live
       and "show-hint.min.css" in live)
-check("  and attaches it to the student's own editor, not in a SQL lesson",
+# For .py tabs only, as in the editor — the live pane has tabs now, so a
+# SQL lesson is no longer the only place a word is not a Python name: a
+# template or a stylesheet is open half the time.
+check("  and attaches it to the student's own editor, for .py tabs only",
       "FlaskIDEComplete.attach(mine" in live_js
-      and "return !isSql();" in live_js)
+      and "return window.FlaskIDEComplete.isPy(active);" in live_js)
+# Their own .py files, read from their own documents — never the mirror,
+# which would be the copy button by another route.
+_src = live_js[live_js.index("FlaskIDEComplete.attach(mine"):]
+_src = _src[:_src.index("});")]
 check("  with the student's own code as the only source",
-      "return [mine.getValue()];" in live_js)
+      "docs[n].getValue()" in _src and "mirror" not in _src
+      and "/\\.py$/i.test(n)" in _src)
 
 done()

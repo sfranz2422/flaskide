@@ -520,7 +520,7 @@ check("  and reloading the editor does not drop it",
 
 def starter_of(page):
     """What the page tells live.js to start the student's editor with."""
-    m = re.search(r"^\s*starter: (.*)$", page, re.M)
+    m = re.search(r"^\s*starter: (.*?),?$", page, re.M)
     if not m:
         return None
     try:
@@ -640,6 +640,62 @@ finally:
 check("  and the project's other files survived being handed in",
       "templates/home.html" in kept, sorted(kept))
 
+# THE REST OF THE PROJECT, AS TABS. The live page was app.py alone, so a
+# student could not see the template the lesson was about, and a Run of an
+# app that rendered it failed on a file sitting in their own project. The
+# page is handed the same files the handout link would open — their
+# draft's — and a save carries the tabs back.
+def page_value(page, key):
+    m = re.search(r"^\s*%s: (.*?),?$" % key, page, re.M)
+    try:
+        return json.loads(m.group(1)) if m else None
+    except ValueError:
+        return "<not JSON: %s>" % m.group(1)
+
+
+def kept_now():
+    db = F.SessionLocal()
+    try:
+        return db.query(accounts.Draft).filter_by(slug=KEPT).first().file_map()
+    finally:
+        db.close()
+
+
+r = student.post("/api/live/%s/keep" % LESSON,
+                 json={"code": "# my work",
+                       "files": {"templates/home.html": "<h1>mine</h1>",
+                                 "static/site.css": "h1 { color: red }"}})
+check("a save from the live page keeps what they typed in the other tabs",
+      r.status_code == 200 and kept_now() == {
+          "app.py": "# my work", "templates/home.html": "<h1>mine</h1>",
+          "static/site.css": "h1 { color: red }"}, kept_now())
+check("  and hands back the project as saved, for Turn in",
+      r.get_json().get("files") == kept_now(), r.get_json().get("files"))
+# An empty map is an old editor tab from before the tabs, which sent `{}`
+# on every save. Taken literally it would delete every template.
+r = student.post("/api/live/%s/keep" % LESSON,
+                 json={"code": "# my work", "files": {}})
+check("  while an empty map leaves the files alone",
+      r.status_code == 200 and "static/site.css" in kept_now(), sorted(kept_now()))
+r = student.post("/api/live/%s/keep" % LESSON,
+                 json={"code": "# my work", "files": {"../x.html": "no"}})
+check("  and a file name the editor would refuse is refused here too",
+      r.status_code == 400 and "../x.html" not in kept_now(), r.status_code)
+
+# Their draft's files — static/site.css is in it and not in the assignment —
+# so this cannot pass on the assignment's alone. The entry is left out: it
+# is `starter`, and a second copy in the tabs would be two app.py's.
+_mine_page = student.get("/live/%s" % LESSON).get_data(as_text=True)
+check("the live page hands the student their project's other files",
+      page_value(_mine_page, "starterFiles")
+      == {k: v for k, v in kept_now().items() if k != "app.py"},
+      page_value(_mine_page, "starterFiles"))
+check("  and a student with no draft gets the assignment's",
+      page_value(stranger.get("/live/%s" % LESSON).get_data(as_text=True),
+                 "starterFiles") == {"templates/home.html": "<h1>hi</h1>"})
+check("  naming app.py as the file the pane starts on",
+      page_value(_mine_page, "entry") == "app.py", page_value(_mine_page, "entry"))
+
 seen_by_teacher = teacher.get("/teacher/" + hw).get_data(as_text=True)
 check("  and it reaches the teacher's dashboard",
       "A Student" in seen_by_teacher)
@@ -716,8 +772,8 @@ check("  and a newcomer on the assignment's query.sql",
 # to send only that — so in a SQL lesson every Run stopped at "There is no
 # schema.sql", and nobody on the live page had ever seen a query result.
 def schema_of(page):
-    m = re.search(r'^\s*schema: (".*?"(?<!\\")),\s*$', page, re.M)
-    return json.loads(m.group(1)) if m else None
+    # schema.sql reaches the page as one of the student's tabs now
+    return (page_value(page, "starterFiles") or {}).get("schema.sql")
 
 check("a SQL lesson gives the student's Run the assignment's schema.sql",
       schema_of(stranger.get("/live/%s" % sql_lesson).get_data(as_text=True))
@@ -739,6 +795,35 @@ check("  saving again still writes query.sql",
       kept_sql.get("query.sql") == "SELECT a, b FROM t;"
       and "app.py" not in kept_sql,
       sorted(kept_sql))
+check("  and the page names query.sql as the entry, so Run is SQL",
+      page_value(student.get("/live/%s" % sql_lesson).get_data(as_text=True),
+                 "entry") == "query.sql")
+# With the tabs, the page's own `entry` says which file the code is. Even
+# a page claiming app.py cannot turn a SQL draft into a Flask one: the
+# project already saved decides.
+r = student.post("/api/live/%s/keep" % sql_lesson,
+                 json={"code": "SELECT 2;", "entry": "app.py",
+                       "files": {"schema.sql": "CREATE TABLE t (a, b);"}})
+kept_sql = r.get_json()["files"]
+check("  and a page that names the wrong entry cannot change the kind",
+      kept_sql.get("query.sql") == "SELECT 2;" and "app.py" not in kept_sql,
+      sorted(kept_sql))
+
+# A SQL lesson with no assignment has no files to say which kind it is.
+# The teacher's open file says, as it always did on this page — and Save
+# then has to land in that same file.
+teacher.post("/api/live/%s/stop" % sql_lesson)
+bare_sql = teacher.post("/api/live/start",
+                        json={"body": "SELECT 1;", "filename": "query.sql",
+                              "assignment": ""}).get_json()["code"]
+check("a SQL lesson with no assignment starts the pane on query.sql",
+      page_value(stranger.get("/live/%s" % bare_sql).get_data(as_text=True),
+                 "entry") == "query.sql")
+r = student.post("/api/live/%s/keep" % bare_sql,
+                 json={"code": "SELECT 3;", "entry": "query.sql"})
+check("  and saving it keeps query.sql, not an app.py full of SQL",
+      r.status_code == 200 and r.get_json()["files"] == {"query.sql": "SELECT 3;"},
+      r.get_json())
 
 
 # ------------------------------------------------------------------ ending
@@ -910,10 +995,38 @@ def editors_behind(field):
     return found
 
 
+# `mainSource()` is the entry's document, whichever tab is showing.
+# Resolved to the editor that document belongs to, so a mainSource() that
+# read the mirror fails here rather than slipping past as unknown.
+main_ok = (re.search(r"function mainSource\(\) \{ return docs\[MAIN\]\.getValue\(\); \}",
+                     live_code) is not None
+           and re.findall(r"docs\[MAIN\] *= *([^;]+);", live_code) == ["mine.getDoc()"])
+_real_code = live_code
+live_code = live_code.replace("mainSource()",
+                              "mine.getValue()" if main_ok else "?mainSource()")
 saved_from = editors_behind("code")
+live_code = _real_code
 check("  and what is saved to their projects is their editor, not the mirror",
       bool(saved_from) and saved_from == {"mine"},
       "saved from: %s" % sorted(saved_from))
+
+# THE OTHER TABS ARE THEIRS TOO. Every one is a document made here, from
+# the page or their browser — and none is ever filled from the mirror or
+# the poll's data, nor written into after it is made.
+doc_fills = re.findall(r"docs\[[^\]]+\] *= *([^;]+);", live_code)
+check("  and every other tab is filled from the page or their browser",
+      bool(doc_fills) and all("mirror" not in f and "data." not in f
+                              for f in doc_fills),
+      doc_fills)
+check("  and never written into afterwards",
+      not re.search(r"docs\[[^\]]+\]\.(setValue|replaceRange)\(", live_code))
+check("  every save carries those tabs, never an empty map",
+      "files: {}" not in live_code
+      and len(re.findall(r"files: dataFiles\(\)", live_code)) == 2
+      and "files: allFiles()" in live_code,
+      "the live autosave sent {} and every one came back 400")
+check("  with tabs on the page to switch between them",
+      'id="mine-tabs"' in page and "starterFiles:" in page)
 
 check("  and nothing in the polling path touches it at all",
       "mine.setValue(" not in after_mirror,
@@ -934,6 +1047,31 @@ mirror_css = mirror_css[:mirror_css.index("}")]
 # and both passed a deliberately broken stylesheet.
 def declares(block, prop, value):
     return re.search(r"(?m)^\s*%s:\s*%s\s*;" % (prop, value), block) is not None
+
+
+def rule(selector):
+    """The declarations of the one rule whose selector list is exactly this."""
+    m = re.search(r"(?m)^%s \{([^}]*)\}" % re.escape(selector), css)
+    return m.group(1) if m else ""
+
+
+# THE STUDENT'S PREVIEW IS STACKED, like the editor's. preview.js
+# double-buffers, adding a second iframe on the first Run; left in the flow
+# it sat under the first, over the console and the notes, and the student's
+# page was painted across the panes beneath while the preview stayed blank.
+check("the live preview's two frames sit on top of each other",
+      declares(rule(".preview-wrap iframe"), "position", "absolute")
+      and declares(rule(".preview-wrap"), "position", "relative")
+      and declares(rule(".preview-wrap iframe.is-back"), "opacity", "0"),
+      "otherwise the page paints over the console and the notes")
+# THE CONSOLE IS A STRIP, the notes the bigger share. At 28% the console
+# took more of the column than the notes, which is where the lesson is.
+_con = re.search(r"flex: 0 0 (\d+)%", rule(".live-console"))
+_notes = re.search(r"flex: 0 0 (\d+)%", rule(".live-right .live-notes"))
+check("  and the console is a strip, smaller than the notes under it",
+      _con and _notes and int(_con.group(1)) <= 20
+      and int(_con.group(1)) < int(_notes.group(1)),
+      "console %s, notes %s" % (_con and _con.group(1), _notes and _notes.group(1)))
 
 
 check("the teacher's code cannot be selected",
@@ -1194,15 +1332,23 @@ check("the preview remembers the page it painted, before the shim",
 
 # A student's SQL Run on the live page, built.
 _run = fn_body(live_code, "run")
-check("the live Run sends the lesson's schema.sql with their query",
-      'if (L.schema) project["schema.sql"] = L.schema;' in _run)
+check("the live Run sends every tab, schema.sql and templates included",
+      "var project = allFiles();" in _run
+      and re.search(r"function allFiles\(\) \{\s*var out = dataFiles\(\);\s*"
+                    r"out\[MAIN\] = mainSource\(\);\s*return out;", live_code)
+      is not None,
+      "render_template found nothing when Run sent app.py alone")
+check("  and SQL or Flask is the student's entry file, from the server",
+      "function isSql() { return MAIN === L.sqlEntry; }" in live_code
+      and "var MAIN = L.entry" in live_code
+      and '"query.sql"' not in code_only(live_code))
 check("  prints the query results, not the schema's table list",
       "writeSqlResults(out.results);" in _run and "out.tables" not in _run,
       "tables is names and row counts; printed as results it was blank lines")
 check("  and with no database says so rather than 'add a schema.sql'",
-      re.search(r"if \(isSql\(\) && !L\.schema\) \{[\s\S]{0,400}return;", _run)
+      re.search(r"if \(isSql\(\) && !project\[\"schema\.sql\"\]\) \{[\s\S]{0,400}return;", _run)
       is not None,
-      "there is no way to add a file on the live page")
+      "writing the lesson's database is the teacher's move, not the student's")
 
 import shutil
 import subprocess
