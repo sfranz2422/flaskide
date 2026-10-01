@@ -1657,6 +1657,14 @@ def live_push(code):
         if isinstance(slide, str):
             fields["slide"] = slide if re.fullmatch(r"\d{1,4}/\d{1,4}", slide) else ""
 
+        # Where the teacher's caret is, "line:ch". Same rule as notes: only
+        # when sent. Anything else is stored as none rather than refused, so a
+        # bad caret can never cost the class the code that came with it.
+        cursor = data.get("cursor")
+        if isinstance(cursor, str):
+            fields["cursor"] = (cursor if re.fullmatch(r"\d{1,6}:\d{1,6}", cursor)
+                                else "")
+
         # What the teacher's Run printed to the console. Trimmed here rather
         # than refused: a runaway loop is exactly when the output is huge,
         # and a 413 would throw away the code that came with it, freezing the
@@ -1746,6 +1754,7 @@ def live_poll(code):
             notes=live.notes or "",
             slide=live.slide or "",
             output=live.output or "",
+            cursor=live.cursor or "",
             page=live.page or "",
         )
     finally:

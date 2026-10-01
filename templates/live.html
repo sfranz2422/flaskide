@@ -177,8 +177,8 @@
     <div id="preview-view" class="subpane">
       {#  The student's app and the teacher's, as two tabs, because the
           column has no room for another pane. The teacher's tab appears
-          once they press Run, and comes to the front when their page
-          changes; pressing Run here goes back to the student's own.
+          once they press Run and gets a dot when their page changes, but
+          never comes to the front by itself — the student clicks it.
 
           THE TEACHER'S PAGE IS A PICTURE. Their app runs in their browser,
           so nothing here can answer a link or a form on it. Its frame is
@@ -211,11 +211,15 @@
       </div>
     </div>
 
-    <div id="output-view" class="subpane live-console">
+    <div id="output-view" class="subpane live-console is-folded">
       {#  Same arrangement for the console: theirs and the teacher's, two
-          separate <pre>s, never one. #}
+          separate <pre>s, never one. Folded to its head until opened, an
+          error, or Run in a SQL lesson; see openConsole in live.js. #}
       <div class="pane-head">
         <span class="out-tabs">
+          <button id="out-fold" class="out-fold" type="button"
+                  aria-controls="output-view" aria-expanded="false"
+                  title="Show the console">▸</button>
           <button id="out-mine" class="out-tab is-on" type="button">Console</button>
           <button id="out-teacher" class="out-tab" type="button" hidden
                   title="What {{ live.host_name or 'your teacher' }}'s Run printed">{{ live.host_name or "Teacher" }}'s console</button>
@@ -252,6 +256,7 @@
     notes: {{ (live.notes if live else '') | tojson }},
     slide: {{ (live.slide if live else '') | tojson }},
     output: {{ (live.output if live else '') | tojson }},
+    cursor: {{ (live.cursor if live else '') | tojson }},
     page: {{ (live.page if live else '') | tojson }},
     title: {{ (live.title if live else '') | tojson }},
     signedIn: {{ 'true' if user else 'false' }},

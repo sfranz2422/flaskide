@@ -527,6 +527,7 @@
       // The ONLY setValue on the mirror. `mine` is never given anything from
       // the network: its tabs are filled from the page and their browser.
       if (typeof data.body === "string" && data.body !== mirror.getValue()) {
+        clearCaret();                // its line is about to be replaced
         var scroll = mirror.getScrollInfo();
         mirror.setValue(data.body);
         // Keep the reader where they were. Without this every keystroke from
@@ -540,6 +541,7 @@
          forces a redraw. Switching a tab in front of a class is exactly when
          that would happen, so refresh on the way back. */
       if (wasHidden) mirror.refresh();
+      showCaret(typeof data.cursor === "string" ? data.cursor : "");
     }
 
     if (data.filename) {
@@ -550,6 +552,56 @@
     showNotes(data);
     showTeacherOutput(data, data.initial);
     showTeacherPage(data, data.initial);
+  }
+
+  /* ------------------------------------------------ the teacher's caret
+     Where the teacher is typing, drawn as a blinking caret on a tinted line,
+     and followed: when it moves off screen the mirror scrolls to it. It is a
+     bookmark widget, not a selection or a real cursor, so the mirror stays
+     "nocursor" and still cannot be focused or copied from.
+
+     Following is the point — a class otherwise watches line 1 while the
+     teacher types on line 40 — but a student who scrolls back to read
+     something must not be yanked away mid-sentence. So scrolling the
+     mirror by hand pauses following for a few seconds, and only that does:
+     the scroll events CodeMirror fires for its own scrolling are ignored by
+     listening for the wheel, a touch and the scrollbar instead. */
+  var caretMark = null;
+  var caretLine = null;
+  var followAfter = 0;
+  var FOLLOW_PAUSE_MS = 5000;
+
+  ["wheel", "touchmove", "mousedown"].forEach(function (kind) {
+    mirrorEl.addEventListener(kind, function () {
+      followAfter = Date.now() + FOLLOW_PAUSE_MS;
+    }, { passive: true });
+  });
+
+  function clearCaret() {
+    if (caretMark) { caretMark.clear(); caretMark = null; }
+    /* A line handle from before a setValue is detached, and removing a
+       class from it throws — getLineNumber is null for exactly those. */
+    if (caretLine && mirror.getLineNumber(caretLine) !== null) {
+      mirror.removeLineClass(caretLine, "background", "mirror-caret-line");
+    }
+    caretLine = null;
+  }
+
+  function showCaret(cursor) {
+    clearCaret();
+    var m = /^(\d+):(\d+)$/.exec(cursor);
+    if (!m) return;                  // a notes file, or an older editor
+    // Clamped: the caret and the text arrive together, but a student's
+    // mirror is never trusted to be the exact shape the stamp assumed.
+    var line = Math.min(+m[1], mirror.lastLine());
+    var at = { line: line, ch: Math.min(+m[2], mirror.getLine(line).length) };
+    var mark = document.createElement("span");
+    mark.className = "mirror-caret";
+    caretMark = mirror.setBookmark(at, { widget: mark, insertLeft: true });
+    caretLine = mirror.addLineClass(line, "background", "mirror-caret-line");
+    // Only scrolls when the caret is off screen, so a mirror that already
+    // shows it does not twitch on every keystroke.
+    if (Date.now() >= followAfter) mirror.scrollIntoView(at, 60);
   }
 
   /* The project's notes, in their own pane under the console. Re-rendered
@@ -593,10 +645,10 @@
   // in it: the student's console is theirs, and their preview frame is what
   // their own app answers into. Nothing from the network goes in either.
   //
-  // Each comes to the front when it changes — that is the teacher pressing
-  // Run, or following a link, and wanting the class to look — unless the
-  // student's own app is running, when snatching the pane away would hide
-  // what they are waiting for. Then the tab is only marked.
+  // NEITHER COMES TO THE FRONT BY ITSELF. Each used to, whenever the
+  // teacher pressed Run or followed a link, and every Run in a lesson took
+  // thirty students away from their own app mid-thought. Now the tab
+  // appears and gets a dot, and the student looks when they choose to.
 
   var teacherOut = $("teacher-output");
   var outMineTab = $("out-mine");
@@ -622,9 +674,8 @@
     teacherOut.scrollTop = teacherOut.scrollHeight;
     if (!data.output) return;
     outTeacherTab.hidden = false;
-    if (quietly) return;
-    if (running) outTeacherTab.classList.add("has-new");
-    else showOutputTab(true);
+    if (quietly || !teacherOut.hidden) return;
+    outTeacherTab.classList.add("has-new");
   }
 
   var teacherFrame = $("teacher-page");
@@ -667,15 +718,45 @@
        page for a path only the teacher's app can answer. */
     teacherFrame.srcdoc = '<base target="_blank">' + html;
     pageTeacherTab.hidden = false;
-    if (quietly) return;
-    if (running) pageTeacherTab.classList.add("has-new");
-    else showPageTab(true);
+    if (quietly || !teacherWrap.hidden) return;
+    pageTeacherTab.classList.add("has-new");
   }
 
   if (teacherOut) {
-    outMineTab.addEventListener("click", function () { showOutputTab(false); });
-    outTeacherTab.addEventListener("click", function () { showOutputTab(true); });
+    outMineTab.addEventListener("click", function () {
+      showOutputTab(false); openConsole(true);
+    });
+    outTeacherTab.addEventListener("click", function () {
+      showOutputTab(true); openConsole(true);
+    });
   }
+
+  /* The console starts folded to its head, leaving the column to the page
+     and the notes; the head's arrow opens it. An error opens it too — a
+     mistake written into a folded pane is a mistake nobody sees, and the
+     page simply looks broken. So does Run in a SQL lesson,
+     where the console is the only place the results go. Not remembered between visits: folded is
+     the state every lesson should start in. */
+  var outputView = $("output-view");
+  var foldBtn = $("out-fold");
+
+  function openConsole(open) {
+    if (!outputView) return;
+    outputView.classList.toggle("is-folded", !open);
+    if (foldBtn) {
+      foldBtn.textContent = open ? "▾" : "▸";
+      foldBtn.title = open ? "Fold the console away" : "Show the console";
+      foldBtn.setAttribute("aria-expanded", String(open));
+    }
+  }
+
+  if (foldBtn) {
+    foldBtn.addEventListener("click", function () {
+      openConsole(outputView.classList.contains("is-folded"));
+    });
+  }
+  openConsole(false);
+
   if (teacherWrap) {
     pageMineTab.addEventListener("click", function () { showPageTab(false); });
     pageTeacherTab.addEventListener("click", function () { showPageTab(true); });
@@ -690,6 +771,7 @@
   if (typeof L.body === "string") {
     showMirror({ body: L.body, version: L.version, filename: L.filename,
                  notes: L.notes, slide: L.slide, output: L.output,
+                 cursor: L.cursor,
                  page: L.page,
                  // joining mid-lesson: offer the teacher's output and page,
                  // but leave the student looking at their own until they change
@@ -763,6 +845,7 @@
     span.textContent = text;
     outputEl.appendChild(span);
     outputEl.scrollTop = outputEl.scrollHeight;
+    if (cls === "err") openConsole(true);
   }
 
   function clearOutput() { outputEl.textContent = ""; }
@@ -820,6 +903,7 @@
     // Their Run, their console and their app.
     showOutputTab(false);
     showPageTab(false);
+    if (isSql()) openConsole(true);
     setBusy(true);
     clearOutput();
     /* EVERY TAB, not the entry alone. Run once sent only the one editor, so

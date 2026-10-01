@@ -1281,6 +1281,39 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
  * the front; a dot says there is something new behind it. */
 .out-tab.has-new::after { content: " •"; color: var(--accent); }
 
+/* The console folded: just its head, and the page and notes get the
+ * column. The <pre>s are hidden rather than squeezed to zero so the
+ * student's own console keeps its scroll position for when it opens. */
+.live-console.is-folded { flex: 0 0 auto; min-height: 0; }
+.live-console.is-folded .output { display: none; }
+.out-fold {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.out-fold:hover { color: var(--text); }
+
+/* The teacher's caret in the mirror: a bookmark widget, not a real cursor,
+ * so the mirror still cannot be focused. Zero width with a negative margin
+ * so drawing it does not push the rest of the line two pixels sideways. */
+.mirror-caret {
+  display: inline-block;
+  width: 0;
+  height: 1.2em;
+  margin-right: -2px;
+  border-left: 2px solid var(--accent);
+  vertical-align: text-bottom;
+  animation: mirror-blink 1.06s steps(1) infinite;
+}
+@keyframes mirror-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .mirror-caret { animation: none; }
+}
+.live-mirror .mirror-caret-line { background: var(--banner-bg); }
+
 /* The teacher's copy of the class's Notes pane, under the preview while
  * live. A fixed share of the column, as on the student's page, so neither
  * one can squeeze the other to nothing. */

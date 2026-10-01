@@ -289,6 +289,14 @@ class LiveSession(Base):
     #: sets it. Empty until the teacher presses Run.
     page = Column(Text, nullable=False, default="")
 
+    #: Where the teacher's caret is in `body`, as "line:ch" counted from 0,
+    #: so the class can see where they are typing and the mirror can follow
+    #: it. Empty when there is nothing to point at: a notes file, which the
+    #: class reads rendered rather than as text, or an editor from before
+    #: this existed. Rides on the ordinary push, so it costs no extra
+    #: requests — a caret moved without typing is simply one more push.
+    cursor = Column(String(24), nullable=False, default="")
+
     started_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
     #: Set when the teacher stops. The row stays so that a student still on
@@ -353,6 +361,11 @@ LATER_COLUMNS = [
     # The teacher's rendered page. Empty is true of every earlier lesson.
     ("live_sessions", "page",
      "ALTER TABLE live_sessions ADD COLUMN page TEXT NOT NULL DEFAULT ''"),
+    # The teacher's caret. Empty is true of every earlier lesson: none sent
+    # one, and the class's page shows no caret for it.
+    ("live_sessions", "cursor",
+     "ALTER TABLE live_sessions ADD COLUMN cursor VARCHAR(24) NOT NULL "
+     "DEFAULT ''"),
 ]
 
 

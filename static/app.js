@@ -901,11 +901,21 @@
            point. It gets the current slide like the notes pane does. */
         if (name === notesFile()) text = notes;
       }
+      /* Where the caret is, so the class sees it blink in the mirror and
+         the mirror scrolls to follow it. In the stamp below, so moving it
+         without typing still goes out — pointing at a line is half of
+         teaching from the editor. None for a notes file: the class reads
+         that rendered, where a line and column point at nothing. */
+      var cursor = "";
+      if (editor && !window.FlaskIDENotes.isMarkdown(name)) {
+        var at = editor.getCursor();
+        cursor = at.line + ":" + at.ch;
+      }
       paintSlides(cut);
       paintClassView(notes, slide);
       var output = liveOutput();
       var page = livePage();
-      var stamp = [name, text, notes, slide, output, page].join("\u0000");
+      var stamp = [name, text, notes, slide, output, page, cursor].join("\u0000");
       if (stamp === lastSent) return;      // nothing typed since last time
       lastSent = stamp;
       fetch("/api/live/" + encodeURIComponent(liveCode) + "/push", {
@@ -913,7 +923,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: text, filename: name, notes: notes,
                                slide: slide, output: output, page: page,
-                               seq: nextSeq() })
+                               cursor: cursor, seq: nextSeq() })
       }).then(function (res) {
         if (res.status === 403 || res.status === 409) stopLive(true);
       }).catch(function () {
