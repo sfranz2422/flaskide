@@ -1190,14 +1190,25 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 }
 .live-right .live-notes[hidden] { display: none; }
 
-/* Slides, on the teacher's bar while live: ◀ 3 / 5 ▶. */
+/* Slides, in the head of the teacher's Class sees pane while live:
+ * ◀ 3 / 5 ▶ Show all. Sized down to fit a pane head rather than the top bar,
+ * and in the head's own case so the pane does not look busier than it did. */
 .slide-ctl {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 .slide-ctl[hidden] { display: none; }
-.slide-ctl .btn { padding-left: 8px; padding-right: 8px; }
+.slide-ctl .btn {
+  padding: 2px 8px;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* .btn sets display, so [hidden] alone would leave the arrows showing
+ * while Show all is on. */
+.slide-ctl .btn[hidden] { display: none; }
+#slide-whole { margin-left: 6px; }
 .slide-at {
   min-width: 44px;
   text-align: center;

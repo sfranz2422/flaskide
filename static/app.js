@@ -756,10 +756,20 @@
 
        `slideAt` is an index that survives editing the notes mid-lesson, and
        is clamped when slides are deleted out from under it. Two slides at
-       least, or it is not slides: a file with a single `## ` goes whole. */
+       least, or it is not slides: a file with a single `## ` goes whole.
+
+       `wholeNotes` is Show all: the class gets the whole file, as if it had
+       no `## ` at all. For notes that are a page of directions rather than
+       a deck, whose headings would otherwise chop them into pieces the
+       class can only see one at a time. slideAt is kept, so turning it off
+       goes back to the slide the class was on. Remembered for this lesson
+       across a reload of this page — otherwise a reload would snap thirty
+       screens back to one slide with nobody having asked. */
     var slideAt = 0;
+    var wholeNotes = false;
     var slideCtl = $("live-slides");
     var slideLabel = $("slide-at");
+    var wholeBtn = $("slide-whole");
 
     function currentSlides() {
       var cut = window.FlaskIDENotes.slides(liveNotes());
@@ -771,13 +781,28 @@
       slideCtl.hidden = !(liveCode && cut);
       if (slideCtl.hidden) return;
       slideLabel.textContent = (slideAt + 1) + " / " + cut.length;
+      slideLabel.hidden = $("slide-prev").hidden = $("slide-next").hidden
+        = wholeNotes;
       $("slide-prev").disabled = slideAt <= 0;
       $("slide-next").disabled = slideAt >= cut.length - 1;
+      wholeBtn.textContent = wholeNotes ? "Slides" : "Show all";
+      wholeBtn.title = wholeNotes
+        ? "Go back to sending the class one slide at a time"
+        : "Send the whole notes file to the class instead of one slide";
+    }
+
+    function setWhole(on) {
+      wholeNotes = on;
+      try {
+        if (on) localStorage.setItem("flaskide-live-whole", liveCode + "/" + slideAt);
+        else localStorage.removeItem("flaskide-live-whole");
+      } catch (e) {}
+      pushNow();                 // now, not on the next tick
     }
 
     function moveSlide(by) {
       var cut = currentSlides();
-      if (!liveCode || !cut) return;
+      if (!liveCode || !cut || wholeNotes) return;
       slideAt = Math.max(0, Math.min(cut.length - 1, slideAt + by));
       pushNow();                 // now, not on the next tick
     }
@@ -785,10 +810,12 @@
     if (slideCtl) {
       $("slide-prev").addEventListener("click", function () { moveSlide(-1); });
       $("slide-next").addEventListener("click", function () { moveSlide(1); });
+      wholeBtn.addEventListener("click", function () { setWhole(!wholeNotes); });
     }
 
     /* What the class's Notes pane shows, shown here under the preview: the
-       current slide, or the whole notes when they are not slides. Fed the
+       current slide, or the whole notes when they are not slides or Show
+       all is on. Fed the
        very `notes` and `slide` pushNow sends, so it cannot disagree with
        the class about which slide they are on — a copy worked out
        separately from slideAt could.
@@ -798,7 +825,6 @@
        teacher's hand. */
     var classView = $("class-view");
     var classNotes = $("class-notes");
-    var classSlide = $("class-slide");
     var classShownNotes = null, classShownSlide = null;
 
     function paintClassView(notes, slide) {
@@ -809,8 +835,6 @@
       classShownSlide = slide;
       classView.hidden = !(notes && notes.trim());
       if (classView.hidden) return;
-      var m = /^(\d+)\/(\d+)$/.exec(slide);
-      classSlide.textContent = m ? "Slide " + m[1] + " of " + m[2] : "";
       window.FlaskIDENotes.render(classNotes, notes).then(function () {
         if (moved) classNotes.scrollTop = 0;
       });
@@ -867,7 +891,7 @@
       var notes = liveNotes();
       var slide = "";
       var cut = currentSlides();
-      if (cut) {
+      if (cut && !wholeNotes) {
         slideAt = Math.min(slideAt, cut.length - 1);
         notes = cut[slideAt];
         slide = (slideAt + 1) + "/" + cut.length;
@@ -919,8 +943,12 @@
       liveCode = null;
       if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
       lastSent = null;
+      wholeNotes = false;
       paintLive();
-      try { localStorage.removeItem("flaskide-live-host"); } catch (e) {}
+      try {
+        localStorage.removeItem("flaskide-live-host");
+        localStorage.removeItem("flaskide-live-whole");
+      } catch (e) {}
       if (code && !quietly) {
         fetch("/api/live/" + encodeURIComponent(code) + "/stop", { method: "POST" });
       }
@@ -1041,6 +1069,13 @@
           // fresh lesson has none and starts at the beginning.
           var at = /^(\d+)\//.exec(data.slide || "");
           slideAt = at ? Math.max(0, parseInt(at[1], 10) - 1) : 0;
+          /* With Show all on, the class has no slide number to come back
+             to, so the one they were on is kept beside the flag — turning
+             it off after a reload would otherwise start them at slide 1. */
+          var whole = null;
+          try { whole = localStorage.getItem("flaskide-live-whole"); } catch (e) {}
+          wholeNotes = !!whole && whole.split("/")[0] === liveCode;
+          if (wholeNotes) slideAt = parseInt(whole.split("/")[1], 10) || 0;
           lastSent = null;
           try { localStorage.setItem("flaskide-live-host", liveCode); } catch (e) {}
           paintLive();
