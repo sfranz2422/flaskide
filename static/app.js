@@ -467,9 +467,12 @@
 
   /* --------------------------------------------------------------- share */
 
-  function share() {
+  /* A teacher's Share opens share-ask first, to choose between a plain link
+     and a demo link; a student's goes straight to sharing. The box is
+     unticked every time the dialog opens, so a demo link is always a choice
+     made just now and never one left over from the last share. */
+  function share(hidden) {
     var project = readProject();
-    var hide = $("hide-code");
     fetch(cfg.shareUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -477,7 +480,7 @@
         files: project.files,
         title: project.title,
         author: project.author,
-        hidden: !!(hide && hide.checked),
+        hidden: !!hidden,
       }),
     }).then(function (r) {
       return r.json().then(function (d) { return { ok: r.ok, data: d }; });
@@ -595,7 +598,26 @@
       preview.back();
     });
     if ($("new-file")) $("new-file").addEventListener("click", newFile);
-    if ($("share")) $("share").addEventListener("click", share);
+    var hideCode = $("hide-code");   // a teacher's, in the share-ask dialog
+    var shareAsk = $("share-ask");
+    if ($("share")) {
+      $("share").addEventListener("click", function () {
+        if (!shareAsk) { share(false); return; }
+        if (hideCode) hideCode.checked = false;
+        shareAsk.hidden = false;
+        $("share-go").focus();
+      });
+    }
+    if (shareAsk) {
+      $("share-go").addEventListener("click", function () {
+        shareAsk.hidden = true;
+        share(!!(hideCode && hideCode.checked));
+      });
+      $("share-cancel").addEventListener("click", function () { shareAsk.hidden = true; });
+      shareAsk.addEventListener("click", function (e) {
+        if (e.target === shareAsk) shareAsk.hidden = true;
+      });
+    }
     if ($("download")) $("download").addEventListener("click", download);
     if ($("download-menu")) $("download-menu").addEventListener("click", download);
     if ($("clear")) $("clear").addEventListener("click", clearOutput);
@@ -931,13 +953,41 @@
       });
     }
 
+    function liveLink() {
+      return location.origin + "/live/" + encodeURIComponent(liveCode);
+    }
+
+    /* The chip still reads as the code, which is what a teacher says out
+       loud; clicking it copies the whole address for the class's chat. The
+       label flashes "Link copied" and then goes back to the code — unless the
+       lesson ended in the meantime, when paintLive has already moved on. */
+    liveChip.addEventListener("click", function () {
+      if (!liveCode) return;
+      var link = liveLink();
+      function flash(text) {
+        var code = liveCode;
+        liveChip.textContent = text;
+        setTimeout(function () {
+          if (liveCode === code) liveChip.textContent = code;
+        }, 1500);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(function () {
+          flash("Link copied");
+        }, function () { window.prompt("Copy this link for your class:", link); });
+      } else {
+        window.prompt("Copy this link for your class:", link);
+      }
+    });
+
     function paintLive() {
       if (liveCode) {
         liveBtn.textContent = "End lesson";
         liveBtn.classList.add("btn-live-on");
         liveChip.hidden = false;
         liveChip.textContent = liveCode;
-        liveChip.title = "Your class joins at /live and types " + liveCode
+        liveChip.title = "Click to copy the class's link: " + liveLink()
+          + "\n(or they go to /live and type " + liveCode + ")"
           + (liveFor ? "\nThey can turn in to: " + liveFor
                      : "\nNo assignment, so they cannot turn work in.");
       } else {

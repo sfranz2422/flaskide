@@ -414,6 +414,39 @@ check("the teacher's editor has a pane showing the slide the class is on",
       'id="class-view"' in r.get_data(as_text=True)
       and 'id="class-notes"' in r.get_data(as_text=True))
 
+# Hide code moved off the toolbar into the dialog a teacher's Share opens.
+# On the toolbar, a tick left on from an earlier demo was invisible until a
+# student opened the link and found no source.
+_tp = r.get_data(as_text=True)
+_ask = _tp.find('id="share-ask"')
+check("a teacher's Share asks first, with Hide code inside that dialog",
+      _ask != -1 and _tp.find('id="hide-code"') > _ask,
+      "share-ask at %d, hide-code at %d" % (_ask, _tp.find('id="hide-code"')))
+_sp = student.get("/").get_data(as_text=True)
+check("  and a student gets neither", 'id="share-ask"' not in _sp
+      and 'id="hide-code"' not in _sp)
+
+# The join code on the teacher's bar is a button that copies /live/<code>.
+_chip = re.search(r'<(\w+) id="live-code"', _tp)
+check("the live code chip is a button", _chip and _chip.group(1) == "button",
+      _chip.group(1) if _chip else "missing")
+_app = open(os.path.join(HERE, "..", "static", "app.js")).read()
+check("  that copies the class's whole link",
+      re.search(r'liveChip\.addEventListener\("click"', _app)
+      and 'location.origin + "/live/"' in _app)
+
+# The notes panes neither grow nor shrink, so a console printing above them
+# cannot take their height. The preview took it from the teacher's copy
+# because its basis was `auto`, its own content.
+_css = open(os.path.join(HERE, "..", "static", "style.css")).read()
+for _sel in (".live-right .live-notes", ".pane-right .class-view"):
+    _rule = re.search(re.escape(_sel) + r"\s*\{([^}]*)\}", _css)
+    check("%s is a fixed size" % _sel,
+          _rule and re.search(r"flex:\s*0 0 38%", _rule.group(1)),
+          _rule.group(1).strip() if _rule else "no rule")
+check("  and the preview beside them takes only what is left",
+      re.search(r"\.pane-right #preview-view\s*\{\s*flex:\s*1 1 0;", _css))
+
 
 # ------------------------------------------------ keeping their own copy
 print("\nSaving their own work")

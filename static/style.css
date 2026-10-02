@@ -1318,7 +1318,24 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
  * live. A fixed share of the column, as on the student's page, so neither
  * one can squeeze the other to nothing. */
 .pane-right .class-view {
-  flex: 1 1 45%;
+  flex: 0 0 38%;
+  min-height: 110px;
   border-top: 1px solid var(--line);
 }
+/* The fixed size above only holds if the pane beside it does not ask for
+ * more. #preview-view's basis was `auto` — its own content — so every line
+ * the console printed took height from the notes. The same 38% as the
+ * class's own Notes pane, so the teacher sees them the size the class does. */
+.pane-right #preview-view { flex: 1 1 0; }
+
+/* Hide code, in the dialog a teacher's Share opens: the one question there. */
+.share-hide {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.share-hide input { accent-color: var(--accent); cursor: pointer; margin: 0; }
+.modal-actions { display: flex; gap: 8px; margin-top: 20px; }
 .pane-right .class-view[hidden] { display: none; }

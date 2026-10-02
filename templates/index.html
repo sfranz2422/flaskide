@@ -106,14 +106,10 @@
       {% if is_teacher %}
         <button id="go-live" class="btn"
                 title="Put this file on your class's screens while you teach.">Go live</button>
-        <span id="live-code" class="chip live-code" hidden></span>
-      {% endif %}
-
-      {% if is_teacher %}
-        <label class="hidecode"
-               title="Share a link that shows the finished page with no source on it and no way to copy it.">
-          <input type="checkbox" id="hide-code"> Hide code
-        </label>
+        {#  The join code, and a button: clicking copies the whole address
+            (…/live/<code>) to paste into the class's chat, so nobody has to
+            find /live and type the code by hand. #}
+        <button id="live-code" class="chip live-code" type="button" hidden></button>
       {% endif %}
 
       {% if is_teacher or not (draft_slug and assignment_slug) %}
@@ -267,6 +263,28 @@
   </section>
 
 </main>
+
+{#  A teacher's Share asks first, because it can make two kinds of link.
+    Hide code used to sit on the toolbar beside Share, where a tick left on
+    from last week's demo was invisible until a student opened the link and
+    found no source. Here it is asked about at the moment it matters, and
+    starts unticked every time. Students never see this — their Share has
+    only one kind of link to make. #}
+{% if is_teacher and not readonly %}
+<div id="share-ask" class="modal" hidden>
+  <div class="modal-card">
+    <h2>Share this project</h2>
+    <p class="modal-sub">Makes a link to a snapshot of every file as it is right now.</p>
+    <label class="hidecode share-hide" title="Share a link that shows the finished page with no source on it and no way to copy it.">
+      <input type="checkbox" id="hide-code"> Hide code — the link shows the finished page with no source on it
+    </label>
+    <div class="actions modal-actions">
+      <button id="share-go" class="btn btn-primary">Create link</button>
+      <button id="share-cancel" class="btn">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div id="modal" class="modal" hidden>
   <div class="modal-card">
