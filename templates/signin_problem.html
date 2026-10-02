@@ -20,12 +20,23 @@
       If that list looks wrong, it's the <code>ALLOWED_EMAIL_DOMAINS</code>
       setting on the server — clear it to let any Google account in.</p>
   {% endif %}
+  {% if classroom %}
+    {#  The Google Classroom connection, which only a teacher ever starts.
+        Nothing here touches their sign-in, so the sign-in wording below
+        would be wrong — they are signed in, and stay signed in. #}
+    <p class="dim">You're still signed in, and nothing in FlaskIDE has changed.</p>
+    <p>
+      <a class="btn btn-primary" href="{{ url_for('classroom_connect') }}">Connect again</a>
+      <a class="btn" href="{{ url_for('teacher_home') }}">Back to your assignments</a>
+    </p>
+  {% else %}
   <p class="dim">You can keep working without signing in — you just won't be
      able to save projects or turn work in.</p>
   <p>
     <a class="btn btn-primary" href="{{ url_for('login') }}">Try again</a>
     <a class="btn" href="{{ url_for('index') }}">Carry on without signing in</a>
   </p>
+  {% endif %}
 </main>
 </body>
 </html>

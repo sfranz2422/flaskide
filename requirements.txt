@@ -6,3 +6,7 @@ Authlib==1.3.2
 # Authlib does not declare an HTTP client of its own, but its Flask
 # integration imports authlib.integrations.requests_client on the way in.
 requests==2.32.3
+# Encrypts each teacher's stored Google Classroom token (see ClassroomLink in
+# accounts.py). Authlib already pulls it in; listed so that never changes
+# under us.
+cryptography==44.0.2

@@ -340,6 +340,74 @@ page = student.get("/my").get_data(as_text=True)
 check("  and the student's page shows none", "Feedback from your teacher" not in page)
 
 
+# ------------------------------------------------------------------ scores
+print("\nScores")
+
+OUT = "/api/assignment/%s/out-of" % hw
+check("a student cannot set the points",
+      student.post(OUT, json={"out_of": 10}).status_code == 403)
+os.environ["TEACHER_EMAILS"] = "teacher@example.org, teacher2@example.org"
+check("  nor a teacher who did not set the assignment",
+      client(OTHER_T).post(OUT, json={"out_of": 10}).status_code == 404)
+os.environ["TEACHER_EMAILS"] = "teacher@example.org"
+check("points that are not a whole number are refused",
+      teacher.post(OUT, json={"out_of": "ten"}).status_code == 400)
+check("  and so is zero", teacher.post(OUT, json={"out_of": 0}).status_code == 400)
+
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("ungraded, there is no score box", 'class="field fb-score"' not in page)
+r = teacher.post(OUT, json={"out_of": "10"})
+check("the teacher sets it out of 10", r.status_code == 200
+      and r.get_json()["out_of"] == 10, r.get_data(as_text=True)[:60])
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("  and a score box appears for each student, out of 10",
+      'class="field fb-score"' in page and "/ 10" in page)
+
+sub = the_submission()
+r = teacher.post(FB, json={"submission": sub.id, "feedback": "", "score": "8"})
+check("a score can be saved on its own, with no comment",
+      r.status_code == 200 and the_submission().score == 8.0,
+      r.get_data(as_text=True)[:80])
+check("  and counts as feedback for 'turned in again since'",
+      the_submission().feedback_at is not None)
+page = student.get("/my").get_data(as_text=True)
+mine = section(page, "Assignments")
+check("the student sees it: Score 8 / 10", "8 / 10" in mine, mine[mine.find("Score"):][:60])
+check("  marked New", "badge-new" in mine)
+
+r = teacher.post(FB, json={"submission": sub.id, "feedback": "Nice", "score": "7.5"})
+check("half marks are kept", the_submission().score == 7.5)
+r = teacher.post(FB, json={"submission": sub.id, "feedback": "Nice", "score": "12"})
+check("extra credit above the points is allowed", the_submission().score == 12.0)
+for bad, why in (("abc", "not a number"), ("-1", "negative"), ("nan", "NaN")):
+    r = teacher.post(FB, json={"submission": sub.id, "feedback": "Nice", "score": bad})
+    check("a score that is %s is refused" % why,
+          r.status_code == 400 and the_submission().score == 12.0, r.status_code)
+r = teacher.post(FB, json={"submission": sub.id, "feedback": "Still nice"})
+check("saving with no score key leaves the score alone",
+      the_submission().score == 12.0 and the_submission().feedback == "Still nice")
+r = teacher.post(FB, json={"submission": sub.id, "feedback": "Nice", "score": ""})
+check("an empty score box takes the score back, and is not 0",
+      the_submission().score is None)
+
+db = P.SessionLocal()
+it = db.query(accounts.Assignment).filter_by(slug=hw).first()
+db.add(accounts.ClassroomPost(assignment_id=it.id, course_id="1", work_id="999"))
+db.commit()
+db.close()
+r = teacher.post(OUT, json={"out_of": ""})
+check("once posted to Classroom, the points cannot be cleared",
+      r.status_code == 400, r.status_code)
+db = P.SessionLocal()
+db.query(accounts.ClassroomPost).delete()
+db.commit()
+db.close()
+r = teacher.post(OUT, json={"out_of": ""})
+check("  but can be before, and the score boxes go",
+      r.status_code == 200
+      and 'class="field fb-score"' not in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
+
+
 # ---------------------------------------------------- an earlier database
 print("\nA database from before feedback")
 
@@ -357,15 +425,34 @@ with eng.begin() as c:
         "submitted_at DATETIME NOT NULL, times_submitted INTEGER NOT NULL)"))
     c.execute(sqlalchemy.text(
         "INSERT INTO submissions VALUES (1, 1, 1, 'abc', '2026-09-01 10:00:00', 2)"))
+    c.execute(sqlalchemy.text(
+        "CREATE TABLE assignments (id INTEGER PRIMARY KEY, slug VARCHAR(16) NOT NULL, "
+        "app VARCHAR(16) NOT NULL, teacher_id INTEGER NOT NULL, title VARCHAR(200) "
+        "NOT NULL, code TEXT NOT NULL, files TEXT NOT NULL, created_at DATETIME "
+        "NOT NULL, closed INTEGER NOT NULL, archived INTEGER NOT NULL)"))
+    c.execute(sqlalchemy.text(
+        "INSERT INTO assignments VALUES (1, 'old', 'pyide', 1, 'Old one', '', '{}', "
+        "'2026-09-01 10:00:00', 0, 0)"))
 accounts.create_all(eng)
 cols = {c["name"] for c in sqlalchemy.inspect(eng).get_columns("submissions")}
-check("an old submissions table gets the feedback columns",
-      {"feedback", "feedback_at", "feedback_seen"} <= cols, sorted(cols))
+acols = {c["name"] for c in sqlalchemy.inspect(eng).get_columns("assignments")}
+check("an old assignments table gets the points and Classroom columns",
+      {"out_of", "classroom_course_id", "classroom_course_name",
+       "classroom_work_id", "classroom_url"} <= acols, sorted(acols))
+with eng.begin() as c:
+    arow = c.execute(sqlalchemy.text(
+        "SELECT out_of, classroom_work_id, classroom_url FROM assignments")).fetchone()
+check("  and an old one reads as ungraded and not posted",
+      tuple(arow) == (None, "", ""), tuple(arow))
+check("an old submissions table gets the feedback and score columns",
+      {"feedback", "feedback_at", "feedback_seen", "score", "score_synced"} <= cols,
+      sorted(cols))
 with eng.begin() as c:
     row = c.execute(sqlalchemy.text(
-        "SELECT feedback, feedback_at, feedback_seen FROM submissions")).fetchone()
-check("  and an old row reads as no feedback, not as an error",
-      tuple(row) == ("", None, 0), tuple(row))
+        "SELECT feedback, feedback_at, feedback_seen, score, score_synced "
+        "FROM submissions")).fetchone()
+check("  and an old row reads as no feedback and no score, not as an error",
+      tuple(row) == ("", None, 0, None, None), tuple(row))
 
 
 # ------------------------------------------------------- choosing the account

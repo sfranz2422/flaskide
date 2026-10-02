@@ -76,9 +76,63 @@
       {% endif %}
     </section>
   {% endif %}
+  {#  Google Classroom. Connecting is what will let an assignment be posted
+      to a class and its grades sent back; for now it lists the classes, which
+      is the test that this site is allowed in at all. Only on a site with
+      Google sign-in set up, and only ever for a teacher. #}
+  {% if classroom_on %}
+    <section class="classroom">
+      <h2>Google Classroom</h2>
+      {% if classroom_connected %}
+        <p>Connected as <strong>{{ classroom_email }}</strong>.
+          {% if classroom_just %}<span class="turned-in">✓ Connected</span>{% endif %}</p>
+        <div id="classroom-courses" class="dim">Loading your classes…</div>
+        <form method="post" action="{{ url_for('classroom_disconnect') }}" class="classroom-off">
+          <button class="linkbtn danger" type="submit"
+                  onclick="return confirm('Disconnect Google Classroom? FlaskIDE will no longer be able to post to your classes.')">Disconnect</button>
+        </form>
+      {% else %}
+        <p class="dim">Connect your Classroom so FlaskIDE can post assignments to
+          your classes and send grades back. Google will say it hasn't verified
+          this app — choose <em>Advanced</em>, then the <em>Go to … (unsafe)</em> link. That warning is about Google not having reviewed this app; not about this site, which your class already uses.</p>
+        <p><a class="btn btn-primary" href="{{ url_for('classroom_connect') }}">Connect Google Classroom</a></p>
+      {% endif %}
+    </section>
+  {% endif %}
 </main>
 
 <script>
+  /* The teacher's classes, fetched after the page is up so a slow Google
+     never holds the dashboard. Built with textContent: a class name is
+     whatever a teacher typed into Classroom. */
+  (function () {
+    var box = document.getElementById("classroom-courses");
+    if (!box) return;
+    fetch("/api/classroom/courses").then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (out) {
+      box.textContent = "";
+      if (!out.ok) {
+        box.textContent = out.d.error || "Couldn't load your classes.";
+        if (out.d.connected === false) location.reload();   // shows Connect again
+        return;
+      }
+      var list = out.d.courses || [];
+      if (!list.length) { box.textContent = "No active classes found in your Classroom."; return; }
+      var head = document.createElement("p");
+      head.textContent = "Your classes (" + list.length + "):";
+      box.appendChild(head);
+      var ul = document.createElement("ul");
+      ul.className = "names";
+      list.forEach(function (c) {
+        var li = document.createElement("li");
+        li.textContent = c.name + (c.section ? " — " + c.section : "");
+        ul.appendChild(li);
+      });
+      box.appendChild(ul);
+    }).catch(function () { box.textContent = "Couldn't reach FlaskIDE to load your classes."; });
+  })();
+
   /* Archive is reversible and needs no ceremony. Delete is refused by the
      server whenever anyone has turned work in, so the confirm here is about
      the teacher's own effort, not about student work being at risk. */

@@ -36,15 +36,73 @@
     </p>
   </section>
 
+  {#  Grading. Points first, because everything after depends on them: the
+      score boxes only appear on a graded assignment, and Google Classroom
+      only takes grades on work with points. #}
+  <section class="handout grading">
+    <h2>Grading</h2>
+    <div class="grade-line">
+      <label for="out-of">Out of</label>
+      <input id="out-of" class="field out-of" type="number" min="1" max="1000"
+             value="{{ assignment.out_of or '' }}" placeholder="—">
+      <span>points</span>
+      <button id="out-of-save" class="btn">Save</button>
+      <span id="out-of-state" class="dim small"></span>
+    </div>
+    <p class="dim small">Leave it empty for an assignment you don't grade.</p>
+
+    {% if classroom_on %}
+      <div class="gc">
+        {% if posts %}
+          <p>Posted to
+            {% for p in posts %}<strong>{{ p.course_name or "a class" }}</strong>{%
+              if p.url %} (<a href="{{ p.url }}" target="_blank" rel="noopener">open</a>){% endif %}{%
+              if not loop.last %}, {% endif %}{% endfor %}</p>
+          <div class="grade-line">
+            <button id="gc-sync" class="btn btn-primary">Sync grades to Classroom</button>
+            <span id="gc-state" class="dim small"></span>
+          </div>
+          <p class="dim small">Each student's score goes to their own class's
+            assignment as a draft grade, matched by school email. Check them in
+            Classroom and return them to students from there.</p>
+        {% endif %}
+        {#  More than one class can do the same work from the same link —
+            Period 4 and Period 7 — and each needs its own Classroom
+            assignment for its grades to land there. #}
+        {% if classroom_connected %}
+          <div class="grade-line">
+            <select id="gc-course" class="field"><option value="">Loading your classes…</option></select>
+            <button id="gc-post" class="btn">{% if posts %}Also post to this class{% else %}Post to Google Classroom{% endif %}</button>
+            <span id="gc-post-state" class="dim small"></span>
+          </div>
+          {% if not posts %}
+            <p class="dim small">Creates this assignment in that class with a link
+              here, worth {{ assignment.out_of or "—" }} points. Grades can only be
+              sent to an assignment posted from FlaskIDE. If more than one class does
+              this assignment, post it to each of them.</p>
+          {% endif %}
+        {% elif not posts %}
+          <p class="dim">Connect Google Classroom on your
+            <a href="{{ url_for('teacher_home') }}">Assignments page</a> to post this
+            there and send grades back.</p>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+
   <section>
     <h2>Turned in <span class="count">{{ handed_in|length }}</span></h2>
     {% if handed_in %}
+      {#  Filled in once Classroom has said who is in which posted class.
+          Hidden until then, and for good if the assignment is in only one
+          class or none, when there is nothing to tell apart. #}
+      <div id="period-tabs" class="period-tabs" hidden></div>
       <table class="listing">
         <thead><tr><th>Student</th><th>When</th><th></th><th></th></tr></thead>
         <tbody>
           {% for s in handed_in %}
-            <tr>
-              <td>{{ s.name }}<div class="dim small">{{ s.email }}</div></td>
+            <tr class="res-row" data-sub="{{ s.id }}">
+              <td>{{ s.name }} <span class="period-tag dim small"></span><div class="dim small">{{ s.email }}</div></td>
               <td class="dim">{{ s.when }}</td>
               <td class="dim">{% if s.times > 1 %}{{ s.times }} attempts{% endif %}</td>
               <td class="right"><a class="linkbtn" href="{{ s.url }}">Open</a></td>
@@ -59,7 +117,15 @@
                 <textarea class="field fb-text" rows="2" maxlength="5000"
                           placeholder="Feedback for {{ s.name }} — they see it on their My work page">{{ s.feedback }}</textarea>
                 <div class="fb-foot">
-                  <button class="btn fb-save">Save feedback</button>
+                  {% if assignment.out_of %}
+                    <input class="field fb-score" type="number" step="any" min="0"
+                           value="{{ s.score }}" aria-label="Score for {{ s.name }}">
+                    <span class="dim">/ {{ assignment.out_of }}</span>
+                  {% endif %}
+                  <button class="btn fb-save">Save</button>
+                  {% if posts %}
+                    <span class="fb-sync small">{% if s.score %}{% if s.synced %}✓ in Classroom{% else %}not in Classroom yet{% endif %}{% endif %}</span>
+                  {% endif %}
                   <span class="fb-state dim small">{% if s.feedback_when %}Saved {{ s.feedback_when }}{% if s.seen %} · seen{% endif %}{% endif %}</span>
                   {% if s.again_since %}<span class="fb-again small">Turned in again since your feedback</span>{% endif %}
                 </div>
@@ -93,8 +159,15 @@
   var slug = {{ assignment.slug | tojson }};
   function dirty() { return document.querySelector(".fb-row.is-dirty"); }
 
+  function paintSync(row, score, synced) {
+    var badge = row.querySelector(".fb-sync");
+    if (!badge) return;
+    badge.textContent = !score ? "" : synced ? "✓ in Classroom" : "not in Classroom yet";
+  }
+
   document.addEventListener("input", function (e) {
-    if (!e.target.classList.contains("fb-text")) return;
+    if (!e.target.classList.contains("fb-text")
+        && !e.target.classList.contains("fb-score")) return;
     var row = e.target.closest(".fb-row");
     row.classList.add("is-dirty");
     row.querySelector(".fb-state").textContent = "Not saved";
@@ -108,8 +181,8 @@
     fetch("/api/assignment/" + encodeURIComponent(slug) + "/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ submission: row.dataset.sub,
-                             feedback: row.querySelector(".fb-text").value })
+      body: JSON.stringify(withScore(row, { submission: row.dataset.sub,
+                                           feedback: row.querySelector(".fb-text").value }))
     }).then(function (r) {
       return r.json().then(function (d) { return { ok: r.ok, d: d }; });
     }).then(function (out) {
@@ -117,6 +190,7 @@
       if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
       row.classList.remove("is-dirty");
       state.textContent = out.d.when ? "Saved " + out.d.when : "Removed";
+      paintSync(row, out.d.score, out.d.synced);
       var again = row.querySelector(".fb-again");
       if (again) again.remove();     // the new comment is about the new copy
     }).catch(function () {
@@ -124,6 +198,170 @@
       state.textContent = "Not saved — check your connection";
     });
   });
+
+  /* Only a graded assignment has a score box. Without one the key is left
+     out entirely, which the server reads as "leave the score alone" — so
+     a page from before the points were set can never wipe a score. */
+  function withScore(row, payload) {
+    var box = row.querySelector(".fb-score");
+    if (box) payload.score = box.value;
+    return payload;
+  }
+
+  function post(url, body) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    });
+  }
+  var base = "/api/assignment/" + encodeURIComponent(slug);
+
+  // Points. A reload afterwards, because the score boxes appear or go.
+  document.getElementById("out-of-save").addEventListener("click", function () {
+    var state = document.getElementById("out-of-state");
+    if (dirty() && !confirm("Some feedback isn't saved yet. Save the points anyway? "
+                            + "The page reloads and that feedback is lost.")) return;
+    post(base + "/out-of", { out_of: document.getElementById("out-of").value })
+      .then(function (out) {
+        if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
+        if (out.d.note) { alert(out.d.note); }
+        location.reload();
+      }).catch(function () { state.textContent = "Not saved — check your connection"; });
+  });
+
+  // Posting: the teacher's classes, from Google, into the picker.
+  var picker = document.getElementById("gc-course");
+  // Classes it is already in are left out of the picker; the server refuses
+  // a second post to one anyway.
+  var postedTo = {{ posts | map(attribute='course_id') | list | tojson }};
+  if (picker) {
+    fetch("/api/classroom/courses").then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (out) {
+      picker.textContent = "";
+      var first = document.createElement("option");
+      first.value = "";
+      first.textContent = out.ok ? "Choose a class…" : (out.d.error || "Couldn't load your classes");
+      picker.appendChild(first);
+      (out.d.courses || []).forEach(function (c) {
+        if (postedTo.indexOf(c.id) !== -1) return;
+        var o = document.createElement("option");
+        o.value = c.id;
+        o.textContent = c.name + (c.section ? " — " + c.section : "");
+        picker.appendChild(o);
+      });
+    });
+    document.getElementById("gc-post").addEventListener("click", function () {
+      var state = document.getElementById("gc-post-state");
+      var choice = picker.options[picker.selectedIndex];
+      if (!picker.value) { state.textContent = "Choose a class first."; return; }
+      if (!confirm("Post \u201c" + {{ assignment.title | tojson }} + "\u201d to " + choice.textContent
+                   + "? The class will see it in Google Classroom straight away.")) return;
+      this.disabled = true;
+      var btn = this;
+      post(base + "/classroom/post", { course: picker.value }).then(function (out) {
+        if (!out.ok) { btn.disabled = false; state.textContent = out.d.error || "Not posted"; return; }
+        location.reload();
+      }).catch(function () { btn.disabled = false; state.textContent = "Not posted — check your connection"; });
+    });
+  }
+
+  // Sending grades. What happened, said in full: who went across, who could
+  // not be matched, and why any were refused.
+  var syncBtn = document.getElementById("gc-sync");
+  if (syncBtn) {
+    syncBtn.addEventListener("click", function () {
+      var state = document.getElementById("gc-state");
+      if (dirty() && !confirm("Some scores or feedback aren't saved yet, and won't be sent. Sync anyway?")) return;
+      syncBtn.disabled = true;
+      state.textContent = "Sending…";
+      post(base + "/classroom/sync").then(function (out) {
+        syncBtn.disabled = false;
+        if (!out.ok) {
+          state.textContent = out.d.error || "Not sent";
+          if (out.d.gone) setTimeout(function () { location.reload(); }, 2500);
+          return;
+        }
+        var parts = [out.d.sent + (out.d.sent === 1 ? " grade" : " grades") + " sent as drafts."];
+        if (out.d.gone && out.d.gone.length) {
+          parts.push("Deleted in Classroom, so forgotten here: " + out.d.gone.join(", ") + ".");
+        }
+        if (out.d.unmatched.length) {
+          parts.push("Not in the Classroom class (by email): " + out.d.unmatched.join(", ") + ".");
+        }
+        if (out.d.failed.length) parts.push("Refused: " + out.d.failed.join("; ") + ".");
+        state.textContent = parts.join(" ");
+        var ok = {};
+        (out.d.synced || []).forEach(function (id) { ok[id] = true; });
+        document.querySelectorAll(".fb-row").forEach(function (row) {
+          var box = row.querySelector(".fb-score");
+          paintSync(row, box && box.value, !!ok[row.dataset.sub]);
+        });
+      }).catch(function () {
+        syncBtn.disabled = false;
+        state.textContent = "Not sent — check your connection";
+      });
+    });
+  }
+
+  /* Periods. Classroom is asked which posted class each student is in, and
+     the results get a tab per class — Period 4 and Period 7 doing the same
+     work from one link. Every row is still on the page; a tab only hides
+     the others, so nothing typed into a hidden box is lost. The choice is
+     remembered per assignment in this browser, which is a convenience and
+     nothing more: storage can be blocked, and then it is All every time. */
+  var tabs = document.getElementById("period-tabs");
+  if (tabs && postedTo.length) {
+    var KEY = "flaskide-period-" + slug;
+    fetch(base + "/classroom/periods").then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.classes || !d.classes.length) return;
+        var names = {}, counts = { all: 0, none: 0 };
+        d.classes.forEach(function (c) { names[c.id] = c.name; counts[c.id] = 0; });
+        var rows = document.querySelectorAll(".res-row");
+        rows.forEach(function (row) {
+          var cls = d.by_student[row.dataset.sub];
+          row.dataset.period = cls ? String(cls) : "none";
+          counts.all += 1;
+          counts[cls || "none"] += 1;
+          row.querySelector(".period-tag").textContent = cls ? "· " + names[cls] : "";
+        });
+        // One class and everyone in it: nothing to tell apart.
+        if (d.classes.length < 2 && !counts.none) return;
+
+        function show(which) {
+          rows.forEach(function (row) {
+            var on = which === "all" || row.dataset.period === which;
+            row.hidden = !on;
+            var fb = row.nextElementSibling;
+            if (fb && fb.classList.contains("fb-row")) fb.hidden = !on;
+          });
+          tabs.querySelectorAll("button").forEach(function (b) {
+            b.classList.toggle("is-on", b.dataset.which === which);
+          });
+          try { localStorage.setItem(KEY, which); } catch (e) {}
+        }
+        function tab(which, label) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "period-tab";
+          b.dataset.which = which;
+          b.textContent = label + " (" + counts[which] + ")";
+          b.addEventListener("click", function () { show(which); });
+          tabs.appendChild(b);
+        }
+        tab("all", "All");
+        d.classes.forEach(function (c) { tab(String(c.id), c.name); });
+        if (counts.none) tab("none", "Not in a posted class");
+        tabs.hidden = false;
+        var saved = "all";
+        try { saved = localStorage.getItem(KEY) || "all"; } catch (e) {}
+        show(tabs.querySelector('[data-which="' + saved + '"]') ? saved : "all");
+      }).catch(function () { /* no tabs; every row stays in view */ });
+  }
 
   window.addEventListener("beforeunload", function (e) {
     if (dirty()) { e.preventDefault(); e.returnValue = ""; }
