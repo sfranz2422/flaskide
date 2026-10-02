@@ -2156,6 +2156,12 @@ def classroom_post(slug):
     on the same link each get their own Classroom assignment, which is what
     lets each period's grades go to that period. A second post to the same
     class is refused — the class would see two of everything.
+
+    `draft` posts it as a Classroom draft: the link exists in PyIDE now, and
+    the teacher assigns it from Classroom whenever they're ready. Assigning
+    it there does not change whose it is — Google still counts it as this
+    app's, so Sync can grade it afterwards. A page from before the box
+    existed sends no `draft`, and gets what it always got: published.
     """
     db = SessionLocal()
     try:
@@ -2165,7 +2171,8 @@ def classroom_post(slug):
         if not item.out_of:
             return jsonify(error="Set what it's out of first — Classroom only "
                                  "takes grades on work with points."), 400
-        course_id = str((request.get_json(silent=True) or {}).get("course") or "")
+        asked = request.get_json(silent=True) or {}
+        course_id = str(asked.get("course") or "")
         if not re.fullmatch(r"[0-9]{1,30}", course_id):
             return jsonify(error="Choose a class."), 400
         already = [p for p in _posts(db, item) if p.course_id == course_id]
@@ -2194,7 +2201,7 @@ def classroom_post(slug):
                                "account. Press Turn in there when you're done.",
                 "materials": [{"link": {"url": link}}],
                 "workType": "ASSIGNMENT",
-                "state": "PUBLISHED",
+                "state": "DRAFT" if asked.get("draft") is True else "PUBLISHED",
                 "maxPoints": item.out_of,
             })
         if status != 200 or not work.get("id"):
@@ -2208,7 +2215,8 @@ def classroom_post(slug):
             url=(work.get("alternateLink") or "")[:300])
         db.add(post)
         db.commit()
-        return jsonify(ok=True, course=post.course_name, url=post.url)
+        return jsonify(ok=True, course=post.course_name, url=post.url,
+                       draft=asked.get("draft") is True)
     finally:
         db.close()
 
@@ -2217,31 +2225,48 @@ def _class_lists(db, item, access):
     """Ask Classroom, for every class this assignment was posted to, who is in
     it and which Classroom submission is theirs.
 
-    Returns (classes, gone, error). `classes` is a list of
+    Returns (classes, gone, drafts, error). `classes` is a list of
     (post, {email: classroom submission id or None}), in posting order.
     `gone` names classes whose Classroom assignment was deleted there; their
     posts are forgotten here, so the page offers Post again rather than
-    failing that way on every press. `error` is set when Google would not
-    answer at all, and then nothing else should be trusted.
+    failing that way on every press. `drafts` holds the posts that are still
+    a draft in Classroom — posted ahead of time and not assigned yet. Their
+    roster is still listed, so the period tabs work, but every submission id
+    is None: a draft has no submissions to grade, and a student in one is
+    waiting on the teacher, not missing from the class. `error` is set when
+    Google would not answer at all, and then nothing else should be trusted.
+
+    The state is asked of Google every time rather than remembered, because
+    the teacher assigns a draft in Classroom and nothing tells us when.
     """
-    classes, gone = [], []
+    classes, gone, drafts = [], [], set()
     for post in _posts(db, item):
         base = "%s/courses/%s" % (CLASSROOM_API, post.course_id)
-        roster, status = _google_list(base + "/students", access, "students")
-        if status != 200:
-            return [], [], ("Google wouldn't list the students in %s."
-                            % (post.course_name or "a class"))
-        subs, status = _google_list(
-            "%s/courseWork/%s/studentSubmissions" % (base, post.work_id),
-            access, "studentSubmissions")
+        status, work = _google_get("%s/courseWork/%s" % (base, post.work_id), access)
         if status == 404:
             gone.append(post.course_name or "a class")
             db.delete(post)
             db.commit()
             continue
         if status != 200:
-            return [], [], ("Google wouldn't list the submissions in %s."
-                            % (post.course_name or "a class"))
+            return [], [], set(), ("Google wouldn't say how the assignment "
+                                   "stands in %s." % (post.course_name or "a class"))
+        roster, status = _google_list(base + "/students", access, "students")
+        if status != 200:
+            return [], [], set(), ("Google wouldn't list the students in %s."
+                                   % (post.course_name or "a class"))
+        # A scheduled post is a DRAFT too until its time comes, which is what
+        # we want: there is nothing to grade in either.
+        if work.get("state") == "DRAFT":
+            drafts.add(post.id)
+            subs = []
+        else:
+            subs, status = _google_list(
+                "%s/courseWork/%s/studentSubmissions" % (base, post.work_id),
+                access, "studentSubmissions")
+            if status != 200:
+                return [], [], set(), ("Google wouldn't list the submissions in %s."
+                                       % (post.course_name or "a class"))
         by_user = {s.get("userId"): s.get("id") for s in subs}
         emails = {}
         for st in roster:
@@ -2249,7 +2274,7 @@ def _class_lists(db, item, access):
             if email:
                 emails[email] = by_user.get(st.get("userId"))
         classes.append((post, emails))
-    return classes, gone, ""
+    return classes, gone, drafts, ""
 
 
 @app.get("/api/assignment/<slug>/classroom/periods")
@@ -2268,7 +2293,7 @@ def classroom_periods(slug):
         access, why = _classroom_token(db, user)
         if access is None:
             return jsonify(error=why), 409
-        classes, gone, error = _class_lists(db, item, access)
+        classes, gone, _, error = _class_lists(db, item, access)
         if error:
             return jsonify(error=error), 502
         rows = (db.query(accounts.Submission, accounts.User)
@@ -2308,7 +2333,7 @@ def classroom_sync(slug):
         access, why = _classroom_token(db, user)
         if access is None:
             return jsonify(error=why), 409
-        classes, gone, error = _class_lists(db, item, access)
+        classes, gone, drafts, error = _class_lists(db, item, access)
         if error:
             return jsonify(error=error), 502
         if not classes:
@@ -2320,15 +2345,22 @@ def classroom_sync(slug):
                   .join(accounts.User, accounts.Submission.student_id == accounts.User.id)
                   .filter(accounts.Submission.assignment_id == item.id).all())
         sent, unmatched, failed = 0, [], []
+        waiting = [p.course_name or "a class" for p, _ in classes if p.id in drafts]
         for sub, student in rows:
             if sub.score is None:
                 continue
-            target = None
+            target, held = None, False
             for post, emails in classes:
-                cid = emails.get(student.email.lower())
+                email = student.email.lower()
+                if post.id in drafts and email in emails:
+                    held = True      # named once, by class, in `waiting`
+                    break
+                cid = emails.get(email)
                 if cid:
                     target = (post, cid)
                     break
+            if held:
+                continue
             if target is None:
                 unmatched.append(student.display_name() or student.email)
                 continue
@@ -2346,7 +2378,7 @@ def classroom_sync(slug):
                                            _google_message(data, "refused")))
         db.commit()
         return jsonify(ok=True, sent=sent, unmatched=unmatched, failed=failed,
-                       gone=gone, synced=[s.id for s, _ in rows if _is_synced(s)])
+                       gone=gone, waiting=waiting, synced=[s.id for s, _ in rows if _is_synced(s)])
     finally:
         db.close()
 

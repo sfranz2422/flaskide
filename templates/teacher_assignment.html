@@ -75,6 +75,8 @@
             <button id="gc-post" class="btn">{% if posts %}Also post to this class{% else %}Post to Google Classroom{% endif %}</button>
             <span id="gc-post-state" class="dim small"></span>
           </div>
+          <label class="small"><input type="checkbox" id="gc-draft" checked>
+            Post as a draft — assign it from Classroom when you're ready</label>
           {% if not posts %}
             <p class="dim small">Creates this assignment in that class with a link
               here, worth {{ assignment.out_of or "—" }} points. Grades can only be
@@ -258,11 +260,13 @@
       var state = document.getElementById("gc-post-state");
       var choice = picker.options[picker.selectedIndex];
       if (!picker.value) { state.textContent = "Choose a class first."; return; }
+      var draft = document.getElementById("gc-draft").checked;
       if (!confirm("Post \u201c" + {{ assignment.title | tojson }} + "\u201d to " + choice.textContent
-                   + "? The class will see it in Google Classroom straight away.")) return;
+                   + (draft ? " as a draft? The class won't see it until you assign it in Google Classroom."
+                            : "? The class will see it in Google Classroom straight away."))) return;
       this.disabled = true;
       var btn = this;
-      post(base + "/classroom/post", { course: picker.value }).then(function (out) {
+      post(base + "/classroom/post", { course: picker.value, draft: draft }).then(function (out) {
         if (!out.ok) { btn.disabled = false; state.textContent = out.d.error || "Not posted"; return; }
         location.reload();
       }).catch(function () { btn.disabled = false; state.textContent = "Not posted — check your connection"; });
@@ -288,6 +292,10 @@
         var parts = [out.d.sent + (out.d.sent === 1 ? " grade" : " grades") + " sent as drafts."];
         if (out.d.gone && out.d.gone.length) {
           parts.push("Deleted in Classroom, so forgotten here: " + out.d.gone.join(", ") + ".");
+        }
+        if (out.d.waiting && out.d.waiting.length) {
+          parts.push("Still a draft in Classroom, so nothing sent there yet: "
+                     + out.d.waiting.join(", ") + ". Assign it there, then sync again.");
         }
         if (out.d.unmatched.length) {
           parts.push("Not in the Classroom class (by email): " + out.d.unmatched.join(", ") + ".");

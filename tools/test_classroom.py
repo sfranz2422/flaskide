@@ -147,9 +147,17 @@ def fake_classroom_get(url, params):
             if page + 1 < len(c["roster"]):
                 data["nextPageToken"] = str(page + 1)
             return 200, data
+        if c["work"] and url == base + "/courseWork/w-%s" % cid:
+            if c["gone"]:
+                return 404, {"error": {"message": "Requested entity was not found."}}
+            return 200, {"id": "w-" + cid, "state": c["work"].get("state")}
         if c["work"] and url == base + "/courseWork/w-%s/studentSubmissions" % cid:
             if c["gone"]:
                 return 404, {"error": {"message": "Requested entity was not found."}}
+            # Google keeps a draft's submissions to itself: there is nothing
+            # to grade until it is assigned.
+            if c["work"].get("state") == "DRAFT":
+                return 400, {"error": {"message": "@CourseWorkNotModifiable"}}
             return 200, {"studentSubmissions": [
                 {"id": "s-" + st["userId"], "userId": st["userId"]}
                 for page in c["roster"] for st in page]}
@@ -440,11 +448,16 @@ r = teacher.post(POST, json={"course": P4})
 check("posting to the same class twice is refused, so it never sees two",
       r.status_code == 409 and len(posts()) == 1)
 
-r = teacher.post(POST, json={"course": P7})
+r = teacher.post(POST, json={"course": P7, "draft": True})
 check("the same assignment can also go to Period 7",
       r.status_code == 200 and [p[0] for p in posts()] == [P4, P7], posts())
 check("  as its own Classroom assignment",
       room[P7]["work"] is not None and room[P7]["work"].get("maxPoints") == 10)
+check("  posted as a draft when asked, for the teacher to assign there later",
+      room[P7]["work"].get("state") == "DRAFT" and r.get_json().get("draft") is True,
+      room[P7]["work"].get("state"))
+check("the page offers the draft box, ticked",
+      'id="gc-draft" checked' in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
 page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
 check("the page names both classes, and offers Sync",
       "<strong>Programming 1 — Period 4</strong>" in page
@@ -485,7 +498,22 @@ for email, score in (("kid1@school.org", "17"), ("kid2@school.org", "15"),
 
 r = teacher.post(SYNC)
 out = r.get_json() or {}
+check("Sync with Period 7 still a draft sends Period 4's only",
+      r.status_code == 200 and out.get("sent") == 1
+      and [p[0] for p in patches] == [P4], (out, patches))
+check("  naming Period 7 as waiting to be assigned",
+      out.get("waiting") == ["Programming 1 — Period 7"], out.get("waiting"))
+check("  without calling its students missing from the class",
+      out.get("unmatched") == ["Kid 4"], out.get("unmatched"))
+
+# The teacher assigns it in Classroom. Nothing tells PyIDE; the next Sync
+# has to notice by itself.
+room[P7]["work"]["state"] = "PUBLISHED"
+patches.clear()
+r = teacher.post(SYNC)
+out = r.get_json() or {}
 check("Sync sends the scores", r.status_code == 200 and out.get("sent") == 2, out)
+check("  once it is assigned there", out.get("waiting") == [], out.get("waiting"))
 check("  each to its own period's assignment, as a draft, matched by email",
       sorted(patches) == sorted([
           (P4, "s-u-kid", {"draftGrade": 17.0}, {"updateMask": "draftGrade"}),
