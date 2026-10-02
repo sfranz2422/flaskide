@@ -608,6 +608,11 @@
         $("share-go").focus();
       });
     }
+    // A signed-in student's Share, out of the way in the account menu: they
+    // have Save or Turn in on the bar, and that is the one thing to press.
+    if ($("share-menu")) {
+      $("share-menu").addEventListener("click", function () { share(false); });
+    }
     if (shareAsk) {
       $("share-go").addEventListener("click", function () {
         shareAsk.hidden = true;
@@ -620,6 +625,7 @@
     }
     if ($("download")) $("download").addEventListener("click", download);
     if ($("download-menu")) $("download-menu").addEventListener("click", download);
+    if ($("download-share")) $("download-share").addEventListener("click", download);
     if ($("clear")) $("clear").addEventListener("click", clearOutput);
     if ($("close-modal")) $("close-modal").addEventListener("click", function () {
       $("modal").hidden = true;

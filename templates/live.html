@@ -54,24 +54,28 @@
       {% endif %}
     {% endif %}
     {% if joined and not is_host %}
-      {#  Signed in, their copy can go into their own projects and autosave
-          from then on — the same Save-once-then-it-is-yours the editor
-          already does. Signed out it is not offered, because there is
-          nowhere for it to go; that copy lives in their browser and the
-          page says so. #}
+      {#  ONE button, as in the editor. A lesson for an assignment has Turn
+          in and nothing else: the copy saves itself into the assignment's
+          own draft from the first keystroke, so there is nothing to Save
+          first. Having both made a student press Save, then Turn in, and
+          then find what looked like two things on their list — a saved
+          project and a turned-in one — when it was always one row.
+
+          A lesson with no assignment has Save, once, and then it autosaves
+          like any project. Signed out neither is offered, because there is
+          nowhere for the work to go; that copy lives in their browser and
+          the page says so. #}
       {% if user %}
-        <button id="live-save" class="btn"
-                title="Keep this in your projects. It saves itself from then on.">Save</button>
-        <span id="live-save-state" class="savestate" aria-live="polite" hidden></span>
-        {#  Only once it is saved, and only when the lesson is for an
-            assignment. A Turn in button with nothing behind it is worse
-            than none: a student presses it, sees an error they cannot act
-            on, and assumes their work is lost. #}
         {% if assignment %}
-          <button id="live-turn-in" class="btn btn-primary" hidden
+          <span id="live-save-state" class="savestate" aria-live="polite" hidden></span>
+          <button id="live-turn-in" class="btn btn-primary"
                   title="Hand this in to {{ live.host_name }}. You can keep working and turn it in again.">
             {% if submitted_at %}Turn in again{% else %}Turn in{% endif %}
           </button>
+        {% else %}
+          <button id="live-save" class="btn btn-primary"
+                  title="Keep this in your projects. It saves itself from then on.">Save</button>
+          <span id="live-save-state" class="savestate" aria-live="polite" hidden></span>
         {% endif %}
         <a id="live-open" class="btn" hidden
            title="Open this copy in the full editor">Open in editor</a>

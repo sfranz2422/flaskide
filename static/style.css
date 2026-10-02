@@ -760,6 +760,11 @@ li.CodeMirror-hint-active { background: var(--accent); color: var(--on-accent); 
 .handout { border: 1px solid var(--line); border-radius: 9px; padding: 16px 18px; }
 .handout h2 { margin-top: 0; }
 .names { columns: 2; margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
+/* A student's My work page: one row per assignment, then their projects. */
+.turned-in { color: var(--green); font-weight: 500; }
+.my-assignments td:first-child,
+.my-projects td:first-child { width: 55%; }
+
 .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
 .empty h2 { text-transform: none; font-size: 20px; color: var(--text); }
 

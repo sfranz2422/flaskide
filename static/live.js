@@ -346,14 +346,15 @@
       openLink.hidden = false;
       openLink.href = "/p/" + encodeURIComponent(draftSlug);
     }
-    if (turnInBtn) turnInBtn.hidden = !(draftSlug && canTurnIn);
+    if (turnInBtn) turnInBtn.hidden = !canTurnIn;
   }
 
-  if (draftSlug) {
-    // Reopened mid-lesson with a copy already saved. The page knows whether
-    // the lesson has an assignment, so Turn in can be offered straight away
-    // rather than waiting for the next keystroke to trigger an autosave.
-    canTurnIn = !!L.assignment;
+  /* A lesson for an assignment offers Turn in from the start: there is no
+     Save to press first, and turnIn() makes the draft itself if the first
+     keystroke has not already. */
+  canTurnIn = !!L.assignment;
+  if (draftSlug || L.submittedAt) {
+    // Reopened mid-lesson with a copy already saved, or already turned in.
     savedNow(L.submittedAt ? "Turned in " + L.submittedAt : "Saved");
   }
 
@@ -361,7 +362,7 @@
      draft, so what the teacher sees on the dashboard is identical whichever
      way the student got there. */
   function turnIn() {
-    if (!draftSlug || !canTurnIn) return;
+    if (!canTurnIn) return;
     if (!window.confirm("Turn this in to " + (L.assignmentTitle || "your teacher")
                         + "? You can keep working and turn it in again.")) {
       return;
@@ -379,6 +380,8 @@
         window.alert("Could not save before turning in. Try again.");
         return;
       }
+      // the first save of the lesson may be this one
+      rememberDraft(saved.slug);
       return fetch("/api/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -410,6 +413,30 @@
 
   if (turnInBtn) turnInBtn.addEventListener("click", turnIn);
 
+  function rememberDraft(slug) {
+    if (!slug) return;
+    draftSlug = slug;
+    try { window.localStorage.setItem(SLUG_KEY, draftSlug); } catch (e) {}
+  }
+
+  /* The silent Save of an assignment lesson: the first keystroke makes the
+     draft — the same row the handout link would have made — and autosave
+     carries on from there. Without it a student's work would reach the
+     server only when they pressed Turn in, and a closed laptop lid before
+     that would leave nothing on the My work page. */
+  var pendingKeep = false;
+  function keepQuietly() {
+    if (pendingKeep || draftSlug || !L.signedIn || !L.assignment) return;
+    if (!mainSource().trim()) return;
+    pendingKeep = true;
+    keep().then(function (saved) {
+      pendingKeep = false;
+      if (!saved) return;
+      rememberDraft(saved.slug);
+      savedNow(L.submittedAt ? "Turned in " + L.submittedAt : "Saved");
+    }).catch(function () { pendingKeep = false; });
+  }
+
   function startDraft() {
     if (!L.signedIn || pendingSave) return;
     var text = mainSource();
@@ -434,9 +461,8 @@
       .then(function (data) {
         pendingSave = false;
         if (data.error) { window.alert(data.error); return; }
-        draftSlug = data.slug;
+        rememberDraft(data.slug);
         canTurnIn = !!data.can_turn_in;
-        try { window.localStorage.setItem(SLUG_KEY, draftSlug); } catch (e) {}
         savedNow("Saved");
       })
       .catch(function () {
@@ -446,7 +472,8 @@
   }
 
   function autosave() {
-    if (!draftSlug || !L.signedIn) return;
+    if (!draftSlug) { keepQuietly(); return; }
+    if (!L.signedIn) return;
     fetch("/api/draft/" + encodeURIComponent(draftSlug), {
       method: "POST",
       headers: { "Content-Type": "application/json" },

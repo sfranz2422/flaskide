@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My work — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  // The editor's light/dark choice, so this page does not flash the other one.
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">My work</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('index') }}">New project</a>
+    {% if is_teacher %}
+      <a class="btn" href="{{ url_for('teacher_home') }}">Assignments</a>
+    {% endif %}
+    <span class="whoami">{{ user_email }}</span>
+    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+  </div>
+</header>
+
+<main class="sheet">
+  {#  One row per assignment, whatever way the student came to it — the
+      handout link or a live lesson both write the same draft. #}
+  <h2>Assignments <span class="count">{{ assignments|length }}</span></h2>
+  {% if assignments %}
+    <table class="listing my-assignments">
+      <thead>
+        <tr><th>Assignment</th><th>Turned in</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for a in assignments %}
+          <tr>
+            <td>
+              <a href="{{ a.url }}">{{ a.title }}</a>
+              {% if a.sql %}<span class="dim small"> · SQL</span>{% endif %}
+              {% if a.closed %}<span class="dim small"> · closed</span>{% endif %}
+              {% if a.updated %}<div class="dim small">Last worked on {{ a.updated }}</div>{% endif %}
+            </td>
+            <td>
+              {% if a.submitted %}
+                <span class="turned-in">✓ {{ a.submitted }}</span>
+                {% if a.times > 1 %}<div class="dim small">turned in {{ a.times }} times</div>{% endif %}
+              {% else %}
+                <span class="dim">Not turned in</span>
+              {% endif %}
+            </td>
+            <td class="right rowactions">
+              {% if a.turned_in_url %}
+                <a class="linkbtn" href="{{ a.turned_in_url }}" target="_blank" rel="noopener"
+                   title="Exactly what your teacher has — it does not change when you keep working">What I turned in</a>
+              {% endif %}
+              <a class="linkbtn" href="{{ a.url }}">Open</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="dim">None yet. When your teacher gives you an assignment link,
+      or teaches a live lesson for one, it shows up here.</p>
+  {% endif %}
+
+  <h2>Projects <span class="count">{{ projects|length }}</span></h2>
+  {% if projects %}
+    <table class="listing my-projects">
+      <thead>
+        <tr><th>Project</th><th>Last saved</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for p in projects %}
+          <tr data-slug="{{ p.slug }}" data-title="{{ p.title }}">
+            <td><a href="{{ p.url }}">{{ p.title }}</a>
+              {% if p.sql %}<span class="dim small"> · SQL</span>{% endif %}</td>
+            <td class="dim">{{ p.updated }}</td>
+            <td class="right rowactions">
+              <a class="linkbtn" href="{{ p.url }}">Open</a>
+              <button class="linkbtn danger js-delete">Delete</button>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="dim">Nothing saved yet. Start a <a href="{{ url_for('index') }}">new Flask app</a>
+      or <a href="{{ url_for('new_sql') }}">SQL project</a>
+      and press <strong>Save</strong> — it keeps itself from then on.</p>
+  {% endif %}
+</main>
+
+<script>
+  /* Projects only. An assignment's copy is not deleted from here: what was
+     turned in is the teacher's either way, and starting an assignment over
+     is rare enough not to put a destructive button on every row. */
+  document.addEventListener("click", function (e) {
+    if (!e.target.classList.contains("js-delete")) return;
+    var row = e.target.closest("tr[data-slug]");
+    if (!confirm("Delete “" + row.dataset.title + "”?\n\nThis can't be undone.")) return;
+    fetch("/api/draft/" + encodeURIComponent(row.dataset.slug), { method: "DELETE" })
+      .then(function (r) {
+        if (r.ok) location.reload();
+        else alert("Couldn't delete that.");
+      });
+  });
+</script>
+
+</body>
+</html>

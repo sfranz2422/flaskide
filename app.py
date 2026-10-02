@@ -963,6 +963,97 @@ def my_projects():
         db.close()
 
 
+@app.get("/my")
+def my_work():
+    """A student's own page: their assignments, then their projects.
+
+    Assignments and projects are both drafts underneath, and the window this
+    replaced listed them together — so an assignment a student had saved
+    from a live lesson and then turned in looked like two things, a project
+    and a submission. Here an assignment is one row that says where it
+    stands, and the projects are only what is NOT for an assignment.
+
+    Flask apps and SQL projects are both FlaskIDE drafts and both open at
+    /p/<slug>, where the editor decides the kind from the files — so they
+    share one list, with SQL ones labelled.
+
+    There is no class roster, so the only assignments listed are ones this
+    student has opened (that made a draft) or turned in. One they have never
+    clicked the link for cannot be known about, and is not shown.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return redirect(url_for("login", next=request.path))
+
+        drafts = (db.query(accounts.Draft)
+                    .filter_by(owner_id=user.id, app=APP_NAME)
+                    .order_by(accounts.Draft.updated_at.desc()).all())
+        subs = {s.assignment_id: s for s in db.query(accounts.Submission)
+                .filter_by(student_id=user.id).all()}
+        wanted = {d.assignment_id for d in drafts if d.assignment_id} | set(subs)
+        # Filtered by app: one sign-in covers all three editors and a
+        # submission row does not say which, so another editor's turned-in
+        # work is dropped here rather than listed with a link that 404s.
+        items = {a.id: a for a in db.query(accounts.Assignment)
+                 .filter(accounts.Assignment.id.in_(wanted),
+                         accounts.Assignment.app == APP_NAME).all()} if wanted else {}
+
+        def when(t):
+            return t.strftime("%b %d at %I:%M %p")
+
+        assignments, projects, seen = [], [], set()
+        for d in drafts:
+            item = items.get(d.assignment_id)
+            if item is None:
+                # No assignment, or one deleted since: an ordinary project.
+                # (Deleting an assignment is refused once anyone has turned
+                # in, so nothing handed in is lost by listing it this way.)
+                projects.append({"slug": d.slug, "title": d.title or "Untitled",
+                                 "sql": _is_sql(d.file_map()),
+                                 "updated": when(d.updated_at),
+                                 "url": url_for("open_draft", slug=d.slug)})
+                continue
+            seen.add(item.id)
+            assignments.append(_my_assignment(item, d, subs.get(item.id), when))
+        # Turned in, and then the working copy deleted. What was handed in is
+        # still the teacher's, so it still belongs on this list.
+        for aid, sub in subs.items():
+            item = items.get(aid)
+            if item is not None and aid not in seen:
+                assignments.append(_my_assignment(item, None, sub, when))
+
+        return render_template("my.html", assignments=assignments,
+                               projects=projects)
+    finally:
+        db.close()
+
+
+def _is_sql(files):
+    """A SQL project is one with a query.sql — the same test the editor's
+    isSql() makes, so this label and the editor that opens cannot disagree."""
+    return SQL_ENTRY in files
+
+
+def _my_assignment(item, draft, sub, when):
+    return {
+        "title": item.title,
+        "closed": bool(item.closed),
+        "sql": _is_sql(item.file_map()),
+        "draft_slug": draft.slug if draft else "",
+        # Their copy if they still have one, else the handout link, which
+        # makes a fresh copy from the starter.
+        "url": (url_for("open_draft", slug=draft.slug) if draft
+                else url_for("open_assignment", slug=item.slug)),
+        "updated": when(draft.updated_at) if draft else "",
+        "submitted": when(sub.submitted_at) if sub else "",
+        "times": (sub.times_submitted or 1) if sub else 0,
+        "turned_in_url": (url_for("view_shared", slug=sub.snippet_slug)
+                          if sub else ""),
+    }
+
+
 # --------------------------------------------------------------------------
 # Assignments
 # --------------------------------------------------------------------------

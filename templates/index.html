@@ -72,16 +72,23 @@
         <input type="checkbox" id="auto-run"> Auto
       </label>
     {% endif %}
-    {#  Who sees what.
-        A student working on an assignment needs Run and Turn in. Everything
-        else is clutter to them, and clutter in a toolbar is a question a
-        student has to stop and answer instead of writing code.
+    {#  Who sees what. A student gets ONE thing to press besides Run:
 
-          Hide code, Publish  teachers only — both exist to hand work OUT
-          Turn in             only where there is an assignment to hand to
-          Share               hidden only when Turn in is there to replace it
-          Save                a signed-in student keeping their own project
-          Download            in the account menu when signed in, here if not
+          signed in, on an assignment       Turn in   (it autosaves anyway)
+          signed in, anything else          Save      (then just "Saved")
+          signed out                        Sign in, and Share
+
+        Everything else is clutter to them, and clutter in a toolbar is a
+        question a student has to stop and answer instead of writing code.
+        Share stays for a signed-out student because sign-in is optional —
+        it is how a class hands work in when Google sign-in is off or down.
+        A signed-in student still has it, in the account menu.
+
+          Publish             teachers only — it exists to hand work OUT
+                              (Hide code is too, in the dialog Share opens)
+          Download            the account menu when signed in; signed out,
+                              the dialog Share opens, or the bar when there
+                              is no sign-in at all
     #}
     {% if readonly %}
       <a class="btn btn-primary" href="{{ url_for('fork_shared', slug=slug) }}">Edit a copy</a>
@@ -89,7 +96,7 @@
       {% if draft_slug %}
         <span id="save-state" class="savestate" aria-live="polite">Saved</span>
       {% elif user %}
-        <button id="save-project" class="btn"
+        <button id="save-project" class="btn{% if not is_teacher %} btn-primary{% endif %}"
                 title="Keep this project on your account so it saves itself from now on.">Save</button>
       {% endif %}
 
@@ -112,7 +119,12 @@
         <button id="live-code" class="chip live-code" type="button" hidden></button>
       {% endif %}
 
-      {% if is_teacher or not (draft_slug and assignment_slug) %}
+      {#  A signed-in student has Save or Turn in instead, and Share in the
+          account menu. Signed out it stays on the bar whatever the page —
+          including an assignment link, where it is the only way to hand
+          anything in. Signing in is optional, so it can never be the only
+          route. #}
+      {% if is_teacher or not user %}
         <button id="share" class="btn btn-primary">Share</button>
       {% endif %}
 
@@ -124,9 +136,11 @@
                 title="Hand this out to a class as an assignment.">Publish</button>
       {% endif %}
     {% endif %}
-    {# Signed in, Download lives in the account menu — still one click, but not
-       taking up room in a bar a student reads every lesson. #}
-    {% if not user %}
+    {# Signed in, Download lives in the account menu. Signed out with
+       sign-in available it is in the dialog Share opens, so the bar holds
+       Share and Sign in only. With no sign-in at all there is neither a
+       menu nor a reason to hide it, so it stays here. #}
+    {% if not user and not login_enabled %}
       <button id="download" class="btn">Download</button>
     {% endif %}
     <div class="stepper" role="group" aria-label="Code text size">
@@ -144,7 +158,10 @@
           <button id="account" class="btn btn-account" aria-expanded="false"
                   title="{{ user_email }}">{{ user_name }}</button>
           <div id="account-menu" class="menu" hidden>
-            <button id="my-projects" class="menu-item">My projects</button>
+            <a class="menu-item" href="{{ url_for('my_work') }}">My work</a>
+            {% if not is_teacher and not readonly and not (draft_slug and assignment_slug) %}
+              <button id="share-menu" class="menu-item">Share a link</button>
+            {% endif %}
             <button id="download-menu" class="menu-item">Download this project</button>
             {% if is_teacher %}
               <a class="menu-item" href="{{ url_for('teacher_home') }}">Assignments</a>
@@ -296,18 +313,15 @@
     </div>
     <p class="modal-note" id="modal-note">The link captures every file exactly as it is right now.
       If you keep working, share again to create an updated link.</p>
-    <button id="close-modal" class="btn">Done</button>
+    <div class="actions">
+      <button id="close-modal" class="btn">Done</button>
+      {% if not user and login_enabled %}
+        <button id="download-share" class="btn" title="Save a copy on this computer">Download</button>
+      {% endif %}
+    </div>
   </div>
 </div>
 
-<div id="projects-modal" class="modal" hidden>
-  <div class="modal-card">
-    <h2>My projects</h2>
-    <p class="modal-sub">Everything you have saved, newest first.</p>
-    <div id="projects-list" class="projects"></div>
-    <button id="close-projects" class="btn">Done</button>
-  </div>
-</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
