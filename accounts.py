@@ -15,6 +15,7 @@ same database and already owns `projects`:
     drafts         a student's living copy — this is what autosaves
     submissions    what a student turned in, and when
     live_sessions  a lesson the class is watching the teacher type
+    classroom_links  a teacher's connection to their Google Classroom
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -182,6 +183,43 @@ class Submission(Base):
     #: Whether the student has seen the current feedback. Writing new
     #: feedback clears it; the student opening My work sets it.
     feedback_seen = Column(Integer, nullable=False, default=0)
+
+
+# --------------------------------------------------------------------------
+# Google Classroom
+# --------------------------------------------------------------------------
+
+class ClassroomLink(Base):
+    """A teacher's standing permission to post to their Google Classroom.
+
+    Only teachers ever have one. Students sign in with the plain
+    openid/email/profile they always have; the Classroom permissions are asked
+    for separately, by the teacher, from the dashboard.
+
+    One per teacher PER APP, because the refresh token belongs to the OAuth
+    client that obtained it, and the three editors are three Render services
+    that may each have their own GOOGLE_CLIENT_ID. A token got by PyIDE is
+    refused by Google if WebIDE presents it.
+
+    `refresh_token` is ENCRYPTED, with a key derived from the app's
+    SECRET_KEY, which lives in Render's environment and not in this
+    database. A copy of the database alone is not a working key to anyone's
+    classes. The cost: changing SECRET_KEY makes every stored token
+    unreadable, and each teacher has to press Connect again. That is all.
+    """
+    __tablename__ = "classroom_links"
+    __table_args__ = (
+        UniqueConstraint("user_id", "app", name="uq_classroom_user_app"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    app = Column(String(16), nullable=False, default="pyide")
+    refresh_token = Column(Text, nullable=False)
+    #: The Google account that granted it. Usually the teacher's sign-in
+    #: address; recorded so the dashboard can say which account is connected.
+    google_email = Column(String(320), nullable=False, default="")
+    connected_at = Column(DateTime, nullable=False, default=now)
 
 
 # --------------------------------------------------------------------------
