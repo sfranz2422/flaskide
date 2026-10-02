@@ -29,7 +29,7 @@ import secrets
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    BigInteger, Column, DateTime, ForeignKey, Integer, String, Text,
+    BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base
@@ -107,6 +107,18 @@ class Assignment(Base):
     # submission and every student's work; it just stops filling up the
     # dashboard months after the class moved on.
     archived = Column(Integer, nullable=False, default=0)
+    #: What it is marked out of. NULL means not graded: no score boxes, and
+    #: it cannot be posted to Google Classroom, which only takes grades on
+    #: work that has points.
+    out_of = Column(Integer, nullable=True)
+    #: The Google Classroom assignment PyIDE posted this as, if any. Grades
+    #: can only be sent to coursework this app created itself — Google
+    #: refuses the rest — so these are what make Sync possible at all.
+    #: Empty means not posted.
+    classroom_course_id = Column(String(32), nullable=False, default="")
+    classroom_course_name = Column(String(200), nullable=False, default="")
+    classroom_work_id = Column(String(32), nullable=False, default="")
+    classroom_url = Column(String(300), nullable=False, default="")
 
     def file_map(self) -> dict:
         return _as_map(self.files)
@@ -183,6 +195,12 @@ class Submission(Base):
     #: Whether the student has seen the current feedback. Writing new
     #: feedback clears it; the student opening My work sets it.
     feedback_seen = Column(Integer, nullable=False, default=0)
+    #: The teacher's score, out of the assignment's out_of. NULL is "not
+    #: scored", which is not the same as 0. A float so half marks work.
+    score = Column(Float, nullable=True)
+    #: The score last sent to Google Classroom. Differs from `score` when it
+    #: has changed since the last Sync, which is how the page knows to say so.
+    score_synced = Column(Float, nullable=True)
 
 
 # --------------------------------------------------------------------------
@@ -425,6 +443,26 @@ LATER_COLUMNS = [
     ("submissions", "feedback_seen",
      "ALTER TABLE submissions ADD COLUMN feedback_seen INTEGER NOT NULL "
      "DEFAULT 0"),
+    # Grading. NULL and empty are true of everything before: no assignment
+    # had points, none was posted to Classroom, no work was scored or synced.
+    ("assignments", "out_of",
+     "ALTER TABLE assignments ADD COLUMN out_of INTEGER"),
+    ("assignments", "classroom_course_id",
+     "ALTER TABLE assignments ADD COLUMN classroom_course_id VARCHAR(32) "
+     "NOT NULL DEFAULT ''"),
+    ("assignments", "classroom_course_name",
+     "ALTER TABLE assignments ADD COLUMN classroom_course_name VARCHAR(200) "
+     "NOT NULL DEFAULT ''"),
+    ("assignments", "classroom_work_id",
+     "ALTER TABLE assignments ADD COLUMN classroom_work_id VARCHAR(32) "
+     "NOT NULL DEFAULT ''"),
+    ("assignments", "classroom_url",
+     "ALTER TABLE assignments ADD COLUMN classroom_url VARCHAR(300) "
+     "NOT NULL DEFAULT ''"),
+    ("submissions", "score",
+     "ALTER TABLE submissions ADD COLUMN score FLOAT"),
+    ("submissions", "score_synced",
+     "ALTER TABLE submissions ADD COLUMN score_synced FLOAT"),
 ]
 
 
