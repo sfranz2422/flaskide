@@ -573,6 +573,7 @@
           (code >= 500 ? " bad" : code >= 400 ? " warn" : code ? " ok" : "");
         el.title = path;
       },
+      onNote: function (text) { say("\n" + text + "\n", "dim"); },
     });
 
     applyKind();

@@ -65,12 +65,16 @@
     if (!a) return;
     var href = a.getAttribute("href");
     if (!href) return;
-    // Anything with a scheme is the real internet, and is left alone —
-    // except that this page has no origin, so it simply will not go. Saying
-    // so is kinder than a silent nothing.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+    // Anything with a scheme (or a //host) is the real internet. This frame
+    // cannot go there — it has no allow-popups, and following it here would
+    // replace the student's page — so it asks the editor to open a new tab.
+    // a.href, not the raw attribute: "//example.com" resolved to a full URL.
+    // No \/ in the regex: this is a template literal, which eats the
+    // backslash and hands the page a regex that does not compile — taking
+    // every link and form on it down with the whole shim.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.slice(0, 2) === "//") {
       e.preventDefault();
-      send({ kind: "external", href: href });
+      send({ kind: "external", href: a.href });
       return;
     }
     if (href.charAt(0) === "#") return;
@@ -126,6 +130,10 @@
       this.live = 0;
       this.bar = opts.bar || null;             // where the path is shown
       this.onStatus = opts.onStatus || (() => {});
+      // A line for the console. onStatus(0, ...) only sets a hover title,
+      // which nobody reads, so anything the student must see comes here.
+      // `failed` is true when nothing happened, so a folded console can open.
+      this.onNote = opts.onNote || ((text) => this.onStatus(0, text));
       this.path = "/";
       /* The HTML of the page on screen, as the app returned it — before the
          shim goes in. A live lesson sends this to the class, and reads it
@@ -256,8 +264,31 @@
       } else if (msg.kind === "submit") {
         this.go(msg.path, msg.method, msg.form);
       } else if (msg.kind === "external") {
-        this.onStatus(0, "external link: " + msg.href);
+        this._openExternal(String(msg.href));
       }
+    }
+
+    /* A link to another site, opened in a new tab on the page's behalf. It
+     * used to only land in the status line, which reads as a broken link.
+     * The click inside the frame is what keeps the browser from calling this
+     * an unprompted pop-up. The URL comes from student content, so the scheme
+     * is checked here rather than trusted: a javascript: or mailto: href goes
+     * nowhere and says so. */
+    _openExternal(url) {
+      if (!/^https?:\/\//i.test(url)) {
+        this.onNote("That link didn't point at a web address, so nothing opened: " + url, true);
+        return;
+      }
+      let opened = null;
+      try {
+        opened = window.open(url, "_blank");
+        // the opened page must not be able to reach back into the editor
+        if (opened) { try { opened.opener = null; } catch (err) {} }
+      } catch (err) { /* blocked; reported below */ }
+      this.onNote(opened
+        ? "Opened in a new tab: " + url
+        : "Your browser blocked a new tab for " + url +
+          "\nAllow pop-ups for this site, or copy the address above.", !opened);
     }
   }
 

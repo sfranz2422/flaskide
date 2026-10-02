@@ -1052,6 +1052,12 @@
       el.className = "status-code" +
         (code >= 500 ? " bad" : code >= 400 ? " warn" : code ? " ok" : "");
       el.title = path || "";
+    },
+    /* The console starts folded, and a link that opened nothing must not
+       fail inside it unseen. */
+    onNote: function (text, failed) {
+      write("\n" + text + "\n", "dim");
+      if (failed) openConsole(true);
     }
   });
 

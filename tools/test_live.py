@@ -1590,6 +1590,88 @@ check("  and put away when the lesson ends",
       re.search(r"function paintLive\(\)[\s\S]*?\} else \{[\s\S]*?paintClassView\(null, \"\"\);",
                 _push) is not None)
 
+# ----------------------------------------- a link to another site
+# Clicked in the preview — editor or live, both use preview.js — it has to
+# open a new tab. It used to set only the status chip's hover title, so a
+# student's link to MDN did nothing anyone could see. Driven in node: the
+# shim really receives the click, and the Preview really handles the message.
+_pv_src = open(os.path.join(HERE, "..", "static", "preview.js")).read()
+_shim = re.search(r"const SHIM = (`<script>[\s\S]*?<\\/script>`);", _pv_src)
+if shutil.which("node") and _shim:
+    _harness = """
+var sent = [], listeners = {}, opened = [], notes = [], gone = [], blockAll = false;
+var document = { addEventListener: function (t, f) { listeners[t] = f; } };
+var parent = { postMessage: function (m) { sent.push(m); } };
+var location = { pathname: "/" };
+var SHIM = %s;
+eval(SHIM.replace(/^<script>/, "").replace(/<\\/script>$/, ""));
+function click(href, resolved) {
+  var a = { getAttribute: function () { return href; }, href: resolved || href };
+  var e = { target: { closest: function () { return a; } }, defaultPrevented: false,
+            preventDefault: function () { this.defaultPrevented = true; } };
+  sent = [];
+  listeners.click(e);
+  return { stopped: e.defaultPrevented, msg: sent[0] || null };
+}
+var window = { FlaskIDERuntime: {}, open: function (url, where) {
+  if (blockAll) return null;
+  opened.push([url, where]); return { opener: "editor" }; } };
+%s
+var W = {};
+var p = Object.create(window.FlaskIDEPreview.prototype);
+p.frames = [{ contentWindow: W }]; p.live = 0;
+p.onNote = function (t, failed) { notes.push([t, !!failed]); };
+p.go = function (path) { gone.push(path); };
+function deliver(msg) { p._fromPage({ data: msg, source: W }); }
+var out = {};
+var ext = click("https://developer.mozilla.org/", "https://developer.mozilla.org/");
+out.extStopped = ext.stopped; out.extMsg = ext.msg;
+deliver(ext.msg);
+var proto = click("//example.com/x", "https://example.com/x");
+out.protoMsg = proto.msg;
+var route = click("/about", "about:srcdoc");
+out.routeMsg = route.msg;
+deliver(route.msg);
+var js = click("javascript:alert(1)");
+deliver(js.msg);
+out.openedBeforeBlock = opened.slice();
+blockAll = true;
+deliver(ext.msg);
+p._fromPage({ data: ext.msg, source: {} });   // a frame nobody is looking at
+out.opened = opened; out.notes = notes; out.gone = gone;
+console.log(JSON.stringify(out));
+""" % (_shim.group(1), _pv_src)
+    _res = subprocess.run(["node", "-e", _harness], capture_output=True, text=True)
+    try:
+        _got = json.loads(_res.stdout)
+    except ValueError:
+        _got = {}
+    _notes = _got.get("notes") or []
+    check("a link to another site opens it in a new tab",
+          _got.get("extStopped") is True
+          and _got.get("openedBeforeBlock") == [["https://developer.mozilla.org/", "_blank"]],
+          repr(_got or _res.stderr[:400]))
+    check("  and the console says so",
+          len(_notes) > 0 and _notes[0][0].startswith("Opened in a new tab")
+          and _notes[0][1] is False, repr(_notes[:1]))
+    check("  a //host link is another site too, not a route in the app",
+          (_got.get("protoMsg") or {}).get("kind") == "external"
+          and (_got.get("protoMsg") or {}).get("href") == "https://example.com/x",
+          repr(_got.get("protoMsg")))
+    check("  a link to one of the app's own routes still goes to the app",
+          _got.get("gone") == ["/about"], repr(_got.get("gone")))
+    check("  a javascript: link opens nothing, and says so",
+          len(_notes) > 1 and "nothing opened" in _notes[1][0] and _notes[1][1] is True,
+          repr(_notes[1:2]))
+    check("  a blocked pop-up says so, loudly enough to open the console",
+          len(_notes) == 3 and "blocked" in _notes[2][0] and _notes[2][1] is True,
+          repr(_notes[2:]))
+    check("  and a frame that is not on screen cannot open anything",
+          len(_got.get("opened") or []) == 1, repr(_got.get("opened")))
+else:
+    check("node runs the preview's link handling", False,
+          "brew install node" if _shim else "SHIM not found in preview.js")
+
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"
       % ("SOME FAILED" if bad else "ALL PASSED", len(results), bad))
