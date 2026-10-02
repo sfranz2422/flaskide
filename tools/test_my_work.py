@@ -366,6 +366,17 @@ with eng.begin() as c:
 check("  and an old row reads as no feedback, not as an error",
       tuple(row) == ("", None, 0), tuple(row))
 
+
+# ------------------------------------------------------- choosing the account
+print("\nSigning in")
+
+# Read from the source: signing in needs authlib, which the tests do without.
+# Without the prompt Google picks the browser's default account, which on a
+# teacher's laptop is a personal Gmail; incognito was the only way round it.
+check("sign-in always shows Google's account chooser",
+      'authorize_redirect(target, prompt="select_account")'
+      in open(os.path.join(HERE, "..", "app.py")).read())
+
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"
       % ("SOME FAILED" if bad else "ALL PASSED", len(results), bad))

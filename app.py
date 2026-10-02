@@ -675,7 +675,12 @@ def login():
         _redirect_logged[0] = True
         print(f"[{APP_NAME}] redirect URI sent to Google: {target}", flush=True)
     try:
-        return oauth.google.authorize_redirect(target)
+        # select_account: always show Google's account chooser. Without it
+        # Google signs in with whichever account the browser has as its
+        # default — on a teacher's laptop that is usually a personal Gmail,
+        # and the only way round it was an incognito window. One extra click
+        # for a student with one account; the right account for everyone.
+        return oauth.google.authorize_redirect(target, prompt="select_account")
     except Exception:
         # Authlib fetches Google's discovery document on the first sign-in of
         # each worker, so a network blip lands here. A student should see a
