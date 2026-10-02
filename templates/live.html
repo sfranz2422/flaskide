@@ -264,6 +264,10 @@
     page: {{ (live.page if live else '') | tojson }},
     title: {{ (live.title if live else '') | tojson }},
     signedIn: {{ 'true' if user else 'false' }},
+    // The assignment draft's version when this page was made, if there is
+    // one; every save says it, so a second tab cannot save over this one's
+    // work unseen. See Draft.version in accounts.py.
+    draftVersion: {{ draft_version | default(none) | tojson }},
     assignment: {{ (assignment.slug if assignment else '') | tojson }},
     assignmentTitle: {{ (assignment.title if assignment else '') | tojson }},
     submittedAt: {{ (submitted_at or '') | tojson }},

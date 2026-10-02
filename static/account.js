@@ -20,6 +20,46 @@ window.FlaskIDEAccount = (function () {
   var cfg = window.FLASKIDE || {};
   var $ = function (id) { return document.getElementById(id); };
 
+  /* ------------------------------------------------- two tabs, one draft
+   * Every write to the draft says which version this tab last saw and which
+   * tab it is, and the server refuses it if ANOTHER tab has saved since.
+   * Without that, a forgotten second tab — the Classroom link open beside the
+   * live lesson — wrote its old copy over the newer one the moment a key was
+   * pressed in it. See Draft.version in accounts.py. Flask apps and SQL
+   * projects both save through here, so both are covered.
+   *
+   * Refused, this tab stops saving for good and says so. It does not try to
+   * merge or retry: the other tab's copy is the one to keep, and what was
+   * typed here is still on screen to copy across by hand. */
+  var TAB = Math.random().toString(36).slice(2, 14);
+  var STALE_NOTE = "This was changed in another tab or window. Reload this "
+                 + "page to carry on from the latest version, then turn it in.";
+  var seen = typeof cfg.draftVersion === "number" ? cfg.draftVersion : null;
+  var stale = false;
+
+  function stamp(payload) {
+    if (seen !== null) { payload.base = seen; payload.tab = TAB; }
+    return payload;
+  }
+
+  function saw(data) {
+    if (data && typeof data.version === "number") seen = data.version;
+  }
+
+  function goneStale(say, message) {
+    if (stale) return;
+    stale = true;
+    var el = $("save-state");
+    if (el) {
+      el.textContent = "Not saved — changed in another tab";
+      el.className = "savestate bad";
+    }
+    say("\n" + message + " Anything you typed here since is still on screen, "
+        + "so copy it first if you need it.\n", "err");
+    // The output pane can be folded away or behind the preview; this cannot.
+    window.alert(message);
+  }
+
   function attach(opts) {
     var read = opts.read;               // () -> {files, title}
     var say = opts.say;                 // (text, cls) -> write to the output pane
@@ -48,9 +88,11 @@ window.FlaskIDEAccount = (function () {
     }
 
     function save() {
+      if (stale) return;
       if (inFlight) { dirtyAgain = true; return; }
-      var payload = read();
-      var body = JSON.stringify(payload);
+      // Compared unstamped: the version moves on every save, so a stamped
+      // body would never match the last one and nothing would be skipped.
+      var body = JSON.stringify(read());
       if (body === lastSent) { show("Saved"); return; }
 
       inFlight = true;
@@ -58,11 +100,12 @@ window.FlaskIDEAccount = (function () {
       fetch("/api/draft/" + encodeURIComponent(cfg.draftSlug), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: body
+        body: JSON.stringify(stamp(JSON.parse(body)))
       }).then(function (res) {
         return res.json().then(function (data) { return { res: res, data: data }; });
       }).then(function (out) {
         inFlight = false;
+        if (out.data && out.data.stale) { goneStale(say, out.data.error); return; }
         if (!out.res.ok) {
           /* Left visible rather than retried silently. A student whose work is
              not reaching the server needs to know before they close the tab,
@@ -73,6 +116,7 @@ window.FlaskIDEAccount = (function () {
           return;
         }
         lastSent = body;
+        saw(out.data);
         show("Saved " + (out.data.saved_at || ""));
         if (dirtyAgain) { dirtyAgain = false; schedule(); }
       }).catch(function () {
@@ -90,12 +134,12 @@ window.FlaskIDEAccount = (function () {
     /* A tab closing takes any pending save with it, so push one last copy on
        the way out. keepalive lets the request outlive the page. */
     window.addEventListener("pagehide", function () {
-      if (!timer && !dirtyAgain) return;
+      if (stale || (!timer && !dirtyAgain)) return;
       try {
         fetch("/api/draft/" + encodeURIComponent(cfg.draftSlug), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(read()),
+          body: JSON.stringify(stamp(read())),
           keepalive: true
         });
       } catch (e) { /* nothing more we can do from here */ }
@@ -117,7 +161,8 @@ window.FlaskIDEAccount = (function () {
     var btn = $("turn-in");
     if (!btn) return;
     btn.addEventListener("click", function () {
-      var payload = read();
+      if (stale) { window.alert(STALE_NOTE); return; }
+      var payload = stamp(read());
       payload.draft = cfg.draftSlug;
       btn.disabled = true;
       var label = btn.textContent;
@@ -130,11 +175,17 @@ window.FlaskIDEAccount = (function () {
         return res.json().then(function (d) { return { res: res, data: d }; });
       }).then(function (out) {
         btn.disabled = false;
+        if (out.data && out.data.stale) {
+          btn.textContent = label;
+          goneStale(say, out.data.error);
+          return;
+        }
         if (!out.res.ok) {
           btn.textContent = label;
           say("\n" + (out.data.error || "That didn't go through.") + "\n", "err");
           return;
         }
+        saw(out.data);
         btn.textContent = "Turn in again";
         say("\nTurned in at " + out.data.submitted_at +
             (out.data.again ? " (replacing your last one)" : "") +

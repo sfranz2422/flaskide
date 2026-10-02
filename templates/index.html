@@ -358,6 +358,8 @@
     signedIn: {{ 'true' if user else 'false' }},
     isTeacher: {{ 'true' if is_teacher else 'false' }},
     draftSlug: {{ (draft_slug or '') | tojson }},
+    // The draft's version when this page was made; see account.js.
+    draftVersion: {{ draft_version | default(none) | tojson }},
     assignmentSlug: {{ (assignment_slug or '') | tojson }},
     submittedAt: {{ (submitted_at or '') | tojson }},
     editingAssignment: {{ (editing_assignment or '') | tojson }},

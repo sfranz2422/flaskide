@@ -159,6 +159,21 @@ class Draft(Base):
     files = Column(Text, nullable=False, default="{}")
     created_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
+    #: TWO TABS ON ONE DRAFT. A student can have the same assignment open
+    #: twice — the lesson in one tab, the Classroom link in another — and
+    #: both autosave to this row. Without these, whichever tab was typed in
+    #: last wrote its copy over the other's: twenty minutes of work in the
+    #: lesson, then one key pressed in a forgotten tab, and the twenty
+    #: minutes were gone without a word.
+    #:
+    #: `version` goes up on every write. A tab says which version it last
+    #: saw and who it is (`writer`, a random id per page load), and a write
+    #: is refused when the draft has moved on since AND the move was made by
+    #: some other tab. A tab's own saves overlapping — an autosave still in
+    #: flight when Turn in is pressed — are the same writer, so they never
+    #: refuse each other.
+    version = Column(BigInteger, nullable=False, default=0)
+    writer = Column(String(24), nullable=False, default="")
 
     def file_map(self) -> dict:
         return _as_map(self.files)
@@ -492,6 +507,12 @@ LATER_COLUMNS = [
      "ALTER TABLE submissions ADD COLUMN score FLOAT"),
     ("submissions", "score_synced",
      "ALTER TABLE submissions ADD COLUMN score_synced FLOAT"),
+    # The two-tab guard. 0 and '' are right for every earlier draft: no tab
+    # has claimed it, so the first save from any tab is accepted.
+    ("drafts", "version",
+     "ALTER TABLE drafts ADD COLUMN version BIGINT NOT NULL DEFAULT 0"),
+    ("drafts", "writer",
+     "ALTER TABLE drafts ADD COLUMN writer VARCHAR(24) NOT NULL DEFAULT ''"),
 ]
 
 
