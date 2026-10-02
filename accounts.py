@@ -16,6 +16,7 @@ same database and already owns `projects`:
     submissions    what a student turned in, and when
     live_sessions  a lesson the class is watching the teacher type
     classroom_links  a teacher's connection to their Google Classroom
+    classroom_posts  each Classroom class an assignment was posted to
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -111,10 +112,13 @@ class Assignment(Base):
     #: it cannot be posted to Google Classroom, which only takes grades on
     #: work that has points.
     out_of = Column(Integer, nullable=True)
-    #: The Google Classroom assignment PyIDE posted this as, if any. Grades
-    #: can only be sent to coursework this app created itself — Google
-    #: refuses the rest — so these are what make Sync possible at all.
-    #: Empty means not posted.
+    #: SUPERSEDED by ClassroomPost: an assignment can now be posted to
+    #: several classes (Period 4 and Period 7 doing the same work), and one
+    #: set of columns could only hold one. A post written here by the first
+    #: version is moved into classroom_posts the first time the assignment
+    #: is looked at, and these are emptied. Kept, not dropped, because
+    #: create_all() never drops anything and an ALTER to do it would be one
+    #: more thing to go wrong on a deploy.
     classroom_course_id = Column(String(32), nullable=False, default="")
     classroom_course_name = Column(String(200), nullable=False, default="")
     classroom_work_id = Column(String(32), nullable=False, default="")
@@ -238,6 +242,31 @@ class ClassroomLink(Base):
     #: address; recorded so the dashboard can say which account is connected.
     google_email = Column(String(320), nullable=False, default="")
     connected_at = Column(DateTime, nullable=False, default=now)
+
+
+class ClassroomPost(Base):
+    """One Google Classroom class an assignment was posted to.
+
+    Several per assignment when several periods do the same work from the
+    same link: each class gets its own Classroom assignment, because each
+    class's grades have to go to coursework in that class. A student is put
+    in a period by being on that class's Classroom roster, which is asked of
+    Google when it is needed and never stored here — rosters change, and a
+    stored copy would quietly go stale.
+    """
+    __tablename__ = "classroom_posts"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "course_id", name="uq_post_per_class"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("assignments.id"),
+                           index=True, nullable=False)
+    course_id = Column(String(32), nullable=False)
+    course_name = Column(String(200), nullable=False, default="")
+    work_id = Column(String(32), nullable=False)
+    url = Column(String(300), nullable=False, default="")
+    posted_at = Column(DateTime, nullable=False, default=now)
 
 
 # --------------------------------------------------------------------------
