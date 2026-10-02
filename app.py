@@ -1024,6 +1024,14 @@ def my_work():
             if item is not None and aid not in seen:
                 assignments.append(_my_assignment(item, None, sub, when))
 
+        # Seen, now that it is on their screen. After the rows are built, so
+        # this visit still shows New and the next one does not.
+        fresh = [s for s in subs.values() if s.feedback and not s.feedback_seen]
+        for s in fresh:
+            s.feedback_seen = 1
+        if fresh:
+            db.commit()
+
         return render_template("my.html", assignments=assignments,
                                projects=projects)
     finally:
@@ -1051,6 +1059,14 @@ def _my_assignment(item, draft, sub, when):
         "times": (sub.times_submitted or 1) if sub else 0,
         "turned_in_url": (url_for("view_shared", slug=sub.snippet_slug)
                           if sub else ""),
+        "feedback": (sub.feedback or "") if sub else "",
+        "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
+                          if sub and sub.feedback_at else ""),
+        "feedback_new": bool(sub and sub.feedback and not sub.feedback_seen),
+        # Turned in again after the comment was written: it may be about
+        # something they have since fixed, and they should know which.
+        "feedback_older": bool(sub and sub.feedback_at
+                               and sub.submitted_at > sub.feedback_at),
     }
 
 
@@ -1393,6 +1409,62 @@ def teacher_home():
         db.close()
 
 
+#: Long enough for a paragraph or two of real comment; short enough that a
+#: paste of a whole program into the box is refused rather than stored.
+MAX_FEEDBACK = 5000
+
+
+@app.post("/api/assignment/<slug>/feedback")
+def give_feedback(slug):
+    """The teacher's comment on one student's turned-in work.
+
+    Only the teacher who set the assignment, and only on a submission to it —
+    the submission id comes from the page, so it is checked against the
+    assignment rather than trusted. Saving an empty box takes the feedback
+    back. Either way the student's "seen" is cleared, so changed feedback
+    shows as New on their My work page again.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only the teacher can do that."), 403
+        item = db.query(accounts.Assignment).filter_by(
+            slug=slug, app=APP_NAME).first()
+        if item is None or item.teacher_id != user.id:
+            return jsonify(error="No such assignment."), 404
+
+        data = request.get_json(silent=True) or {}
+        try:
+            sub_id = int(data.get("submission"))
+        except (TypeError, ValueError):
+            return jsonify(error="No such submission."), 404
+        sub = db.query(accounts.Submission).filter_by(
+            id=sub_id, assignment_id=item.id).first()
+        if sub is None:
+            return jsonify(error="No such submission."), 404
+
+        # NOT clean(): that folds every run of whitespace to one space, which
+        # would flatten a comment's paragraphs and any code quoted in it.
+        text = data.get("feedback", "")
+        if not isinstance(text, str):
+            return jsonify(error="That feedback could not be read."), 400
+        text = text.strip()
+        if len(text) > MAX_FEEDBACK:
+            return jsonify(error="That's too long — keep it under %d characters."
+                           % MAX_FEEDBACK), 413
+
+        sub.feedback = text
+        sub.feedback_at = accounts.now() if text else None
+        sub.feedback_seen = 0
+        db.commit()
+        return jsonify(ok=True, feedback=text,
+                       when=(sub.feedback_at.strftime("%b %d at %I:%M %p")
+                             if sub.feedback_at else ""))
+    finally:
+        db.close()
+
+
 @app.get("/teacher/<slug>")
 def teacher_assignment(slug):
     db = SessionLocal()
@@ -1416,6 +1488,16 @@ def teacher_assignment(slug):
             "when": sub.submitted_at.strftime("%b %d at %I:%M %p"),
             "times": sub.times_submitted,
             "url": url_for("view_shared", slug=sub.snippet_slug),
+            "id": sub.id,
+            "feedback": sub.feedback or "",
+            "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
+                              if sub.feedback_at else ""),
+            "seen": bool(sub.feedback_seen),
+            # Turning in again keeps the feedback (it is on this row, which a
+            # re-submit updates in place), so the teacher needs telling that
+            # what they commented on is no longer what is there.
+            "again_since": bool(sub.feedback_at
+                                and sub.submitted_at > sub.feedback_at),
         } for sub, student in rows]
 
         # Anyone who opened the assignment but never pressed Turn in.

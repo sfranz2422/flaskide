@@ -762,6 +762,40 @@ li.CodeMirror-hint-active { background: var(--accent); color: var(--on-accent); 
 .names { columns: 2; margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
 /* A student's My work page: one row per assignment, then their projects. */
 .turned-in { color: var(--green); font-weight: 500; }
+
+/* Feedback: the teacher writes it under each student, the student reads it
+ * under each assignment. pre-wrap on both ends, so paragraphs and any code
+ * quoted in a comment arrive the shape they were written. */
+.listing tr.fb-row td, .listing tr.fb-show td { padding-top: 0; }
+.listing tr.fb-row:hover td, .listing tr.fb-show:hover td { background: none; }
+.listing tr:has(+ .fb-row) td, .listing tr:has(+ .fb-show) td { border-bottom: 0; }
+.fb-text {
+  width: 100%;
+  min-height: 52px;
+  resize: vertical;
+  font: inherit;
+  font-size: 13.5px;
+  box-sizing: border-box;
+}
+.fb-foot { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.fb-row.is-dirty .fb-state { color: var(--amber, var(--accent)); }
+.fb-again { color: var(--amber, var(--accent)); }
+.feedback {
+  border-left: 3px solid var(--accent);
+  background: var(--bg-panel);
+  border-radius: 0 6px 6px 0;
+  padding: 10px 14px;
+}
+.feedback-head { font-size: 12.5px; font-weight: 600; margin-bottom: 4px; }
+.feedback-body { white-space: pre-wrap; word-break: break-word; }
+.badge-new {
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  margin: 0 4px;
+}
 .my-assignments td:first-child,
 .my-projects td:first-child { width: 55%; }
 

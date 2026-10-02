@@ -246,6 +246,126 @@ check("an assignment lesson saves itself on the first keystroke",
 check("  and Turn in does not wait for a Save that no longer exists",
       "if (!draftSlug || !canTurnIn) return;" not in live_js)
 
+
+# ----------------------------------------------------------------- feedback
+print("\nFeedback")
+
+M = P
+
+
+def the_submission():
+    db = M.SessionLocal()
+    try:
+        item = db.query(accounts.Assignment).filter_by(slug=hw).first()
+        return db.query(accounts.Submission).filter_by(
+            assignment_id=item.id, student_id=STUDENT).first()
+    finally:
+        db.close()
+
+
+sub = the_submission()
+FB = "/api/assignment/%s/feedback" % hw
+note = "Good loop.\n\n    for i in range(3):\nwould be shorter."
+
+r = student.post(FB, json={"submission": sub.id, "feedback": "A+ from me"})
+check("a student cannot write feedback", r.status_code == 403, r.status_code)
+OTHER_T = add_user("t2", "teacher2@example.org", "Another Teacher")
+os.environ["TEACHER_EMAILS"] = "teacher@example.org, teacher2@example.org"
+r = client(OTHER_T).post(FB, json={"submission": sub.id, "feedback": "hi"})
+check("  nor a teacher who did not set the assignment",
+      r.status_code == 404, r.status_code)
+os.environ["TEACHER_EMAILS"] = "teacher@example.org"
+other_hw = teacher.post("/api/assignment", json={
+    "files": {"app.py": "# x"}, "title": "Something else"}).get_json()["slug"]
+r = teacher.post("/api/assignment/%s/feedback" % other_hw,
+                 json={"submission": sub.id, "feedback": "hi"})
+check("  nor on a submission to a different assignment",
+      r.status_code == 404, r.status_code)
+
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("the teacher's page has a feedback box under the student",
+      'class="fb-row" data-sub="%d"' % sub.id in page and "fb-text" in page)
+
+r = teacher.post(FB, json={"submission": sub.id, "feedback": note})
+check("the teacher can save feedback", r.status_code == 200, r.status_code)
+check("  and its line breaks are kept", the_submission().feedback == note,
+      repr(the_submission().feedback))
+r = teacher.post(FB, json={"submission": sub.id, "feedback": "x" * 5001})
+check("  a whole program pasted in is refused", r.status_code == 413,
+      r.status_code)
+check("    and leaves the saved feedback alone", the_submission().feedback == note)
+
+page = student.get("/my").get_data(as_text=True)
+mine = section(page, "Assignments")
+check("the student sees it on My work", "Good loop." in mine
+      and "would be shorter." in mine)
+check("  marked New the first time", "badge-new" in mine)
+page = student.get("/my").get_data(as_text=True)
+check("  and not the second", "badge-new" not in section(page, "Assignments")
+      and "Good loop." in section(page, "Assignments"))
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("the teacher can see it has been seen", "· seen" in page)
+check("  and the box shows what they wrote", "would be shorter." in page)
+
+# Turning in again: the feedback stays, and both sides are told it is older.
+student.get("/a/%s" % hw)
+db = M.SessionLocal()
+d = db.query(accounts.Draft).filter_by(owner_id=STUDENT,
+                                       assignment_id=sub.assignment_id).first()
+payload = {"draft": d.slug, "code": d.code or "x", "files": d.file_map()}
+db.close()
+r = student.post("/api/submit", json=payload)
+check("the student turns in again", r.status_code == 200, r.get_data(as_text=True)[:80])
+check("  and the feedback survives it", the_submission().feedback == note)
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("  the teacher's page says it was turned in again since",
+      "Turned in again since your feedback" in page)
+page = student.get("/my").get_data(as_text=True)
+check("  and so does the student's",
+      "turned it in again after this was written" in section(page, "Assignments"))
+
+r = teacher.post(FB, json={"submission": sub.id, "feedback": "Better now."})
+page = student.get("/my").get_data(as_text=True)
+check("new feedback shows as New again", "badge-new" in section(page, "Assignments")
+      and "Better now." in page)
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("  and no longer says turned in again since",
+      "Turned in again since your feedback" not in page)
+
+teacher.post(FB, json={"submission": sub.id, "feedback": "   "})
+check("saving an empty box takes it back",
+      the_submission().feedback == "" and the_submission().feedback_at is None)
+page = student.get("/my").get_data(as_text=True)
+check("  and the student's page shows none", "Feedback from your teacher" not in page)
+
+
+# ---------------------------------------------------- an earlier database
+print("\nA database from before feedback")
+
+# create_all() makes missing tables but never missing columns. A submissions
+# table from the last deploy has none of the three, and without the
+# LATER_COLUMNS entries every query that selects a Submission — the
+# dashboard, My work, turning in — fails on the first request after deploy.
+import sqlalchemy                                            # noqa: E402
+old_db = os.path.join(tempfile.mkdtemp(), "old.db")
+eng = sqlalchemy.create_engine("sqlite:///" + old_db)
+with eng.begin() as c:
+    c.execute(sqlalchemy.text(
+        "CREATE TABLE submissions (id INTEGER PRIMARY KEY, assignment_id INTEGER "
+        "NOT NULL, student_id INTEGER NOT NULL, snippet_slug VARCHAR(16) NOT NULL, "
+        "submitted_at DATETIME NOT NULL, times_submitted INTEGER NOT NULL)"))
+    c.execute(sqlalchemy.text(
+        "INSERT INTO submissions VALUES (1, 1, 1, 'abc', '2026-09-01 10:00:00', 2)"))
+accounts.create_all(eng)
+cols = {c["name"] for c in sqlalchemy.inspect(eng).get_columns("submissions")}
+check("an old submissions table gets the feedback columns",
+      {"feedback", "feedback_at", "feedback_seen"} <= cols, sorted(cols))
+with eng.begin() as c:
+    row = c.execute(sqlalchemy.text(
+        "SELECT feedback, feedback_at, feedback_seen FROM submissions")).fetchone()
+check("  and an old row reads as no feedback, not as an error",
+      tuple(row) == ("", None, 0), tuple(row))
+
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"
       % ("SOME FAILED" if bad else "ALL PASSED", len(results), bad))

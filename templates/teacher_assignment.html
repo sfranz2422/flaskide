@@ -49,6 +49,22 @@
               <td class="dim">{% if s.times > 1 %}{{ s.times }} attempts{% endif %}</td>
               <td class="right"><a class="linkbtn" href="{{ s.url }}">Open</a></td>
             </tr>
+            {#  Feedback, under every student, always open: a teacher marking
+                a class goes down the list typing, and a click to reveal each
+                box is thirty clicks. The student sees it on their My work
+                page. It stays when they turn in again; the line under the
+                box says so, because the comment may be about the old copy. #}
+            <tr class="fb-row" data-sub="{{ s.id }}">
+              <td colspan="4">
+                <textarea class="field fb-text" rows="2" maxlength="5000"
+                          placeholder="Feedback for {{ s.name }} — they see it on their My work page">{{ s.feedback }}</textarea>
+                <div class="fb-foot">
+                  <button class="btn fb-save">Save feedback</button>
+                  <span class="fb-state dim small">{% if s.feedback_when %}Saved {{ s.feedback_when }}{% if s.seen %} · seen{% endif %}{% endif %}</span>
+                  {% if s.again_since %}<span class="fb-again small">Turned in again since your feedback</span>{% endif %}
+                </div>
+              </td>
+            </tr>
           {% endfor %}
         </tbody>
       </table>
@@ -70,6 +86,49 @@
 </main>
 
 <script>
+  /* Feedback. Saved per student on the button, not as they type: a comment
+     half-written should not reach the student's page. An unsaved box is
+     marked, and leaving the page with one asks first — losing a paragraph of
+     marking to a stray click is the failure worth a dialog. */
+  var slug = {{ assignment.slug | tojson }};
+  function dirty() { return document.querySelector(".fb-row.is-dirty"); }
+
+  document.addEventListener("input", function (e) {
+    if (!e.target.classList.contains("fb-text")) return;
+    var row = e.target.closest(".fb-row");
+    row.classList.add("is-dirty");
+    row.querySelector(".fb-state").textContent = "Not saved";
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!e.target.classList.contains("fb-save")) return;
+    var row = e.target.closest(".fb-row");
+    var btn = e.target, state = row.querySelector(".fb-state");
+    btn.disabled = true;
+    fetch("/api/assignment/" + encodeURIComponent(slug) + "/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ submission: row.dataset.sub,
+                             feedback: row.querySelector(".fb-text").value })
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (out) {
+      btn.disabled = false;
+      if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
+      row.classList.remove("is-dirty");
+      state.textContent = out.d.when ? "Saved " + out.d.when : "Removed";
+      var again = row.querySelector(".fb-again");
+      if (again) again.remove();     // the new comment is about the new copy
+    }).catch(function () {
+      btn.disabled = false;
+      state.textContent = "Not saved — check your connection";
+    });
+  });
+
+  window.addEventListener("beforeunload", function (e) {
+    if (dirty()) { e.preventDefault(); e.returnValue = ""; }
+  });
+
   document.getElementById("copy").addEventListener("click", function () {
     var field = document.getElementById("share-url");
     field.select();

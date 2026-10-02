@@ -68,6 +68,23 @@
               <a class="linkbtn" href="{{ a.url }}">Open</a>
             </td>
           </tr>
+          {% if a.feedback %}
+            <tr class="fb-show">
+              <td colspan="3">
+                <div class="feedback">
+                  <div class="feedback-head">
+                    Feedback from your teacher
+                    {% if a.feedback_new %}<span class="badge-new">New</span>{% endif %}
+                    <span class="dim small">{{ a.feedback_when }}</span>
+                  </div>
+                  <div class="feedback-body">{{ a.feedback }}</div>
+                  {% if a.feedback_older %}
+                    <div class="dim small">You turned it in again after this was written.</div>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endif %}
         {% endfor %}
       </tbody>
     </table>

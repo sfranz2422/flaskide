@@ -172,6 +172,17 @@ class Submission(Base):
     submitted_at = Column(DateTime, nullable=False, default=now)
     times_submitted = Column(Integer, nullable=False, default=1)
 
+    #: The teacher's comment on it, shown on the student's My work page.
+    #: On this row rather than the snapshot, so it SURVIVES a re-submit —
+    #: turning in again updates this row in place — and the teacher's
+    #: dashboard says "turned in again since your feedback" by comparing
+    #: submitted_at with feedback_at. NULL feedback_at means none was given.
+    feedback = Column(Text, nullable=False, default="")
+    feedback_at = Column(DateTime, nullable=True)
+    #: Whether the student has seen the current feedback. Writing new
+    #: feedback clears it; the student opening My work sets it.
+    feedback_seen = Column(Integer, nullable=False, default=0)
+
 
 # --------------------------------------------------------------------------
 # Teaching live
@@ -366,6 +377,16 @@ LATER_COLUMNS = [
     ("live_sessions", "cursor",
      "ALTER TABLE live_sessions ADD COLUMN cursor VARCHAR(24) NOT NULL "
      "DEFAULT ''"),
+    # Feedback on turned-in work. Empty, NULL and 0 are true of every earlier
+    # submission: none had any, and "not seen" is harmless with nothing to
+    # see, because the New marker is only shown beside feedback that exists.
+    ("submissions", "feedback",
+     "ALTER TABLE submissions ADD COLUMN feedback TEXT NOT NULL DEFAULT ''"),
+    ("submissions", "feedback_at",
+     "ALTER TABLE submissions ADD COLUMN feedback_at TIMESTAMP"),
+    ("submissions", "feedback_seen",
+     "ALTER TABLE submissions ADD COLUMN feedback_seen INTEGER NOT NULL "
+     "DEFAULT 0"),
 ]
 
 
