@@ -333,7 +333,20 @@ check("  one that is not line:ch is stored as none, not refused",
       r.status_code == 200 and poll_json().get("cursor") == ""
       and poll_json().get("body") == "a = 1", repr(poll_json().get("cursor")))
 teacher.post("/api/live/%s/push" % CODE,
-             json={"body": "a = 1", "cursor": "0:2", "seq": 4603})
+             json={"body": "a = 1\nb = 2", "cursor": "0:1-1:3", "seq": 4604})
+check("a highlighted block reaches the class as anchor-head",
+      poll_json().get("cursor") == "0:1-1:3", repr(poll_json().get("cursor")))
+r = teacher.post("/api/live/%s/push" % CODE,
+                 json={"body": "a = 1", "cursor": "123456:1-1:1", "seq": 4605})
+check("  one too long for the column is stored as none, not refused",
+      r.status_code == 200 and poll_json().get("cursor") == ""
+      and poll_json().get("body") == "a = 1",
+      "Postgres would refuse 25 characters and the push would be lost")
+check("  and the longest one allowed fits the column",
+      len("99999:99999-99999:99999")
+      <= accounts.LiveSession.__table__.c.cursor.type.length)
+teacher.post("/api/live/%s/push" % CODE,
+             json={"body": "a = 1", "cursor": "0:2", "seq": 4606})
 page = stranger.get("/live/%s" % CODE).get_data(as_text=True)
 check("  and a late joiner gets it in the page",
       re.search(r'^\s*cursor: "0:2"', page, re.M) is not None)
@@ -1382,11 +1395,26 @@ check("  as a widget, so the mirror still takes no cursor",
       and "mirror.setCursor" not in live_code
       and "mirror.setSelection" not in live_code)
 check("  and follows it, unless the student has just scrolled",
-      "if (Date.now() >= followAfter) mirror.scrollIntoView(at" in _caret_fn
+      "if (Date.now() >= followAfter) mirror.scrollIntoView(show" in _caret_fn
       and re.search(r'\["wheel", "touchmove", "mousedown"\][\s\S]{0,160}'
                     r'followAfter = Date\.now\(\) \+ FOLLOW_PAUSE_MS',
                     live_code) is not None,
       "a student reading line 4 would be yanked to line 40 every keystroke")
+check("the editor sends a highlighted block as anchor-head",
+      re.search(r"somethingSelected\(\)\) \{\s*var from = editor"
+                r"\.getCursor\(\"anchor\"\);\s*cursor = from\.line \+ \":\" \+ "
+                r"from\.ch \+ \"-\" \+ cursor;", _push_fn) is not None,
+      "dragging across a block to talk about it would show nobody anything")
+check("  and the mirror paints it yellow as a mark, not a selection",
+      'mirror.markText(from, to, { className: "mirror-pick" })' in _caret_fn
+      and ".live-mirror .mirror-pick" in _css)
+check("  in order even when dragged upwards",
+      "CodeMirror.cmpPos(other, at) > 0" in _caret_fn,
+      "markText with from after to marks nothing")
+check("  and cleared with the caret",
+      "if (pickMark) { pickMark.clear(); pickMark = null; }"
+      in fn_body(live_code, "clearCaret"),
+      "every highlight would stay yellow forever")
 check("  clearing the old caret before the text is replaced",
       re.search(r"data\.body !== mirror\.getValue\(\)\) \{\s*clearCaret\(\);",
                 _mirror_fn) is not None,

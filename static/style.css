@@ -1383,6 +1383,13 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
   .mirror-caret { animation: none; }
 }
 .live-mirror .mirror-caret-line { background: var(--banner-bg); }
+/* What the teacher has highlighted, in yellow: a markText span, not a
+ * selection, so the mirror stays unfocusable and uncopyable. Translucent so
+ * the syntax colours still read through it in either theme. */
+.live-mirror .mirror-pick {
+  background: rgba(255, 214, 0, .38);
+  border-radius: 2px;
+}
 
 /* The teacher's copy of the class's Notes pane, under the preview while
  * live. A fixed share of the column, as on the student's page, so neither

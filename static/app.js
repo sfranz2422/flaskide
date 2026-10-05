@@ -934,11 +934,21 @@
          the mirror scrolls to follow it. In the stamp below, so moving it
          without typing still goes out — pointing at a line is half of
          teaching from the editor. None for a notes file: the class reads
-         that rendered, where a line and column point at nothing. */
+         that rendered, where a line and column point at nothing.
+
+         A highlighted block goes as "anchor-head", and the class sees it
+         in yellow: dragging across a loop to talk about it is pointing
+         at more than one line. Only the main selection — a second one
+         made with Ctrl-click is rare, and the class would not know which
+         one the teacher meant. */
       var cursor = "";
       if (editor && !window.FlaskIDENotes.isMarkdown(name)) {
-        var at = editor.getCursor();
+        var at = editor.getCursor("head");
         cursor = at.line + ":" + at.ch;
+        if (editor.somethingSelected()) {
+          var from = editor.getCursor("anchor");
+          cursor = from.line + ":" + from.ch + "-" + cursor;
+        }
       }
       paintSlides(cut);
       paintClassView(notes, slide);

@@ -634,6 +634,12 @@
      bookmark widget, not a selection or a real cursor, so the mirror stays
      "nocursor" and still cannot be focused or copied from.
 
+     What the teacher has highlighted comes as "anchor-head" and is painted
+     yellow with markText — again a mark, not a selection, for the same
+     reason. The caret sits at the head, where the drag ended, as it does in
+     the teacher's own editor; the line tint is left off then, because a
+     tinted line inside a yellow block reads as a second thing to look at.
+
      Following is the point — a class otherwise watches line 1 while the
      teacher types on line 40 — but a student who scrolls back to read
      something must not be yanked away mid-sentence. So scrolling the
@@ -642,6 +648,7 @@
      listening for the wheel, a touch and the scrollbar instead. */
   var caretMark = null;
   var caretLine = null;
+  var pickMark = null;
   var followAfter = 0;
   var FOLLOW_PAUSE_MS = 5000;
 
@@ -653,6 +660,7 @@
 
   function clearCaret() {
     if (caretMark) { caretMark.clear(); caretMark = null; }
+    if (pickMark) { pickMark.clear(); pickMark = null; }
     /* A line handle from before a setValue is detached, and removing a
        class from it throws — getLineNumber is null for exactly those. */
     if (caretLine && mirror.getLineNumber(caretLine) !== null) {
@@ -661,21 +669,35 @@
     caretLine = null;
   }
 
+  // "line:ch" to a position in the mirror. Clamped: the caret and the text
+  // arrive together, but a student's mirror is never trusted to be the
+  // exact shape the stamp assumed.
+  function mirrorPos(line, ch) {
+    line = Math.min(+line, mirror.lastLine());
+    return { line: line, ch: Math.min(+ch, mirror.getLine(line).length) };
+  }
+
   function showCaret(cursor) {
     clearCaret();
-    var m = /^(\d+):(\d+)$/.exec(cursor);
+    var m = /^(?:(\d+):(\d+)-)?(\d+):(\d+)$/.exec(cursor);
     if (!m) return;                  // a notes file, or an older editor
-    // Clamped: the caret and the text arrive together, but a student's
-    // mirror is never trusted to be the exact shape the stamp assumed.
-    var line = Math.min(+m[1], mirror.lastLine());
-    var at = { line: line, ch: Math.min(+m[2], mirror.getLine(line).length) };
+    var at = mirrorPos(m[3], m[4]);
     var mark = document.createElement("span");
     mark.className = "mirror-caret";
     caretMark = mirror.setBookmark(at, { widget: mark, insertLeft: true });
-    caretLine = mirror.addLineClass(line, "background", "mirror-caret-line");
-    // Only scrolls when the caret is off screen, so a mirror that already
-    // shows it does not twitch on every keystroke.
-    if (Date.now() >= followAfter) mirror.scrollIntoView(at, 60);
+    var show = at;
+    if (m[1] !== undefined) {
+      var other = mirrorPos(m[1], m[2]);
+      var backwards = CodeMirror.cmpPos(other, at) > 0;  // dragged upwards
+      var from = backwards ? at : other, to = backwards ? other : at;
+      pickMark = mirror.markText(from, to, { className: "mirror-pick" });
+      show = { from: from, to: to };
+    } else {
+      caretLine = mirror.addLineClass(at.line, "background", "mirror-caret-line");
+    }
+    // Only scrolls when it is off screen, so a mirror that already shows it
+    // does not twitch on every keystroke.
+    if (Date.now() >= followAfter) mirror.scrollIntoView(show, 60);
   }
 
   /* The project's notes, in their own pane under the console. Re-rendered
