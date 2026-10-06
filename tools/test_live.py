@@ -963,6 +963,105 @@ check("  and the class is told it ended",
 teacher = client(TEACHER)                  # signed back in for what follows
 
 
+# ------------------------------------------- reopening yesterday's lesson
+#
+# A lesson that ended — Stop, signing out, or the overnight sweep — used to
+# be gone for good: Go live made a new code, and the link the class had from
+# yesterday only ever said "Lesson ended". Now Go live offers the last one
+# back. It is offered, never done: a reopened lesson lands on every screen
+# still showing its page, which is the "sign in and I'm live" bug if it ever
+# happens without the teacher choosing it.
+print("\nReopening yesterday's lesson")
+
+def set_row(code, **fields):
+    db = F.SessionLocal()
+    try:
+        db.query(accounts.LiveSession).filter_by(code=code).update(fields)
+        db.commit()
+    finally:
+        db.close()
+
+def lesson_row(code):
+    db = F.SessionLocal()
+    try:
+        return db.query(accounts.LiveSession).filter_by(code=code).first()
+    finally:
+        db.close()
+
+def offered():
+    return teacher.get("/api/live/assignments").get_json().get("recent")
+
+check("nothing open, so Go live offers the last lesson back",
+      (offered() or {}).get("code") == fresh["code"], offered())
+
+# Every earlier lesson in this file was taught weeks ago, from here on.
+db = F.SessionLocal()
+db.query(accounts.LiveSession).update(
+    {"updated_at": F._live_now() - F.timedelta(days=30)})
+db.commit()
+db.close()
+
+# Yesterday's lesson: for the homework, ended by the sweep, last pushed to
+# a day ago. The sweep does not touch updated_at, so this is its real shape.
+# `fresh` was STARTED after it but last taught three days ago, so ordering
+# by when a lesson began would offer the wrong one.
+yday = F._live_now() - F.timedelta(days=1)
+set_row(LESSON, ended=1, updated_at=yday)
+set_row(fresh["code"], updated_at=F._live_now() - F.timedelta(days=3))
+check("  (fixture: the other lesson really was started later)",
+      lesson_row(fresh["code"]).started_at > lesson_row(LESSON).started_at)
+got = offered() or {}
+check("  the one taught most recently, not the one started last",
+      got.get("code") == LESSON, got)
+check("  named by its assignment, so the teacher knows where turn-ins go",
+      got.get("assignment_title") == "Flask homework", got)
+check("  and by the day it was taught",
+      got.get("when") == "%s %d" % (yday.strftime("%a %b"), yday.day), got)
+
+set_row(LESSON, updated_at=F._live_now() - F.timedelta(days=F.LIVE_REOPEN_DAYS + 1))
+set_row(fresh["code"], updated_at=F._live_now() - F.timedelta(days=F.LIVE_REOPEN_DAYS + 2))
+check("  but not a lesson from weeks ago", offered() is None, offered())
+set_row(LESSON, updated_at=yday)
+
+r = other.post("/api/live/start", json={"body": "x", "reopen": LESSON})
+check("another teacher cannot reopen it", r.status_code == 404, r.status_code)
+check("  and it stays ended", lesson_row(LESSON).ended == 1)
+
+r = teacher.post("/api/live/start", json={"body": "x", "resume": LESSON})
+check("a reload's resume still cannot reopen it",
+      r.get_json().get("resumed") is False and lesson_row(LESSON).ended == 1,
+      r.get_json())
+
+r = teacher.post("/api/live/start", json={"body": "day two", "reopen": LESSON})
+got = r.get_json()
+check("the teacher can reopen it", r.status_code == 200, r.status_code)
+check("  under the same code, so yesterday's link works again",
+      got.get("code") == LESSON, got)
+check("  still for the same assignment, so Turn in goes where it went",
+      got.get("assignment") == hw, got)
+check("  and it survives the sweep that ended it overnight",
+      lesson_row(LESSON).ended == 0,
+      "start sweeps after it commits: a stale updated_at would end it again")
+r = stranger.get("/api/live/%s" % LESSON)
+check("  and the class's page is told it is back on",
+      r.get_json().get("ended") is False, r.get_json())
+check("no lesson is offered while one is open", offered() is None, offered())
+
+other_open = teacher.post("/api/live/start", json={"body": "x"}).get_json()
+check("  (pressing Go live now carries on in the reopened one)",
+      other_open.get("code") == LESSON, other_open)
+
+# Two open rows for one teacher: the newest wins every later Go live and
+# reload, which is not the one the class is looking at.
+set_row(LESSON, ended=1)
+newer = teacher.post("/api/live/start", json={"body": "x"}).get_json()["code"]
+teacher.post("/api/live/start", json={"body": "x", "reopen": LESSON})
+check("reopening closes whatever else was open, leaving one",
+      open_lessons(TEACHER) == 1 and lesson_row(newer).ended == 1,
+      "%d open" % open_lessons(TEACHER))
+teacher.post("/api/live/%s/stop" % LESSON)
+
+
 # --------------------------------------------------- how it is built at all
 print("\nHow it is built")
 
@@ -1699,6 +1798,86 @@ console.log(JSON.stringify(out));
 else:
     check("node runs the preview's link handling", False,
           "brew install node" if _shim else "SHIM not found in preview.js")
+
+# ------------------------------------- reopening, as the browsers do it
+print("\nReopening, in the browsers")
+
+_app_now = code_only(open(os.path.join(FLASKIDE, "static", "app.js")).read())
+check("app.js reopens only from Go live, after the teacher says yes",
+      re.search(r'if \(offerReopen\(data\)\) \{\s*startLive\(undefined, "", '
+                r'data\.recent\.code\)', _app_now) is not None
+      and len(re.findall(r'(?<!function )startLive\([^)]*,[^)]*,', _app_now)) == 1,
+      "a reopen from anywhere else is the teacher back on the air unasked")
+check("  and the reload path never asks for one",
+      'startLive(undefined, resumeCode);' in _app_now)
+
+_live_now_js = code_only(open(os.path.join(FLASKIDE, "static", "live.js")).read())
+# THE BUG: one `seen` for both the draft's version and the lesson's, so the
+# first poll wrote the lesson's version over the draft's and every Save from
+# a student with an earlier draft was refused as "changed in another tab".
+check("live.js keeps the draft's version apart from the lesson's",
+      len(re.findall(r'\bvar seen\b', _live_now_js)) == 1
+      and "payload.base = draftSeen" in _live_now_js
+      and re.search(r'function saw\(data\) \{[^}]*draftSeen = data\.version',
+                    _live_now_js) is not None,
+      "a reopened lesson would refuse every student's first Save")
+
+# Which copy a student's editor starts from, run for real. Lifted from
+# `var kept = null;` to the line that decides, and run against a stand-in
+# localStorage — a reopened lesson has the same code, so the same keys, as
+# yesterday.
+_m = re.search(r'(  var kept = null;.*?  var start = kept !== null \? kept : '
+               r'\(L\.starter \|\| ""\);)', _live_now_js, re.S)
+if shutil.which("node") and _m:
+    harness = """
+var cases = %s, out = {};
+Object.keys(cases).forEach(function (k) {
+  var c = cases[k], store = Object.assign({}, c.store);
+  var window = {localStorage: {
+    getItem: function (n) { return n in store ? store[n] : null; },
+    setItem: function (n, v) { store[n] = String(v); },
+    removeItem: function (n) { delete store[n]; }}};
+  var DRAFT_KEY = "pyide-live-abc", L = c.L;
+  %s
+  out[k] = {start: start, base: store[DRAFT_KEY + "-base"] || null,
+            files: store[DRAFT_KEY + "-files"] || null};
+});
+console.log(JSON.stringify(out));
+""" % (json.dumps({
+        "homework_since": {"L": {"draftVersion": 9, "starter": "last night"},
+                           "store": {"pyide-live-abc": "yesterday",
+                                     "pyide-live-abc-files": "{}",
+                                     "pyide-live-abc-base": "4"}},
+        "nothing_since": {"L": {"draftVersion": 4, "starter": "server"},
+                          "store": {"pyide-live-abc": "typed here",
+                                    "pyide-live-abc-base": "4"}},
+        "kept_before_this": {"L": {"draftVersion": 9, "starter": "server"},
+                             "store": {"pyide-live-abc": "typed here"}},
+        "signed_out": {"L": {"draftVersion": None, "starter": ""},
+                       "store": {"pyide-live-abc": "typed here",
+                                 "pyide-live-abc-base": "4"}},
+    }), _m.group(1))
+    res = subprocess.run(["node", "-e", harness], capture_output=True, text=True)
+    got = json.loads(res.stdout or "{}") if res.returncode == 0 else {}
+    h = got.get("homework_since", {})
+    check("their draft saved elsewhere since: the draft wins, not this browser",
+          h.get("start") == "last night", h or res.stderr[-300:])
+    check("  and the old copy is let go, so a reload does not bring it back",
+          h.get("base") == "9" and h.get("files") is None, h)
+    n = got.get("nothing_since", {})
+    check("nothing saved since: this browser's typing wins, as always",
+          n.get("start") == "typed here", n)
+    k = got.get("kept_before_this", {})
+    check("a copy kept before this existed still wins",
+          k.get("start") == "typed here", k)
+    check("  and is stamped, so tomorrow it can be told apart",
+          k.get("base") == "9", k)
+    o = got.get("signed_out", {})
+    check("signed out, with no draft: this browser's typing wins",
+          o.get("start") == "typed here", o)
+else:
+    check("node is available to run the live page's start-up", bool(_m),
+          "brew install node" if _m else "the block in live.js moved")
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

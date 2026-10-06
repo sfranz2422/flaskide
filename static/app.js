@@ -1040,30 +1040,49 @@
        anything in from — and nothing about that is visible while it is
        happening. Asking here is the one moment the teacher is thinking
        about the lesson anyway. */
-    function chooseAssignment() {
-      return fetch("/api/live/assignments")
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          var list = (data && data.assignments) || [];
-          if (!list.length) return "";       // nothing published yet
-          /* WORDED AS WHAT IT DOES. "Which assignment is this lesson for?"
-             read like it was about to open the assignment, and it is not —
-             it decides where the CLASS's work goes when they press Save.
-             Loading the starter is offered separately below, because that
-             one does replace what is on screen. */
-          var lines = ["Where should the class turn this work in?",
-                       "(This does not change what is in your editor.)", "",
-                       "0 — nowhere (they can still save, but not turn in)"];
-          list.forEach(function (a, i) {
-            lines.push((i + 1) + " — " + a.title);
-          });
-          var pick = window.prompt(lines.join("\n"), "1");
-          if (pick === null) return null;    // cancelled: do not go live
-          var n = parseInt(pick, 10);
-          if (!n || n < 1 || n > list.length) return "";
-          return list[n - 1].slug;
-        })
-        .catch(function () { return ""; });
+    function chooseAssignment(data) {
+      var list = (data && data.assignments) || [];
+      if (!list.length) return "";       // nothing published yet
+      /* WORDED AS WHAT IT DOES. "Which assignment is this lesson for?"
+         read like it was about to open the assignment, and it is not —
+         it decides where the CLASS's work goes when they press Save.
+         Loading the starter is offered separately below, because that
+         one does replace what is on screen. */
+      var lines = ["Where should the class turn this work in?",
+                   "(This does not change what is in your editor.)", "",
+                   "0 — nowhere (they can still save, but not turn in)"];
+      list.forEach(function (a, i) {
+        lines.push((i + 1) + " — " + a.title);
+      });
+      var pick = window.prompt(lines.join("\n"), "1");
+      if (pick === null) return null;    // cancelled: do not go live
+      var n = parseInt(pick, 10);
+      if (!n || n < 1 || n > list.length) return "";
+      return list[n - 1].slug;
+    }
+
+    /* Offer the last lesson back, so yesterday's link works again.
+
+       ASKED, NEVER ASSUMED. A reopened lesson goes straight back onto every
+       screen that still has its page open, so it is only ever the teacher's
+       answer to this question — never a reload, never a sign-in (see
+       live_start). Cancel goes on to an ordinary new lesson.
+
+       Reopening keeps the lesson's assignment, so Turn in still goes where it
+       went yesterday; that is why the chooser is skipped. */
+    function offerReopen(data) {
+      var last = data && data.recent;
+      if (!last || !last.code) return false;
+      return window.confirm(
+        "Reopen your last lesson?\n\n"
+        + "\u201c" + last.title + "\u201d, code " + last.code
+        + ", last taught " + last.when + "\n"
+        + (last.assignment_title
+            ? "Turning in goes to: " + last.assignment_title
+            : "No assignment, so the class cannot turn work in.")
+        + "\n\nSame code and link, and each student's typing is still in "
+        + "their browser.\n"
+        + "OK reopens it. Cancel starts a new lesson instead.");
     }
 
     /* Open an assignment's starter in the editor.
@@ -1115,7 +1134,7 @@
       touched();
     }
 
-    function startLive(assignment, resume) {
+    function startLive(assignment, resume, reopen) {
       var name = current;
       var text = (name === current) ? editor.getValue() : (files[name] || "");
       fetch("/api/live/start", {
@@ -1123,6 +1142,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(assignment === undefined
           ? { body: text, filename: name, resume: resume || "",
+              reopen: reopen || "",
               title: ($("title") && $("title").value) || "Live lesson" }
           /* `assignment` present — even as "" — is what tells the server this
              was a deliberate choice. Left out, a resumed session keeps the
@@ -1172,12 +1192,20 @@
           stopLive(false);
         }
       } else {
-        chooseAssignment().then(function (slug) {
-          if (slug === null) return;        // they cancelled the chooser
-          // Offer the starter first, so the file that goes out on the very
-          // first push is the one they are about to teach from.
-          offerStarter(slug).then(function () { startLive(slug); });
-        });
+        fetch("/api/live/assignments")
+          .then(function (res) { return res.json(); })
+          .catch(function () { return {}; })
+          .then(function (data) {
+            if (offerReopen(data)) {
+              startLive(undefined, "", data.recent.code);
+              return;
+            }
+            var slug = chooseAssignment(data);
+            if (slug === null) return;      // they cancelled the chooser
+            // Offer the starter first, so the file that goes out on the very
+            // first push is the one they are about to teach from.
+            offerStarter(slug).then(function () { startLive(slug); });
+          });
       }
     });
 

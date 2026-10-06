@@ -138,9 +138,41 @@
      back over twenty minutes of typing. `null` rather than falsy: an editor
      they emptied on purpose stays empty. */
   var kept = null;
+  var keptBase = null;
+  var BASE_KEY = DRAFT_KEY + "-base";
   try {
     kept = window.localStorage.getItem(DRAFT_KEY);
+    keptBase = window.localStorage.getItem(BASE_KEY);
   } catch (e) { /* storage blocked: fall back to the starting point */ }
+
+  /* UNLESS THEIR DRAFT HAS MOVED ON WITHOUT THIS BROWSER. The copy kept
+     here remembers which version of their draft it grew from. If the draft
+     has been saved since — homework at home last night, through the
+     handout link — this browser's copy is the older work, and letting it
+     win would put last night's work under it on screen and then, at the
+     first Save, over it on the server. A reopened lesson is exactly when
+     that happens: the same code, so the same key, a day later.
+
+     A copy with no version beside it (kept before this existed, or never
+     saved) still wins, as it always did. */
+  var behind = kept !== null && keptBase !== null
+    && typeof L.draftVersion === "number"
+    && L.draftVersion > Number(keptBase);
+  if (behind) {
+    kept = null;
+    try {
+      window.localStorage.removeItem(DRAFT_KEY);
+      window.localStorage.removeItem(DRAFT_KEY + "-files");
+    } catch (e) { /* nothing kept to remove */ }
+  }
+
+  function noteBase(version) {
+    try { window.localStorage.setItem(BASE_KEY, String(version)); }
+    catch (e) { /* then the copy here simply wins, as before */ }
+  }
+  if (typeof L.draftVersion === "number" && (keptBase === null || behind)) {
+    noteBase(L.draftVersion);
+  }
   var start = kept !== null ? kept : (L.starter || "");
   if (start) mine.setValue(start);
   mine.clearHistory();
@@ -348,16 +380,25 @@
      (a lesson with no assignment), and then nothing is claimed: the first
      reply carries the version, and the guard holds from there. */
   var TAB = Math.random().toString(36).slice(2, 14);
-  var seen = typeof L.draftVersion === "number" ? L.draftVersion : null;
+  /* NOT `seen`. The mirror below keeps the lesson's version in a `seen` of
+     its own, and with one function around both they were the same variable:
+     the first poll replaced the draft's version with the lesson's, so a
+     student whose draft had last been saved anywhere else — the handout
+     link, or this page yesterday — had every Save refused as "changed in
+     another tab". Nothing about it showed until they pressed Save. */
+  var draftSeen = typeof L.draftVersion === "number" ? L.draftVersion : null;
   var stale = false;
 
   function stamp(payload) {
-    if (seen !== null) { payload.base = seen; payload.tab = TAB; }
+    if (draftSeen !== null) { payload.base = draftSeen; payload.tab = TAB; }
     return payload;
   }
 
   function saw(data) {
-    if (data && typeof data.version === "number") seen = data.version;
+    if (data && typeof data.version === "number") {
+      draftSeen = data.version;
+      noteBase(draftSeen);
+    }
   }
 
   function goneStale(message) {
