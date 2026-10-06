@@ -439,6 +439,27 @@
 
   /* What the chrome says about the project. Called whenever the files change,
      because adding or deleting query.sql is what changes the kind. */
+  /* ------------------------------------------- the app in a new tab
+   *
+   * The files go to /play through this browser's storage, not the server:
+   * nothing is saved or shared by it, and a signed-out student can use it
+   * as freely as Run. /play boots its own Python and runs its own copy of
+   * the app — the pages come from Python, and this tab's Python is out of
+   * that tab's reach (see play.html).
+   *
+   * One named tab, reused: pressing it again after an edit reloads that tab
+   * with the new files instead of opening another one per press. */
+  function runInNewTab() {
+    try {
+      localStorage.setItem("flaskide-play", JSON.stringify(readProject()));
+    } catch (e) {
+      window.alert("This browser is blocking site storage, so the app "
+                   + "cannot be handed to a new tab. Use the preview here instead.");
+      return;
+    }
+    window.open("/play", "flaskide-play");
+  }
+
   function applyKind() {
     var sql = isSql();
     document.body.classList.toggle("is-sql", sql);
@@ -453,6 +474,9 @@
 
     var title = $("right-title");
     if (title) title.textContent = sql ? "Results" : "Preview";
+
+    var runTab = $("run-tab");
+    if (runTab) runTab.hidden = sql;      // a SQL project has no pages
 
     /* The button always offers the OTHER kind, which is what makes it read
        as a switch. */
@@ -595,6 +619,7 @@
     }
 
     if ($("run")) $("run").addEventListener("click", run);
+    if ($("run-tab")) $("run-tab").addEventListener("click", runInNewTab);
     if ($("preview-back")) $("preview-back").addEventListener("click", function () {
       preview.back();
     });

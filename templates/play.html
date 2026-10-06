@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>App — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  /* Same as the editor: settle the theme before anything paints. */
+  (function () {
+    try {
+      var saved = localStorage.getItem("flaskide-theme");
+      if (saved === "light" || saved === "dark") {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
+    } catch (e) { /* storage blocked; the CSS default still applies */ }
+  })();
+</script>
+</head>
+{#  The editor's New tab: the student's app, running in a tab of its own.
+
+    It is the editor's preview and nothing else — the same runtime
+    (flask.js), the same little browser (preview.js), the same sandboxed
+    frame — with its own Python. The app has to run HERE: every page it
+    serves comes from Python, and the editor's Python is in another tab this
+    one cannot reach. So this tab boots Pyodide and Flask itself and runs its
+    own copy of the app, from the files the editor handed over through this
+    browser's storage (see runInNewTab in app.js). Nothing is on the server.
+
+    Its own copy means its own state: a list the app keeps in memory, or a
+    data.db it writes, starts fresh here and is separate from the editor's. #}
+<body class="is-play">
+<header class="bar">
+  <div class="brand"><span class="logo">🧪</span> <span id="play-title">FlaskIDE</span></div>
+  <div class="actions">
+    <button id="reload" class="btn btn-run" disabled
+            title="Start the app again from the files the editor sent">
+      <span class="btn-icon">↻</span><span id="reload-label">Loading…</span>
+    </button>
+  </div>
+</header>
+<main class="play-main">
+  <div class="trail">
+    <button id="preview-back" class="linkbtn" title="Back">◀</button>
+    <input id="preview-path" class="field field-path" value="/"
+           spellcheck="false" autocomplete="off">
+    <span id="preview-status" class="status-code"></span>
+  </div>
+  <div class="preview-frame">
+    <!-- Sandboxed exactly as in the editor: allow-scripts WITHOUT
+         allow-same-origin, so the student's JavaScript runs on a null origin
+         and cannot touch this page; allow-forms only lets the submit event
+         fire for the bridge to catch. -->
+    <iframe id="preview" title="Your app"
+            sandbox="allow-scripts allow-forms"></iframe>
+  </div>
+  <div class="pane-head console-head">
+    <span>Console</span>
+    <button id="clear" class="linkbtn">Clear</button>
+  </div>
+  <pre id="output" class="output"><span class="dim">Python is loading. This takes a few seconds the first time.</span>
+</pre>
+</main>
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js"></script>
+<script src="{{ url_for('static', filename='flask.js') }}"></script>
+<script src="{{ url_for('static', filename='preview.js') }}"></script>
+<script src="{{ url_for('static', filename='play.js') }}"></script>
+</body>
+</html>

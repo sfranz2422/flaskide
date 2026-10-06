@@ -59,6 +59,11 @@
       <span class="btn-icon">▶</span><span id="run-label">Run</span>
     </button>
     <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
+    {#  The app's pages in a tab of their own: bigger on a projector, and
+        a real-looking site for students to click around. Flask apps only —
+        a SQL project has no pages. #}
+    <button id="run-tab" class="btn" type="button"
+            title="Open your app's pages in a new tab">↗ New tab</button>
     {% if not readonly %}
       <!-- Goes to a NEW project of the other kind. It does not convert this
            one: the two kinds have different entry files, so converting would

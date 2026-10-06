@@ -1416,3 +1416,16 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .share-hide input { accent-color: var(--accent); cursor: pointer; margin: 0; }
 .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
 .pane-right .class-view[hidden] { display: none; }
+
+/* ------------------------------------------------------------ /play */
+/* The editor's New tab: the app's pages fill the tab, under the same
+ * address bar the preview has, with the console a strip at the bottom. */
+.play-main {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - var(--bar-h));
+  min-height: 0;
+  background: var(--bg-panel);
+}
+.play-main .preview-frame { flex: 1 1 0; min-height: 0; }
+.play-main #output { flex: 0 0 110px; min-height: 0; }

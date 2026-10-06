@@ -544,6 +544,18 @@ def raw_shared(slug, name=None):
         db.close()
 
 
+@app.get("/play")
+def play():
+    """The student's app in a tab of its own: the editor's New tab button.
+
+    Nothing behind it on the server. The editor puts the files in this
+    browser's storage and opens this page, which boots its own Python and
+    runs its own copy of the app (see play.html and play.js). So there is no
+    slug, no row, and nothing here for anyone else to open.
+    """
+    return render_template("play.html")
+
+
 @app.post("/api/share")
 def create_share():
     data = request.get_json(silent=True) or {}

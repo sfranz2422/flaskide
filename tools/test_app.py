@@ -436,4 +436,42 @@ check("    (and innerHTML is used, so the rule is doing work)",
 check("  the runtime exposes runSql",
       "runSql" in (ROOT / "static" / "flask.js").read_text())
 
+
+# ----------------------------------------------------- the app in a new tab
+# The editor hands the files to /play through this browser's storage and
+# opens one named tab. /play boots its own Python and runs its own copy of
+# the app, through the same runtime and preview the editor uses.
+import re                                                         # noqa: E402
+print("\nThe app in a new tab")
+_index = (ROOT / "templates" / "index.html").read_text()
+_app_js = (ROOT / "static" / "app.js").read_text()
+_play_js = (ROOT / "static" / "play.js").read_text()
+check("the editor has a New tab button, wired up",
+      'id="run-tab"' in _index
+      and '$("run-tab").addEventListener("click", runInNewTab)' in _app_js)
+check("  hidden for a SQL project, which has no pages",
+      "if (runTab) runTab.hidden = sql;" in _app_js)
+check("  which opens /play in one named tab",
+      'window.open("/play", "flaskide-play")' in _app_js)
+check("  handing over the project under the key /play reads",
+      'localStorage.setItem("flaskide-play", JSON.stringify(readProject()))' in _app_js
+      and 'var PLAY_KEY = "flaskide-play";' in _play_js)
+_r = client.get("/play")
+_page = _r.get_data(as_text=True)
+check("/play renders", _r.status_code == 200, _r.status_code)
+check("  with the runtime, the preview and its own script, in that order",
+      0 < _page.find("flask.js") < _page.find("preview.js") < _page.find("play.js"))
+_frame = re.search(r'<iframe id="preview"[^>]*>', _page)
+check("  its frame sandboxed exactly like the editor's preview",
+      _frame is not None and 'sandbox="allow-scripts allow-forms"' in _frame.group(0)
+      and "allow-same-origin" not in _frame.group(0),
+      _frame.group(0) if _frame else "no frame")
+check("play.js runs the app, then shows its home page",
+      re.search(r"await runtime\.run\(project\.files[\s\S]*?await preview\.go\(\"/\"\);", _play_js)
+      is not None)
+check("  and starts by itself", re.search(r"\n  start\(\);\n\}\)\(\);\s*$", _play_js) is not None)
+check("  reading the files afresh on every start",
+      re.search(r"async function start\(\) \{[\s\S]{0,80}var project = handedOver\(\);", _play_js)
+      is not None)
+
 done()
