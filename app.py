@@ -2435,46 +2435,9 @@ def live_assignments():
                   .order_by(accounts.Assignment.created_at.desc())
                   .limit(40).all())
         return jsonify(assignments=[{"slug": a.slug, "title": a.title}
-                                    for a in rows],
-                       recent=_reopenable(db, user))
+                                    for a in rows])
     finally:
         db.close()
-
-
-#: How far back Go live offers to reopen a lesson. A lesson that runs over a
-#: weekend or a snow day should still be offered on the Monday; one from a
-#: unit three weeks ago should not be the first thing asked.
-LIVE_REOPEN_DAYS = 7
-
-
-def _reopenable(db, user):
-    """The teacher's last lesson, if Go live should offer to reopen it.
-
-    None while one is still open — Go live reattaches to that one anyway —
-    and None for anything older than LIVE_REOPEN_DAYS. `updated_at` is the
-    last push or the Stop, so "last lesson" means the last one taught, not
-    the last one started.
-    """
-    is_open = (db.query(accounts.LiveSession)
-                 .filter_by(host_id=user.id, app=APP_NAME, ended=0).first())
-    if is_open is not None:
-        return None
-    cutoff = _live_now() - timedelta(days=LIVE_REOPEN_DAYS)
-    last = (db.query(accounts.LiveSession)
-              .filter(accounts.LiveSession.host_id == user.id,
-                      accounts.LiveSession.app == APP_NAME,
-                      accounts.LiveSession.updated_at >= cutoff)
-              .order_by(accounts.LiveSession.updated_at.desc()).first())
-    if last is None:
-        return None
-    when = last.updated_at
-    return {"code": last.code,
-            "title": last.title or "Live lesson",
-            "assignment_title": _title_of_assignment(db, last.assignment_id),
-            # The UTC date, which is the school's date for any lesson taught
-            # in school hours. Formatted here because SQLite hands back a
-            # naive datetime that a browser would misread as local time.
-            "when": "%s %d" % (when.strftime("%a %b"), when.day)}
 
 
 @app.get("/api/live/assignment/<slug>")
@@ -2576,12 +2539,13 @@ def live_start():
         if resume and (live is None or live.code != resume):
             return jsonify(resumed=False)
 
-        # REOPENING YESTERDAY'S LESSON. Only ever on the teacher's say-so: Go
-        # live offers their last lesson (see live_assignments) and sends its
-        # code here when they accept. Never on a resume — that is the "sign in
-        # and I'm live" bug above, coming back by a different door. Same row,
-        # same code, so the link the class bookmarked works again, and their
-        # browsers still hold yesterday's typing under that code.
+        # REOPENING YESTERDAY'S LESSON. Only ever on the teacher's say-so: they
+        # open the lesson's own link, press "Teach this lesson again" there
+        # (live.html, as the host), and the editor sends its code here. Never
+        # on a resume — that is the "sign in and I'm live" bug above, coming
+        # back by a different door. Same row, same code, so the link the class
+        # bookmarked works again, and their browsers still hold yesterday's
+        # typing under that code.
         reopen = clean(data.get("reopen"), 16)
         if reopen:
             old = _find_live(db, reopen)

@@ -966,11 +966,13 @@ teacher = client(TEACHER)                  # signed back in for what follows
 # ------------------------------------------- reopening yesterday's lesson
 #
 # A lesson that ended — Stop, signing out, or the overnight sweep — used to
-# be gone for good: Go live made a new code, and the link the class had from
-# yesterday only ever said "Lesson ended". Now Go live offers the last one
-# back. It is offered, never done: a reopened lesson lands on every screen
-# still showing its page, which is the "sign in and I'm live" bug if it ever
-# happens without the teacher choosing it.
+# be gone for good: the link the class had from yesterday only ever said
+# "Lesson ended". Now the teacher opens that same link and presses "Teach
+# this lesson again". It is never offered anywhere else: a reopened lesson
+# lands on every screen still showing its host_page, which is the "sign in and
+# I'm live" bug if it ever happens without the teacher choosing it. (Go
+# live once offered "your last lesson", which was whichever was most recent
+# rather than the one meant, and left the editor showing whatever was open.)
 print("\nReopening yesterday's lesson")
 
 def set_row(code, **fields):
@@ -988,40 +990,30 @@ def lesson_row(code):
     finally:
         db.close()
 
-def offered():
-    return teacher.get("/api/live/assignments").get_json().get("recent")
+check("Go live offers no lesson of its own accord",
+      "recent" not in teacher.get("/api/live/assignments").get_json(),
+      "it offered the most recent lesson, not the one the teacher meant")
 
-check("nothing open, so Go live offers the last lesson back",
-      (offered() or {}).get("code") == fresh["code"], offered())
-
-# Every earlier lesson in this file was taught weeks ago, from here on.
-db = F.SessionLocal()
-db.query(accounts.LiveSession).update(
-    {"updated_at": F._live_now() - F.timedelta(days=30)})
-db.commit()
-db.close()
-
-# Yesterday's lesson: for the homework, ended by the sweep, last pushed to
-# a day ago. The sweep does not touch updated_at, so this is its real shape.
-# `fresh` was STARTED after it but last taught three days ago, so ordering
-# by when a lesson began would offer the wrong one.
-yday = F._live_now() - F.timedelta(days=1)
-set_row(LESSON, ended=1, updated_at=yday)
-set_row(fresh["code"], updated_at=F._live_now() - F.timedelta(days=3))
-check("  (fixture: the other lesson really was started later)",
-      lesson_row(fresh["code"]).started_at > lesson_row(LESSON).started_at)
-got = offered() or {}
-check("  the one taught most recently, not the one started last",
-      got.get("code") == LESSON, got)
-check("  named by its assignment, so the teacher knows where turn-ins go",
-      got.get("assignment_title") == "Flask homework", got)
-check("  and by the day it was taught",
-      got.get("when") == "%s %d" % (yday.strftime("%a %b"), yday.day), got)
-
-set_row(LESSON, updated_at=F._live_now() - F.timedelta(days=F.LIVE_REOPEN_DAYS + 1))
-set_row(fresh["code"], updated_at=F._live_now() - F.timedelta(days=F.LIVE_REOPEN_DAYS + 2))
-check("  but not a lesson from weeks ago", offered() is None, offered())
-set_row(LESSON, updated_at=yday)
+# Yesterday's lesson: for the homework, ended by the sweep a day ago.
+set_row(LESSON, ended=1, updated_at=F._live_now() - F.timedelta(days=1))
+host_page = teacher.get("/live/%s" % LESSON).get_data(as_text=True)
+_teach = re.search(r'<a id="teach-again"[^>]*href="([^"]*)"', host_page)
+check("its teacher, opening its link, can teach it again",
+      _teach is not None and "Teach this lesson again" in host_page,
+      "the link the class still has could never be used again")
+check("  into the editor, with the lesson and its assignment's starter",
+      _teach is not None and _teach.group(1).replace("&amp;", "&")
+      in ("/?teach=%s&a=%s" % (LESSON, hw), "/?a=%s&teach=%s" % (hw, LESSON)),
+      _teach.group(1) if _teach else "")
+check("  and is not offered End lesson for a lesson already over",
+      'id="live-stop"' not in host_page)
+check("  nor a connection chip that never connects",
+      'id="live-state"' not in host_page)
+host_page = student.get("/live/%s" % LESSON).get_data(as_text=True)
+check("a student opening the same link is offered nothing of the kind",
+      'id="teach-again"' not in host_page)
+host_page = other.get("/live/%s" % LESSON).get_data(as_text=True)
+check("  nor is another teacher", 'id="teach-again"' not in host_page)
 
 r = other.post("/api/live/start", json={"body": "x", "reopen": LESSON})
 check("another teacher cannot reopen it", r.status_code == 404, r.status_code)
@@ -1043,9 +1035,12 @@ check("  and it survives the sweep that ended it overnight",
       lesson_row(LESSON).ended == 0,
       "start sweeps after it commits: a stale updated_at would end it again")
 r = stranger.get("/api/live/%s" % LESSON)
-check("  and the class's page is told it is back on",
+check("  and the class's host_page is told it is back on",
       r.get_json().get("ended") is False, r.get_json())
-check("no lesson is offered while one is open", offered() is None, offered())
+host_page = teacher.get("/live/%s" % LESSON).get_data(as_text=True)
+check("while it is open the link still takes its teacher back in",
+      "Teach this lesson</a>" in host_page.replace("\n", "").replace("  ", "")
+      and 'id="live-stop"' in host_page)
 
 other_open = teacher.post("/api/live/start", json={"body": "x"}).get_json()
 check("  (pressing Go live now carries on in the reopened one)",
@@ -1803,13 +1798,61 @@ else:
 print("\nReopening, in the browsers")
 
 _app_now = code_only(open(os.path.join(FLASKIDE, "static", "app.js")).read())
-check("app.js reopens only from Go live, after the teacher says yes",
-      re.search(r'if \(offerReopen\(data\)\) \{\s*startLive\(undefined, "", '
-                r'data\.recent\.code\)', _app_now) is not None
-      and len(re.findall(r'(?<!function )startLive\([^)]*,[^)]*,', _app_now)) == 1,
+# This file's fn_body finds a function's end by its indent, which suits the
+# top-level ones it was written for; teachAgain sits one level in.
+_m_teach = re.search(r"function teachAgain\(code, slug\) \{[\s\S]*?\n    \}\n", _app_now)
+_teach_fn = _m_teach.group(0) if _m_teach else ""
+check("app.js reopens only from Teach this lesson again",
+      'startLive(undefined, "", code);' in _teach_fn
+      and len(re.findall(r'(?<!function )startLive\([^)]*,[^)]*,', _app_now)) == 1
+      and "offerReopen" not in _app_now,
       "a reopen from anywhere else is the teacher back on the air unasked")
+check("  and only when the link asked for it",
+      re.search(r'if \(teach\) \{[\s\S]{0,200}?history\.replaceState\([\s\S]{0,120}?teachAgain\(teach, teachFor\);',
+                _app_now) is not None,
+      "left in the address bar, a reload would load the starter over the lesson")
 check("  and the reload path never asks for one",
       'startLive(undefined, resumeCode);' in _app_now)
+
+# What it does, run for real: the project goes into the editor BEFORE the
+# lesson reopens, so the first push the class sees is the lesson's code and
+# not whatever the editor happened to be showing.
+if shutil.which("node") and _teach_fn:
+    harness = """
+var log = [], files = {"app.py": "default"}, current = "app.py";
+var editor = {v: "default", setValue: function (t) { this.v = t; }, getValue: function () { return this.v; }};
+function loadStarter(inc) { log.push("starter"); files = {};
+  Object.keys(inc).forEach(function (n) { files[n] = inc[n]; }); current = "app.py"; editor.setValue(files["app.py"]); }
+function openFile(n) { files[current] = editor.getValue(); current = n; editor.setValue(files[n]); log.push("switch " + n); }
+function paintTabs() {}
+function startLive(a, r, code) { files[current] = editor.getValue();
+  log.push("live " + code + " " + (files["app.py"] !== undefined ? files["app.py"] : "-")
+  + " " + (files["notes.md"] !== undefined ? files["notes.md"] : "-")); }
+var replies = %s;
+function fetch(url) { return Promise.resolve({json: function () {
+  return Promise.resolve(replies[url.split("?")[0]]); }}); }
+%s
+var which = process.argv[1];
+teachAgain("abc", which === "noassign" ? "" : "hw1");
+setTimeout(function () { console.log(JSON.stringify(log)); }, 50);
+"""
+    def run_teach(which, last):
+        h = harness % (json.dumps({
+            "/api/live/assignment/hw1": {"title": "HW", "files": {"app.py": "starter code", "notes.md": "# notes"}},
+            "/api/live/abc": last}), _teach_fn)
+        res = subprocess.run(["node", "-e", h, which], capture_output=True, text=True)
+        return json.loads(res.stdout) if res.returncode == 0 else [res.stderr[-200:]]
+    got = run_teach("assign", {"body": "yesterday's end", "filename": "app.py"})
+    check("teach again loads the starter, then yesterday's code, then goes live",
+          got == ["starter", "live abc yesterday's end # notes"], got)
+    got = run_teach("assign", {"body": "## edited notes", "filename": "notes.md"})
+    check("  a lesson that ended on the notes leaves the notes as written",
+          got == ["starter", "live abc starter code # notes"], got)
+    got = run_teach("noassign", {"body": "x = 1", "filename": "app.py"})
+    check("  and with no assignment it still brings the code back",
+          got == ["live abc x = 1 -"], got)
+else:
+    check("node is available to run teachAgain", False, "brew install node")
 
 _live_now_js = code_only(open(os.path.join(FLASKIDE, "static", "live.js")).read())
 # THE BUG: one `seen` for both the draft's version and the lesson's, so the

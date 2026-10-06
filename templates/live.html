@@ -47,9 +47,13 @@
 
   <div class="actions">
     {% if live %}
+      {#  Not on the teacher's own view of it: that page does not poll, so the
+          chip sat at "Connecting…" for as long as it was open. #}
+      {% if not is_host %}
       <span id="live-state" class="chip live-chip" aria-live="polite">Connecting…</span>
+      {% endif %}
       <span class="chip live-code" title="The code your class types in">{{ live.code }}</span>
-      {% if is_host %}
+      {% if is_host and not live.ended %}
         <button id="live-stop" class="btn btn-stop-live">End lesson</button>
       {% endif %}
     {% endif %}
@@ -114,15 +118,33 @@
 </main>
 
 {% elif is_host %}
+{#  THE LINK IS THE LESSON. A teacher who opens their own lesson's link —
+    yesterday's, from the class's chat — gets a way back into teaching it:
+    the editor opens with the assignment's starter and the lesson's last
+    file, and the same code goes back on the air (see teachAgain in app.js).
+    It used to be a "Your class is watching" card whose button opened an
+    empty editor, so the link the class still had could never be used
+    again. Ended or still open, the button does the same thing: on an open
+    lesson it simply carries on in it. #}
 <main class="join-wrap">
   <div class="join-card">
-    <h1>Your class is watching</h1>
-    <p class="dim">Go back to the editor and teach. Everything you type in the
-      open file appears on their screens.</p>
+    {% if live.ended %}
+      <h1>This lesson has ended</h1>
+      <p class="dim">Teach it again under the same code, so the link your
+        class already has works again{% if assignment %} and turning in still
+        goes to <strong>{{ assignment.title }}</strong>{% endif %}.</p>
+    {% else %}
+      <h1>Your class is watching</h1>
+      <p class="dim">Everything you type in the open file appears on their
+        screens.</p>
+    {% endif %}
     <p class="live-bigcode">{{ live.code }}</p>
     <p class="dim">They join at <strong>{{ url_for('live_join', _external=True) }}</strong>
       and type that in.</p>
-    <a class="btn btn-primary" href="{{ url_for('index') }}">Back to the editor</a>
+    <a id="teach-again" class="btn btn-primary"
+       href="{{ url_for('index', teach=live.code, a=(assignment.slug if assignment else none)) }}"
+       title="Opens the editor with this lesson's {% if assignment %}starter and {% endif %}last code">
+      {% if live.ended %}Teach this lesson again{% else %}Teach this lesson{% endif %}</a>
   </div>
 </main>
 

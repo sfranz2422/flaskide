@@ -1061,30 +1061,6 @@
       return list[n - 1].slug;
     }
 
-    /* Offer the last lesson back, so yesterday's link works again.
-
-       ASKED, NEVER ASSUMED. A reopened lesson goes straight back onto every
-       screen that still has its page open, so it is only ever the teacher's
-       answer to this question — never a reload, never a sign-in (see
-       live_start). Cancel goes on to an ordinary new lesson.
-
-       Reopening keeps the lesson's assignment, so Turn in still goes where it
-       went yesterday; that is why the chooser is skipped. */
-    function offerReopen(data) {
-      var last = data && data.recent;
-      if (!last || !last.code) return false;
-      return window.confirm(
-        "Reopen your last lesson?\n\n"
-        + "\u201c" + last.title + "\u201d, code " + last.code
-        + ", last taught " + last.when + "\n"
-        + (last.assignment_title
-            ? "Turning in goes to: " + last.assignment_title
-            : "No assignment, so the class cannot turn work in.")
-        + "\n\nSame code and link, and each student's typing is still in "
-        + "their browser.\n"
-        + "OK reopens it. Cancel starts a new lesson instead.");
-    }
-
     /* Open an assignment's starter in the editor.
      *
      * ASKED, NEVER SILENT. This replaces everything open, so a teacher who
@@ -1186,6 +1162,49 @@
         });
     }
 
+    /* "Teach this lesson again", from the lesson's own link.
+
+       THE LINK IS THE LESSON. A teacher who wants yesterday's lesson back
+       opens the link the class already has, and its page (live.html, as
+       the host) sends them here with ?teach=<code>. Go live used to offer
+       "your last lesson" instead, which was whichever one happened to be
+       most recent — not the one they meant — and it left the editor as it
+       was, so the class's screens filled with whatever happened to be open.
+
+       So this opens the project first: the assignment's starter, with the
+       lesson's last file laid over its namesake so the teacher carries on
+       from where the class saw them stop. Only then does it reopen the
+       lesson, so the very first push is the lesson's own code. Arrived at
+       from a link, on the editor's home page, which never keeps unsaved
+       work — so replacing what is on screen costs nothing and is not asked.
+       A reload never comes back here; see the address bar cleared below. */
+    function teachAgain(code, slug) {
+      function json(res) { return res.json(); }
+      var starter = slug
+        ? fetch("/api/live/assignment/" + encodeURIComponent(slug))
+            .then(json).catch(function () { return null; })
+        : Promise.resolve(null);
+      var last = fetch("/api/live/" + encodeURIComponent(code) + "?v=-1")
+        .then(json).catch(function () { return null; });
+      Promise.all([starter, last]).then(function (got) {
+        var s = got[0], l = got[1];
+        if (s && !s.error) loadStarter(s.files);
+        // The notes travel separately (see pushNow), so only code is laid
+        // over: a lesson that ended on the notes tab leaves them as written.
+        if (l && !l.error && l.body && l.filename
+            && !/\.md$/i.test(l.filename)) {
+          // Set after openFile, never before: it writes the editor's text
+          // back into files[current] on the way out.
+          if (!(l.filename in files)) files[l.filename] = "";
+          if (l.filename !== current) openFile(l.filename);
+          files[l.filename] = l.body;
+          editor.setValue(l.body);
+          paintTabs();
+        }
+        startLive(undefined, "", code);
+      });
+    }
+
     liveBtn.addEventListener("click", function () {
       if (liveCode) {
         if (window.confirm("End the lesson? Your class stops seeing this editor.")) {
@@ -1196,10 +1215,6 @@
           .then(function (res) { return res.json(); })
           .catch(function () { return {}; })
           .then(function (data) {
-            if (offerReopen(data)) {
-              startLive(undefined, "", data.recent.code);
-              return;
-            }
             var slug = chooseAssignment(data);
             if (slug === null) return;      // they cancelled the chooser
             // Offer the starter first, so the file that goes out on the very
@@ -1213,13 +1228,27 @@
        The session is still open server-side — /api/live/start hands back the
        one already running rather than inventing a second code — so this puts
        the button back into its Live state and resumes pushing. */
+    var teach = null, teachFor = "";
     try {
-      // Resuming after a reload: no assignment argument at all, so the
-      // server keeps whatever the session already had. The code is sent so
-      // the server can refuse anything but that same lesson — see live_start.
-      var resumeCode = localStorage.getItem("flaskide-live-host");
-      if (resumeCode) startLive(undefined, resumeCode);
-    } catch (e) { /* storage blocked: press Go live again */ }
+      var q = new URLSearchParams(location.search);
+      teach = q.get("teach");
+      teachFor = q.get("a") || "";
+    } catch (e) { /* no URLSearchParams: an old browser, not a teacher's */ }
+
+    if (teach) {
+      // Off the address bar at once, so a reload resumes the broadcast the
+      // ordinary way instead of loading the starter over the lesson again.
+      try { history.replaceState(null, "", location.pathname); } catch (e) {}
+      teachAgain(teach, teachFor);
+    } else {
+      try {
+        // Resuming after a reload: no assignment argument at all, so the
+        // server keeps whatever the session already had. The code is sent so
+        // the server can refuse anything but that same lesson — see live_start.
+        var resumeCode = localStorage.getItem("flaskide-live-host");
+        if (resumeCode) startLive(undefined, resumeCode);
+      } catch (e) { /* storage blocked: press Go live again */ }
+    }
   } else {
     /* No Go live button: signed out, or not a teacher. Whatever lesson this
        browser remembers is not one this person can resume, so forget it
