@@ -221,6 +221,11 @@ check("a push without notes leaves them in place",
       repr(poll_json().get("notes")))
 
 page = stranger.get("/live/%s" % CODE).get_data(as_text=True)
+# The editor's light/dark button, on the student's page too: a room
+# projecting in light had no way to put a laptop in it.
+check("a student's lesson page has the light/dark button",
+      'id="theme"' in page
+      and re.search(r"^\s*themeSwitch\(\);", open(os.path.join(FLASKIDE, "static", "live.js")).read(), re.M))
 check("a student who joins now gets them in the page",
       re.search(r'^\s*notes: "# Today', page, re.M) is not None)
 check("  with a pane to show them in",

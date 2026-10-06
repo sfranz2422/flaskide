@@ -89,6 +89,12 @@
       </button>
       <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
     {% endif %}
+    {#  On every live page, the join card included: the room may be projecting
+        in light while a student's laptop is in a dark corridor. The choice is
+        the same localStorage key the editor uses, so it carries both ways. #}
+    <button id="theme" class="btn btn-icon-only" title="Switch between light and dark">
+      <span id="theme-glyph">☾</span>
+    </button>
     {#  The same Sign in the editor has. Without it a student who wanted to
         Save or Turn in had no way to get there from the lesson — those
         buttons only appear once signed in, so the page simply showed less
