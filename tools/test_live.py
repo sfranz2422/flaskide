@@ -226,6 +226,17 @@ page = stranger.get("/live/%s" % CODE).get_data(as_text=True)
 check("a student's lesson page has the light/dark button",
       'id="theme"' in page
       and re.search(r"^\s*themeSwitch\(\);", open(os.path.join(FLASKIDE, "static", "live.js")).read(), re.M))
+_live_js = open(os.path.join(FLASKIDE, "static", "live.js")).read()
+_play_js = open(os.path.join(FLASKIDE, "static", "play.js")).read()
+check("  and the New tab button, hidden for a SQL lesson",
+      'id="run-tab" class="btn" type="button" hidden' in page
+      and re.search(r"^\s*runTabBtn\.hidden = isSql\(\);", _live_js, re.M)
+      and re.search(r'^\s*runTabBtn\.addEventListener\("click", runInNewTab\);', _live_js, re.M))
+check("  which hands all their own files to /play under the key /play reads",
+      re.search(r'localStorage\.setItem\("flaskide-play", JSON\.stringify\(\{\s*files: allFiles\(\),',
+                _live_js)
+      and 'var PLAY_KEY = "flaskide-play";' in _play_js
+      and re.search(r'^\s*window\.open\("/play", "flaskide-play"\);', _live_js, re.M))
 check("a student who joins now gets them in the page",
       re.search(r'^\s*notes: "# Today', page, re.M) is not None)
 check("  with a pane to show them in",

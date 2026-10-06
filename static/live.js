@@ -1134,6 +1134,35 @@
   runBtn.disabled = false;
   runLabel.textContent = "Run";
   runBtn.addEventListener("click", run);
+
+  /* ------------------------------------------------- their app in a new tab
+   *
+   * The editor's New tab, unchanged: their project goes to /play through
+   * this browser's storage under the key play.js reads, and one named tab is
+   * reused; /play boots its own Python and runs its own copy of the app. It
+   * reads their editor and never writes to it. The teacher's files are not
+   * what it sends — a student who wants the teacher's app in a tab has to
+   * have typed it, which is the exercise. A SQL lesson has no pages, so the
+   * button stays hidden there, as in the editor. */
+  function runInNewTab() {
+    try {
+      localStorage.setItem("flaskide-play", JSON.stringify({
+        files: allFiles(),
+        title: L.title || "Untitled"
+      }));
+    } catch (e) {
+      window.alert("This browser is blocking site storage, so the app "
+                   + "cannot be handed to a new tab. Use the preview here instead.");
+      return;
+    }
+    window.open("/play", "flaskide-play");
+  }
+
+  var runTabBtn = $("run-tab");
+  if (runTabBtn) {
+    runTabBtn.hidden = isSql();
+    runTabBtn.addEventListener("click", runInNewTab);
+  }
   /* No Stop. A Flask request runs to completion inside Pyodide on this
      thread; there is nothing to interrupt from here, and a button that
      cannot do its job is worse than no button. The editor has none either. */

@@ -88,6 +88,11 @@
         <span class="btn-icon">▶</span><span id="run-label">Loading…</span>
       </button>
       <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
+      {#  The editor's New tab button: THEIR app, in a tab of its own, on
+          /play exactly as the editor sends it. Hidden for a SQL lesson,
+          which has no pages. #}
+      <button id="run-tab" class="btn" type="button" hidden
+              title="Open your app in its own tab">↗ New tab</button>
     {% endif %}
     {#  On every live page, the join card included: the room may be projecting
         in light while a student's laptop is in a dark corridor. The choice is
