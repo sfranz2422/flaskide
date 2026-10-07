@@ -474,4 +474,15 @@ check("  reading the files afresh on every start",
       re.search(r"async function start\(\) \{[\s\S]{0,80}var project = handedOver\(\);", _play_js)
       is not None)
 
+# Every page in the app's own style follows the editor's light/dark choice.
+# The teacher pages once did not, and a teacher in light mode in the editor
+# got every assignment page in dark.
+import glob as _glob
+_tpl_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates")
+_missing = [os.path.basename(t) for t in sorted(_glob.glob(os.path.join(_tpl_dir, "*.html")))
+            if "filename='style.css'" in open(t).read()
+            and 'localStorage.getItem("flaskide-theme")' not in open(t).read()]
+check("every page with the app's stylesheet follows the editor's theme",
+      not _missing, ", ".join(_missing))
+
 done()

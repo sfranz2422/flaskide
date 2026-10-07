@@ -9,6 +9,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  // The editor's light/dark choice, so this page matches it rather than the
+  // computer's setting, and never flashes the other one first.
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
 
