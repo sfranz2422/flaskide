@@ -52,6 +52,12 @@
 
   var DRAFT_KEY = "flaskide-live-" + L.code;
 
+  /* Questions in the teacher's notes answer into the lesson's assignment.
+     A lesson with none has nowhere to record them, and notes.js says so on
+     each question instead of taking an answer it would lose. */
+  window.FlaskIDENotes.setQuizContext({ assignment: L.assignment,
+                                       signedIn: L.signedIn });
+
   // ------------------------------------------------------------ the editors
 
   function isDark() {

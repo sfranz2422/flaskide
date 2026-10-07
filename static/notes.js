@@ -76,6 +76,7 @@ window.FlaskIDENotes = (function () {
       var clean = window.DOMPurify.sanitize(dirty, SANITIZE);
       target.innerHTML = clean;
       hardenLinks(target);
+      enhanceQuizzes(target);
       return true;
     }).catch(function (e) {
       target.textContent =
@@ -134,10 +135,312 @@ window.FlaskIDENotes = (function () {
     }).filter(function (s) { return s.trim(); });
   }
 
+  // ------------------------------------------------- questions in the notes
+  /* A ```quiz block is a question (quiz.py has the format, and why). By the
+     time a student's page has one, the server has taken the answer key out
+     and put an `id:` line in, so what arrives here can be shown but not
+     marked: every answer goes to /api/quiz/answer and the server says right
+     or wrong. A block that still HAS its key is the teacher's own copy — the
+     editor, or the "Class sees" pane — and is shown as a preview with the
+     answer behind a button, because that screen is often on the projector.
+
+     parseQuiz must read a block exactly as quiz.parse does. test_quiz.py
+     runs both on the same blocks. */
+  var FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+  var CHOICE = /^[-*+]\s+\[([ xX])\]\s+(.*)$/;
+  var ANSWER = /^answer\s*:\s*(.*)$/i;
+  var POINTS = /^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$/i;
+  var QID = /^id\s*:\s*([0-9a-f]{12})\s*$/;
+
+  function parseQuiz(body) {
+    var lines = String(body || "").replace(/\r\n?/g, "\n").split("\n");
+    var q = { id: "", prompt: "", choices: [], correct: [], answers: [],
+              points: 1 };
+    var prompt = [], inner = null;
+    lines.forEach(function (ln) {
+      var s = ln.trim(), m;
+      var f = ln.match(FENCE);
+      if (f) {
+        if (inner === null) inner = f[1];
+        else if (f[1].charAt(0) === inner.charAt(0)
+                 && f[1].length >= inner.length) inner = null;
+        prompt.push(ln);
+        return;
+      }
+      if (inner !== null) { prompt.push(ln); return; }
+      if ((m = s.match(CHOICE))) {
+        q.choices.push(m[2].trim());
+        if (m[1] !== " ") q.correct.push(m[2].trim());
+      } else if ((m = s.match(ANSWER))) {
+        if (m[1].trim()) q.answers.push(m[1].trim());
+      } else if ((m = s.match(POINTS))) {
+        q.points = parseFloat(m[1]);
+      } else if ((m = s.match(QID))) {
+        q.id = m[1];
+      } else {
+        prompt.push(ln);
+      }
+    });
+    while (prompt.length && !prompt[0].trim()) prompt.shift();
+    while (prompt.length && !prompt[prompt.length - 1].trim()) prompt.pop();
+    q.prompt = prompt.join("\n");
+    q.kind = q.choices.length ? "choice" : "text";
+    q.hasKey = !!(q.correct.length || q.answers.length);
+    return q;
+  }
+
+  /* Where answers go, set by the page: the assignment's slug, and whether
+     anyone is signed in. No assignment means nowhere to record an answer. */
+  var quizCtx = { assignment: "", signedIn: false };
+  var mine = null;            // promise of {qid: result}, fetched once
+  var answered = {};          // qid -> {response, correct, earned, points}
+  var pending = {};           // qid -> what is typed or picked, not yet sent
+  var widgetCount = 0;
+
+  function setQuizContext(ctx) {
+    quizCtx = { assignment: (ctx && ctx.assignment) || "",
+                signedIn: !!(ctx && ctx.signedIn) };
+    mine = null;
+    answered = {};
+  }
+
+  function loadMine() {
+    if (!mine) {
+      mine = fetch("/api/quiz/" + encodeURIComponent(quizCtx.assignment) + "/mine")
+        .then(function (r) { return r.ok ? r.json() : { answers: {} }; })
+        .then(function (d) {
+          Object.keys(d.answers || {}).forEach(function (k) {
+            answered[k] = d.answers[k];
+          });
+        })
+        .catch(function () { mine = null; });
+    }
+    return mine;
+  }
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function md(target, text, inline) {
+    var html = inline ? window.marked.parseInline(text || "")
+                      : window.marked.parse(text || "", { breaks: true });
+    target.innerHTML = window.DOMPurify.sanitize(html, SANITIZE);
+    hardenLinks(target);
+  }
+
+  function pointsText(p) { return p + (p === 1 ? " point" : " points"); }
+
+  function enhanceQuizzes(root) {
+    var codes = root.querySelectorAll("pre > code.language-quiz");
+    Array.prototype.forEach.call(codes, function (code) {
+      var q = parseQuiz(code.textContent);
+      code.parentNode.replaceWith(buildQuiz(q));
+    });
+  }
+
+  function buildQuiz(q) {
+    var n = ++widgetCount;
+    var box = el("div", "quiz");
+    var head = el("div", "quiz-head");
+    head.appendChild(el("span", "quiz-label", "Question"));
+    head.appendChild(el("span", "quiz-points dim", pointsText(q.points)));
+    box.appendChild(head);
+    var prompt = el("div", "quiz-prompt");
+    md(prompt, q.prompt);
+    box.appendChild(prompt);
+
+    var inputs = [];
+    if (q.kind === "choice") {
+      var list = el("div", "quiz-choices");
+      q.choices.forEach(function (c) {
+        var label = el("label", "quiz-choice");
+        var radio = el("input");
+        radio.type = "radio";
+        radio.name = "quiz-" + n;
+        radio.value = c;
+        label.appendChild(radio);
+        var span = el("span");
+        md(span, c, true);
+        label.appendChild(span);
+        list.appendChild(label);
+        inputs.push(radio);
+      });
+      box.appendChild(list);
+    } else {
+      var field = el("input", "field quiz-text");
+      field.type = "text";
+      field.maxLength = 2000;
+      field.placeholder = "Your answer";
+      field.setAttribute("aria-label", "Your answer");
+      box.appendChild(field);
+      inputs.push(field);
+    }
+    var foot = el("div", "quiz-foot");
+    box.appendChild(foot);
+    function disable() { inputs.forEach(function (i) { i.disabled = true; }); }
+
+    // The teacher's own copy, key and all.
+    if (q.hasKey) {
+      disable();
+      box.classList.add("quiz-preview");
+      var show = el("button", "btn quiz-show", "Show answer");
+      show.type = "button";
+      var key = el("span", "quiz-key small");
+      key.hidden = true;
+      // Through the inline renderer, like the choices, so `3` reads as code
+      // and not as a 3 between two backticks.
+      md(key, q.kind === "choice"
+        ? "Answer: " + q.correct.join(" or ")
+        : "Accepted: " + q.answers.join(" · "), true);
+      show.addEventListener("click", function () {
+        key.hidden = !key.hidden;
+        show.textContent = key.hidden ? "Show answer" : "Hide answer";
+        Array.prototype.forEach.call(box.querySelectorAll(".quiz-choice"),
+          function (lab, i) {
+            lab.classList.toggle("quiz-is-key",
+              !key.hidden && q.correct.indexOf(q.choices[i]) !== -1);
+          });
+      });
+      foot.appendChild(show);
+      foot.appendChild(key);
+      // The same test quiz.parse makes before it gives a question an id.
+      var usable = q.prompt.trim() && q.points > 0 && (q.kind === "text"
+        ? q.answers.length : q.choices.length >= 2 && q.correct.length);
+      if (!usable) {
+        foot.appendChild(el("span", "quiz-warn small",
+          "Not answerable yet: it needs a question, two or more choices with one marked [x], or an answer: line."));
+      }
+      return box;
+    }
+
+    if (!q.id) {
+      disable();
+      foot.appendChild(el("span", "dim small",
+        "This question isn't ready yet — your teacher hasn't marked its answer."));
+      return box;
+    }
+    box.dataset.qid = q.id;
+    if (!quizCtx.assignment) {
+      disable();
+      foot.appendChild(el("span", "dim small",
+        "Answers are only recorded on an assignment, so this one can't be answered here."));
+      return box;
+    }
+    if (!quizCtx.signedIn) {
+      disable();
+      var a = el("a", "", "Sign in");
+      a.href = "/login?next=" + encodeURIComponent(location.pathname);
+      foot.appendChild(a);
+      foot.appendChild(document.createTextNode(" to answer this question."));
+      foot.classList.add("small");
+      return box;
+    }
+
+    // A student's question. Locked until we know whether they answered it.
+    var send = el("button", "btn btn-primary quiz-send", "Submit answer");
+    send.type = "button";
+    var note = el("span", "quiz-result small dim", "One try.");
+    foot.appendChild(send);
+    foot.appendChild(note);
+    disable();
+    send.disabled = true;
+
+    function current() {
+      if (q.kind === "text") return inputs[0].value;
+      var on = inputs.filter(function (i) { return i.checked; })[0];
+      return on ? on.value : "";
+    }
+    // Typing or picking survives the notes being re-rendered under it — the
+    // teacher editing the notes mid-question would otherwise wipe it.
+    inputs.forEach(function (i) {
+      i.addEventListener(q.kind === "text" ? "input" : "change", function () {
+        pending[q.id] = current();
+      });
+      if (q.kind === "text") {
+        i.addEventListener("keydown", function (e) {
+          if (e.key === "Enter") { e.preventDefault(); send.click(); }
+        });
+      }
+    });
+    function restore(value) {
+      if (q.kind === "text") inputs[0].value = value || "";
+      else inputs.forEach(function (i) { i.checked = i.value === value; });
+    }
+
+    box.paint = function () {
+      var got = answered[q.id];
+      if (!got) {
+        restore(pending[q.id]);
+        inputs.forEach(function (i) { i.disabled = false; });
+        send.disabled = false;
+        return;
+      }
+      restore(got.response);
+      disable();
+      send.hidden = true;
+      box.classList.toggle("quiz-right", !!got.correct);
+      box.classList.toggle("quiz-wrong", !got.correct);
+      note.className = "quiz-result small";
+      note.textContent = (got.correct
+        ? "✓ Correct — " + pointsText(got.points)
+        : "✗ Not quite — 0 of " + pointsText(got.points))
+        + (got.practice ? " (your own question, so not recorded)" : "");
+    };
+
+    send.addEventListener("click", function () {
+      var value = current();
+      if (!value.trim()) {
+        note.textContent = q.kind === "text" ? "Type an answer first." : "Pick an answer first.";
+        return;
+      }
+      send.disabled = true;
+      note.textContent = "Checking…";
+      fetch("/api/quiz/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment: quizCtx.assignment,
+                               question: q.id, response: value })
+      }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+      }).then(function (out) {
+        if (!out.ok) {
+          send.disabled = false;
+          note.textContent = out.d.error || "That didn't go through. Try again.";
+          return;
+        }
+        answered[q.id] = out.d;
+        delete pending[q.id];
+        paintAll(q.id);
+      }).catch(function () {
+        send.disabled = false;
+        note.textContent = "No connection — your answer wasn't sent. Try again.";
+      });
+    });
+
+    loadMine().then(function () { box.paint(); });
+    return box;
+  }
+
+  /* The same question can be on the page twice — the live page shows the
+     notes in their own pane and again in the mirror when the teacher opens
+     the .md — and answering one must lock both. */
+  function paintAll(qid) {
+    Array.prototype.forEach.call(document.querySelectorAll(".quiz[data-qid]"),
+      function (box) {
+        if (box.dataset.qid === qid && box.paint) box.paint();
+      });
+  }
+
   return {
     isMarkdown: isMarkdown,
     slides: slides,
     render: render,
-    ensureRenderer: ensureRenderer
+    ensureRenderer: ensureRenderer,
+    parseQuiz: parseQuiz,
+    setQuizContext: setQuizContext
   };
 })();

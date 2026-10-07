@@ -24,6 +24,12 @@
   "use strict";
 
   var cfg = window.FLASKIDE || {};
+
+  /* Questions in the notes answer into this assignment. On a project that
+     is not one, or the teacher's own copy, there is nowhere to record an
+     answer, and notes.js says so on the question rather than taking one. */
+  window.FlaskIDENotes.setQuizContext({ assignment: cfg.assignmentSlug,
+                                        signedIn: cfg.signedIn });
   var runtime = window.FlaskIDERuntime;
   var $ = function (id) { return document.getElementById(id); };
 

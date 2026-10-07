@@ -50,6 +50,12 @@
       <span id="out-of-state" class="dim small"></span>
     </div>
     <p class="dim small">Leave it empty for an assignment you don't grade.</p>
+    {% if quiz_count %}
+      <p class="small">The notes have <strong>{{ quiz_count }} question{{ "" if quiz_count == 1 else "s" }}</strong>
+        worth <strong>{{ quiz_points }} point{{ "" if quiz_points == "1" else "s" }}</strong>.
+        Each student's points from them are added to the score you give, and the
+        two together are what goes to Classroom — so count them in Out of.</p>
+    {% endif %}
 
     {% if classroom_on %}
       <div class="gc">
@@ -119,14 +125,22 @@
                 <textarea class="field fb-text" rows="2" maxlength="5000"
                           placeholder="Feedback for {{ s.name }} — they see it on their My work page">{{ s.feedback }}</textarea>
                 <div class="fb-foot">
+                  {#  With questions: their points, plus the box for yours,
+                      makes the total that is sent. The box stays the
+                      teacher's part only, so answers given after it was
+                      typed still count without anyone retyping it. #}
+                  {% if s.quiz %}
+                    <span class="fb-quiz small" title="Points from the questions in the notes">Questions {{ s.quiz }}{% if quiz_points %}/{{ quiz_points }}{% endif %}{% if assignment.out_of %} +{% endif %}</span>
+                  {% endif %}
                   {% if assignment.out_of %}
                     <input class="field fb-score" type="number" step="any" min="0"
                            value="{{ s.score }}" aria-label="Score for {{ s.name }}">
+                    {% if s.quiz %}<span class="dim">= <span class="fb-total">{{ s.total }}</span></span>{% endif %}
                     <span class="dim">/ {{ assignment.out_of }}</span>
                   {% endif %}
                   <button class="btn fb-save">Save</button>
                   {% if posts %}
-                    <span class="fb-sync small">{% if s.score %}{% if s.synced %}✓ in Classroom{% else %}not in Classroom yet{% endif %}{% endif %}</span>
+                    <span class="fb-sync small">{% if s.total %}{% if s.synced %}✓ in Classroom{% else %}not in Classroom yet{% endif %}{% endif %}</span>
                   {% endif %}
                   <span class="fb-state dim small">{% if s.feedback_when %}Saved {{ s.feedback_when }}{% if s.seen %} · seen{% endif %}{% endif %}</span>
                   {% if s.again_since %}<span class="fb-again small">Turned in again since your feedback</span>{% endif %}
@@ -144,9 +158,11 @@
   {% if not_yet %}
     <section>
       <h2>Started but not turned in <span class="count">{{ not_yet|length }}</span></h2>
-      <p class="dim">They've opened the link and have work saved.</p>
+      <p class="dim">They've opened the link and have work saved, or answered
+        some of the questions. Points from questions only go to Classroom once
+        the work is turned in.</p>
       <ul class="names">
-        {% for name in not_yet %}<li>{{ name }}</li>{% endfor %}
+        {% for n in not_yet %}<li>{{ n.name }}{% if n.quiz %} <span class="small">· questions {{ n.quiz }}{% if quiz_points %}/{{ quiz_points }}{% endif %}</span>{% endif %}</li>{% endfor %}
       </ul>
     </section>
   {% endif %}
@@ -192,7 +208,9 @@
       if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
       row.classList.remove("is-dirty");
       state.textContent = out.d.when ? "Saved " + out.d.when : "Removed";
-      paintSync(row, out.d.score, out.d.synced);
+      var total = row.querySelector(".fb-total");
+      if (total) total.textContent = out.d.total;
+      paintSync(row, out.d.total, out.d.synced);
       var again = row.querySelector(".fb-again");
       if (again) again.remove();     // the new comment is about the new copy
     }).catch(function () {
@@ -305,8 +323,11 @@
         var ok = {};
         (out.d.synced || []).forEach(function (id) { ok[id] = true; });
         document.querySelectorAll(".fb-row").forEach(function (row) {
-          var box = row.querySelector(".fb-score");
-          paintSync(row, box && box.value, !!ok[row.dataset.sub]);
+          // The total, where there is one: a student with only question
+          // points has an empty box and a grade that went across.
+          var box = row.querySelector(".fb-total") || row.querySelector(".fb-score");
+          var shown = box && (box.value !== undefined ? box.value : box.textContent);
+          paintSync(row, shown || row.querySelector(".fb-quiz"), !!ok[row.dataset.sub]);
         });
       }).catch(function () {
         syncBtn.disabled = false;

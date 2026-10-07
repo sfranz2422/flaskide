@@ -32,6 +32,7 @@ from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 import accounts
+import quiz
 
 APP_NAME = "flaskide"       # this editor, in the shared account tables
 
@@ -826,8 +827,13 @@ def _draft_payload(db, draft, extra=None):
         starter = db.query(accounts.Assignment).filter_by(
             id=draft.assignment_id).first()
         if starter is not None:
-            ctx["draft_fresh"] = (draft.code == starter.code
-                                  and draft.file_map() == starter.file_map())
+            # Against the starter AS THE STUDENT WAS GIVEN IT, with the
+            # answer keys taken out of its notes. Compared with the teacher's
+            # copy, no draft of an assignment with questions would ever look
+            # untouched, and every sign-in would ask about restoring work.
+            ctx["draft_fresh"] = (
+                draft.code == starter.code
+                and draft.file_map() == quiz.redact_files(starter.file_map()))
     ctx.update(extra or {})
     return ctx
 
@@ -1068,6 +1074,12 @@ def my_work():
         def when(t):
             return t.strftime("%b %d at %I:%M %p")
 
+        earned = {}
+        for aid in items:
+            got = _quiz_earned(db, aid).get(user.id)
+            if got is not None:
+                earned[aid] = got
+
         assignments, projects, seen = [], [], set()
         for d in drafts:
             item = items.get(d.assignment_id)
@@ -1081,13 +1093,15 @@ def my_work():
                                  "url": url_for("open_draft", slug=d.slug)})
                 continue
             seen.add(item.id)
-            assignments.append(_my_assignment(item, d, subs.get(item.id), when))
+            assignments.append(_my_assignment(item, d, subs.get(item.id), when,
+                                              earned.get(item.id)))
         # Turned in, and then the working copy deleted. What was handed in is
         # still the teacher's, so it still belongs on this list.
         for aid, sub in subs.items():
             item = items.get(aid)
             if item is not None and aid not in seen:
-                assignments.append(_my_assignment(item, None, sub, when))
+                assignments.append(_my_assignment(item, None, sub, when,
+                                                  earned.get(aid)))
 
         # Seen, now that it is on their screen. After the rows are built, so
         # this visit still shows New and the next one does not.
@@ -1110,7 +1124,7 @@ def _is_sql(files):
     return SQL_ENTRY in files
 
 
-def _my_assignment(item, draft, sub, when):
+def _my_assignment(item, draft, sub, when, earned=None):
     return {
         "title": item.title,
         "closed": bool(item.closed),
@@ -1129,6 +1143,11 @@ def _my_assignment(item, draft, sub, when):
         "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
                           if sub and sub.feedback_at else ""),
         "score": _score_text(sub.score) if sub else "",
+        # Points from the questions in the notes, and what the grade comes
+        # to with them. The questions count as soon as they are answered,
+        # turned in or not, so this is shown with no submission too.
+        "quiz": _score_text(earned),
+        "total": _score_text(_total(sub.score if sub else None, earned)),
         "out_of": item.out_of or "",
         "feedback_new": bool(sub and (sub.feedback or sub.score is not None)
                              and not sub.feedback_seen),
@@ -1167,6 +1186,7 @@ def publish_assignment():
         )
         db.add(item)
         db.commit()
+        _store_quiz_keys(db, item.id, files.values())
         return jsonify(slug=item.slug,
                        url=url_for("open_assignment", slug=item.slug,
                                    _external=True, _scheme=_scheme()))
@@ -1206,7 +1226,7 @@ def open_assignment(slug):
         if user is None:
             ctx = user_context(db)
             ctx.update(
-                files=item.file_map(),
+                files=quiz.redact_files(item.file_map()),
                 title=item.title,
                 author="",
                 readonly=False,
@@ -1231,7 +1251,7 @@ def open_assignment(slug):
                 app=APP_NAME,
                 title=item.title,
                 code="",
-                files=item.files,
+                files=json.dumps(quiz.redact_files(item.file_map())),
             )
             db.add(draft)
             db.commit()
@@ -1312,6 +1332,7 @@ def update_assignment(slug):
         item.title = clean(data.get("title"), 200) or item.title
         item.files = json.dumps(files)
         db.commit()
+        _store_quiz_keys(db, item.id, files.values())
         # Not the author's own draft, if one is lying about from before the
         # redirect in open_assignment existed — that is not a student who
         # started.
@@ -1370,10 +1391,24 @@ def delete_assignment(slug):
                       "— that hides it and keeps everything."
                       % (handed_in, "" if handed_in == 1 else "s"),
                 submissions=handed_in), 409
+        # Answers to its questions are marked work too, even from a student
+        # who never pressed Turn in.
+        answered = (db.query(accounts.QuizAnswer.student_id)
+                      .filter_by(assignment_id=item.id).distinct().count())
+        if answered:
+            return jsonify(
+                error="%d student%s answered its questions. Archive it instead "
+                      "— that hides it and keeps everything."
+                      % (answered, "" if answered == 1 else "s"),
+                submissions=answered), 409
 
         detached = db.query(accounts.Draft).filter_by(assignment_id=item.id).all()
         for draft in detached:
             draft.assignment_id = None       # their work becomes their own
+        # Its answer keys go with it. Left behind they point at a deleted
+        # assignment, which Postgres refuses outright — the delete would fail.
+        (db.query(accounts.QuizQuestion).filter_by(assignment_id=item.id)
+           .delete(synchronize_session=False))
         db.delete(item)
         db.commit()
         return jsonify(ok=True, kept_projects=len(detached))
@@ -1457,6 +1492,198 @@ def turn_in():
 
 
 # --------------------------------------------------------------------------
+# Questions in the notes
+#
+# A ```quiz block in an assignment's notes is a question the student answers
+# on the page, once, and is told straight away whether they were right. The
+# points go on top of the teacher's score for the work, and Sync sends the
+# two together. quiz.py has the format and why the key never reaches a
+# student's browser; this is where it is kept and where answers are marked.
+# --------------------------------------------------------------------------
+
+def _store_quiz_keys(db, assignment_id, texts):
+    """Keep the answer key of every question in these notes.
+
+    Called with every save of the assignment and every live push, so it
+    writes only what is new or changed. Two workers saving the same new
+    question at once collide on the unique constraint; the loser's rollback
+    leaves the winner's row, which is the same key.
+    """
+    found = {}
+    for text in texts:
+        if isinstance(text, str):
+            for q in quiz.keys(text):
+                found[q["qid"]] = q
+    if not found:
+        return
+    have = {row.qid: row for row in db.query(accounts.QuizQuestion).filter(
+        accounts.QuizQuestion.assignment_id == assignment_id,
+        accounts.QuizQuestion.qid.in_(list(found))).all()}
+    for qid, q in found.items():
+        fields = {"kind": q["kind"], "prompt": q["prompt"],
+                  "choices": json.dumps(q["choices"]),
+                  "correct": json.dumps(q["correct"]),
+                  "answers": json.dumps(q["answers"]),
+                  "points": q["points"]}
+        row = have.get(qid)
+        if row is None:
+            db.add(accounts.QuizQuestion(assignment_id=assignment_id, qid=qid,
+                                         **fields))
+        elif any(getattr(row, k) != v for k, v in fields.items()):
+            for k, v in fields.items():
+                setattr(row, k, v)
+            row.updated_at = accounts.now()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _quiz_possible(item):
+    """The questions in the assignment's notes as saved, for the dashboard's
+    "N questions worth P points". Only an aid to choosing Out of: a question
+    added in a live lesson and never saved is answerable but not counted
+    here."""
+    seen = {}
+    for q in quiz.file_keys(item.file_map()):
+        seen.setdefault(q["qid"], q)
+    return list(seen.values())
+
+
+def _mark(key, response):
+    return quiz.is_correct(key.kind, json.loads(key.correct or "[]"),
+                           json.loads(key.answers or "[]"), response)
+
+
+def _quiz_earned(db, assignment_id):
+    """{student id: points from questions} for everyone who answered any.
+
+    Marked here, every time, against the key as it is now — never stored —
+    so a teacher who fixes a wrong `[x]` fixes everyone's marks with it. A
+    student who answered and got all of them wrong is 0, not missing: they
+    have a grade."""
+    keys = {k.qid: k for k in db.query(accounts.QuizQuestion)
+            .filter_by(assignment_id=assignment_id).all()}
+    earned = {}
+    for a in db.query(accounts.QuizAnswer).filter_by(
+            assignment_id=assignment_id).all():
+        key = keys.get(a.qid)
+        got = key.points if key is not None and _mark(key, a.response) else 0.0
+        earned[a.student_id] = round(earned.get(a.student_id, 0.0) + got, 2)
+    return earned
+
+
+def _total(score, earned):
+    """The grade: the teacher's score plus the questions' points. None only
+    when there is neither — "not graded", which Sync skips."""
+    if score is None and earned is None:
+        return None
+    return round((score or 0) + (earned or 0), 2)
+
+
+def _quiz_assignment(db, slug):
+    return db.query(accounts.Assignment).filter_by(
+        slug=clean(slug, 16), app=APP_NAME).first()
+
+
+@app.post("/api/quiz/answer")
+def quiz_answer():
+    """A student's answer to one question. One try, and they are told at once.
+
+    The reply says right or wrong and never what the right answer was: the
+    student beside them has not answered yet.
+
+    The teacher who set it is marked but not recorded, so they can try their
+    own questions from the student's view (?preview=1) without appearing on
+    their own dashboard.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in to answer questions."), 401
+        data = request.get_json(silent=True) or {}
+        item = _quiz_assignment(db, data.get("assignment"))
+        if item is None:
+            return jsonify(error="No such assignment."), 404
+        qid = str(data.get("question", ""))[:16]
+        response = data.get("response")
+        if not isinstance(response, str) or not response.strip():
+            return jsonify(error="Answer the question first."), 400
+        response = response.strip()[:2000]
+
+        def find():
+            return db.query(accounts.QuizQuestion).filter_by(
+                assignment_id=item.id, qid=qid).first()
+        key = find()
+        if key is None:
+            # Saved before this existed, or a race with the save that keeps
+            # it: the assignment's own notes are the key's last word.
+            _store_quiz_keys(db, item.id, item.file_map().values())
+            key = find()
+        if key is None:
+            return jsonify(error="This question has changed since the page "
+                                 "loaded. Reload to get the new one."), 404
+
+        if user.id == item.teacher_id:
+            right = _mark(key, response)
+            return jsonify(correct=right, earned=key.points if right else 0,
+                           points=key.points, response=response, practice=True)
+
+        had = db.query(accounts.QuizAnswer).filter_by(
+            assignment_id=item.id, student_id=user.id, qid=qid).first()
+        if had is None:
+            if item.closed:
+                return jsonify(error="That assignment is closed."), 403
+            had = accounts.QuizAnswer(assignment_id=item.id, student_id=user.id,
+                                      qid=qid, response=response)
+            db.add(had)
+            try:
+                db.commit()
+            except Exception:
+                # Their other tab, or a double click on the other worker,
+                # got there first. That answer is the one that counts.
+                db.rollback()
+                had = db.query(accounts.QuizAnswer).filter_by(
+                    assignment_id=item.id, student_id=user.id, qid=qid).first()
+                if had is None:
+                    return jsonify(error="That answer wasn't saved. Try again."), 500
+        right = _mark(key, had.response)
+        return jsonify(correct=right, earned=key.points if right else 0,
+                       points=key.points, response=had.response,
+                       already=had.response != response)
+    finally:
+        db.close()
+
+
+@app.get("/api/quiz/<slug>/mine")
+def quiz_mine(slug):
+    """What this student has already answered, so the page shows those
+    questions locked with their result rather than open for a second try."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="not signed in"), 401
+        item = _quiz_assignment(db, slug)
+        if item is None:
+            return jsonify(error="No such assignment."), 404
+        keys = {k.qid: k for k in db.query(accounts.QuizQuestion)
+                .filter_by(assignment_id=item.id).all()}
+        out = {}
+        for a in db.query(accounts.QuizAnswer).filter_by(
+                assignment_id=item.id, student_id=user.id).all():
+            key = keys.get(a.qid)
+            right = key is not None and _mark(key, a.response)
+            points = key.points if key is not None else 0
+            out[a.qid] = {"response": a.response, "correct": right,
+                          "points": points, "earned": points if right else 0}
+        return jsonify(answers=out, closed=bool(item.closed))
+    finally:
+        db.close()
+
+
+# --------------------------------------------------------------------------
 # The teacher's view
 # --------------------------------------------------------------------------
 
@@ -1515,8 +1742,10 @@ def _score_text(score):
     return ("%g" % score)
 
 
-def _is_synced(sub):
-    return sub.score is not None and sub.score_synced == sub.score
+def _is_synced(sub, total):
+    """Whether Classroom has this grade. `total` is the score plus the
+    points from the notes' questions (_total), which is what Sync sends."""
+    return total is not None and sub.score_synced == total
 
 
 @app.post("/api/assignment/<slug>/out-of")
@@ -1677,8 +1906,11 @@ def give_feedback(slug):
         sub.feedback_at = accounts.now() if has_any else None
         sub.feedback_seen = 0
         db.commit()
+        earned = _quiz_earned(db, item.id).get(sub.student_id)
+        total = _total(sub.score, earned)
         return jsonify(ok=True, feedback=text, score=_score_text(sub.score),
-                       synced=_is_synced(sub),
+                       total=_score_text(total),
+                       synced=_is_synced(sub, total),
                        when=(sub.feedback_at.strftime("%b %d at %I:%M %p")
                              if sub.feedback_at else ""))
     finally:
@@ -1702,6 +1934,8 @@ def teacher_assignment(slug):
                         accounts.Submission.student_id == accounts.User.id)
                   .filter(accounts.Submission.assignment_id == item.id)
                   .order_by(accounts.User.name).all())
+        earned = _quiz_earned(db, item.id)
+        possible = _quiz_possible(item)
         handed_in = [{
             "name": student.display_name(),
             "email": student.email,
@@ -1719,7 +1953,9 @@ def teacher_assignment(slug):
             "again_since": bool(sub.feedback_at
                                 and sub.submitted_at > sub.feedback_at),
             "score": _score_text(sub.score),
-            "synced": _is_synced(sub),
+            "quiz": _score_text(earned.get(student.id)),
+            "total": _score_text(_total(sub.score, earned.get(student.id))),
+            "synced": _is_synced(sub, _total(sub.score, earned.get(student.id))),
         } for sub, student in rows]
 
         # Anyone who opened the assignment but never pressed Turn in.
@@ -1728,15 +1964,27 @@ def teacher_assignment(slug):
                            accounts.Draft.owner_id == accounts.User.id)
                      .filter(accounts.Draft.assignment_id == item.id,
                              accounts.Draft.owner_id != item.teacher_id).all())
+        # And anyone who answered questions without ever saving a copy — in
+        # a live lesson, say. Their points are real and would otherwise be on
+        # no list at all.
+        answerers = (db.query(accounts.User)
+                       .filter(accounts.User.id.in_(list(earned)))
+                       .all()) if earned else []
         done = {s["email"] for s in handed_in}
-        not_yet = sorted({u.email: u.display_name() for u in started
-                          if u.email not in done}.values())
+        not_yet = sorted(
+            ({"name": u.display_name(), "quiz": _score_text(earned.get(u.id))}
+             for u in {u.email: u for u in started + answerers
+                       if u.email not in done and u.id != item.teacher_id
+                       }.values()),
+            key=lambda n: n["name"])
 
         ctx = user_context(db)
         ctx.update(posts=_posts(db, item))
         ctx.update(classroom_on=classroom_configured(),
                    classroom_connected=(classroom_configured()
                                         and _classroom_link(db, user) is not None))
+        ctx.update(quiz_count=len(possible),
+                   quiz_points=_score_text(sum(q["points"] for q in possible)))
         ctx.update(assignment=item, handed_in=handed_in, not_yet=not_yet,
                    share_url=url_for("open_assignment", slug=item.slug,
                                      _external=True, _scheme=_scheme()))
@@ -2358,8 +2606,13 @@ def classroom_sync(slug):
                   .filter(accounts.Submission.assignment_id == item.id).all())
         sent, unmatched, failed = 0, [], []
         waiting = [p.course_name or "a class" for p, _ in classes if p.id in drafts]
+        # What goes across is the score PLUS the questions' points, and a
+        # student with no score yet but answers given still has a grade.
+        earned = _quiz_earned(db, item.id)
+        totals = {sub.id: _total(sub.score, earned.get(sub.student_id))
+                  for sub, _ in rows}
         for sub, student in rows:
-            if sub.score is None:
+            if totals[sub.id] is None:
                 continue
             target, held = None, False
             for post, emails in classes:
@@ -2380,17 +2633,18 @@ def classroom_sync(slug):
             status, data = _google_api(
                 "PATCH", "%s/courses/%s/courseWork/%s/studentSubmissions/%s" % (
                     CLASSROOM_API, post.course_id, post.work_id, cid),
-                access, body={"draftGrade": sub.score},
+                access, body={"draftGrade": totals[sub.id]},
                 params={"updateMask": "draftGrade"})
             if status == 200:
-                sub.score_synced = sub.score
+                sub.score_synced = totals[sub.id]
                 sent += 1
             else:
                 failed.append("%s (%s)" % (student.display_name() or student.email,
                                            _google_message(data, "refused")))
         db.commit()
         return jsonify(ok=True, sent=sent, unmatched=unmatched, failed=failed,
-                       gone=gone, waiting=waiting, synced=[s.id for s, _ in rows if _is_synced(s)])
+                       gone=gone, waiting=waiting, synced=[s.id for s, _ in rows
+                               if _is_synced(s, totals[s.id])])
     finally:
         db.close()
 
@@ -2535,6 +2789,9 @@ def live_start():
         item, why = _assignment_for(db, user, wanted)
         if why:
             return jsonify(error=why), 400
+        # The first file can be the notes, answer keys and all.
+        if quiz.is_notes(data.get("filename")):
+            body = quiz.redact(body)
 
         live = (db.query(accounts.LiveSession)
                   .filter_by(host_id=user.id, app=APP_NAME, ended=0)
@@ -2672,12 +2929,27 @@ def live_push(code):
 
         filename = clean(data.get("filename"), 200) or live.filename
 
+        # THE ANSWER KEYS STOP HERE. The teacher's editor sends its notes as
+        # written, `[x]` and `answer:` included; what is stored, and so what
+        # every poll hands the class, has them taken out. The keys are kept
+        # first, so a question is answerable the moment a student can see it.
+        # The open file is redacted too when it is the notes: with the .md tab
+        # selected, `body` is the very same text.
+        notes = data.get("notes")
+        if quiz.is_notes(filename) or isinstance(notes, str):
+            if live.assignment_id:
+                _store_quiz_keys(db, live.assignment_id,
+                                 [notes, body if quiz.is_notes(filename) else ""])
+            if quiz.is_notes(filename):
+                body = quiz.redact(body)
+            if isinstance(notes, str):
+                notes = quiz.redact(notes)
+
         fields = {"body": body, "filename": filename,
                   "version": seq, "updated_at": _live_now()}
         # The project's notes ride along on every push (see LiveSession.notes).
         # Only when sent: an editor tab still running the code from before
         # this existed sends none, and must not wipe them.
-        notes = data.get("notes")
         if isinstance(notes, str):
             if len(notes.encode("utf-8")) > MAX_FILE_BYTES:
                 return jsonify(error="Those notes are too large to share live."), 413
@@ -2864,7 +3136,7 @@ def live_keep(code):
         # Only a lesson with no project behind it at all takes the page's
         # word for it (`entry`, which live_page chose from the teacher's file).
         base = (draft.file_map() if draft is not None else
-                item.file_map() if item is not None else {})
+                quiz.redact_files(item.file_map()) if item is not None else {})
         if SQL_ENTRY in base or ENTRY in base:
             entry = SQL_ENTRY if SQL_ENTRY in base else ENTRY
         else:
@@ -2993,7 +3265,7 @@ def live_page(code):
         entry = SQL_ENTRY if (live.filename or "").lower().endswith(".sql") \
             else ENTRY
         if item is not None:
-            source = item.file_map()
+            source = quiz.redact_files(item.file_map())
             if user is not None:
                 mine = db.query(accounts.Draft).filter_by(
                     owner_id=user.id, assignment_id=item.id).first()

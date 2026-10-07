@@ -68,7 +68,7 @@
               <a class="linkbtn" href="{{ a.url }}">Open</a>
             </td>
           </tr>
-          {% if a.feedback or a.score %}
+          {% if a.feedback or a.score or a.quiz %}
             <tr class="fb-show">
               <td colspan="3">
                 <div class="feedback">
@@ -77,8 +77,13 @@
                     {% if a.feedback_new %}<span class="badge-new">New</span>{% endif %}
                     <span class="dim small">{{ a.feedback_when }}</span>
                   </div>
-                  {% if a.score %}
-                    <div class="feedback-score">Score: <strong>{{ a.score }}{% if a.out_of %} / {{ a.out_of }}{% endif %}</strong></div>
+                  {#  The questions in the notes count as soon as they are
+                      answered, so their points show before the teacher has
+                      marked anything — and the score is then the two added
+                      up, which is what goes to Google Classroom. #}
+                  {% if a.score or a.quiz %}
+                    <div class="feedback-score">Score: <strong>{{ a.total }}{% if a.out_of %} / {{ a.out_of }}{% endif %}</strong>
+                      {% if a.quiz %}<span class="dim small">· {{ a.quiz }} from the questions</span>{% endif %}</div>
                   {% endif %}
                   {% if a.feedback %}<div class="feedback-body">{{ a.feedback }}</div>{% endif %}
                   {% if a.feedback_older %}
