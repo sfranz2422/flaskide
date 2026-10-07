@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ item.title }} — Lesson — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  // The editor's light/dark choice, so this page matches it rather than the
+  // computer's setting, and never flashes the other one first.
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+{#  The teacher's lesson page (see "Lessons" in app.py).
+      Write    the markdown on the left, and on the right the slides exactly
+               as students get them, following the cursor to its slide.
+      Present  the slides full screen, ◀ ▶ and the arrow keys — and Go live,
+               after which every move takes the class's screens with it. #}
+<body class="lesson-page lesson-teacher">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta">
+    <input id="lesson-title" class="title-input" type="text" maxlength="200"
+           value="{{ item.title }}" aria-label="Lesson title" spellcheck="false">
+  </div>
+  <div class="actions">
+    <span class="view-switch lesson-mode" role="group" aria-label="Write or present">
+      <button type="button" class="view-btn is-on" data-mode="write">Write</button>
+      <button type="button" class="view-btn" data-mode="present">Present</button>
+    </span>
+    <span id="lesson-saved" class="savestate" aria-live="polite">Saved</span>
+    <button id="lesson-save" class="btn" type="button" title="Save (Ctrl+S)">Save</button>
+    <button id="live-code" class="chip live-code" type="button" hidden
+            title="Click to copy the class's link: {{ live_url }}">{{ live_code }}</button>
+    <button id="go-live" class="btn" type="button"
+            title="Put the slides on your class's screens; they follow you as you move">Go live</button>
+    <a class="btn" href="{{ url_for('teacher_assignment', slug=item.slug) }}"
+       title="Results, the links to hand out, and Google Classroom">Results &amp; links</a>
+    <a class="btn" href="{{ url_for('open_assignment', slug=item.slug, preview=1) }}" target="_blank"
+       rel="noopener" title="The lesson as a student sees it">Student view</a>
+    <button id="theme" class="btn btn-icon-only" title="Switch between light and dark">
+      <span id="theme-glyph">☾</span>
+    </button>
+  </div>
+</header>
+
+<main class="lesson-main">
+  <section id="lesson-write" class="lesson-write">
+    <div class="pane lesson-src-pane">
+      <div class="pane-head"><span>Notes</span>
+        <span class="hint">--- on its own line starts a slide · ```quiz for a question</span></div>
+      <div class="editor-wrap"><textarea id="lesson-src">{{ notes }}</textarea></div>
+    </div>
+    <div class="pane lesson-preview-pane">
+      <div class="pane-head"><span>What students see</span></div>
+      <div class="subpane">
+        <div id="lesson-preview" class="notes-body prose lesson-body"></div>
+      </div>
+    </div>
+  </section>
+  <section id="lesson-present" class="lesson-pane subpane" hidden>
+    <div id="lesson-present-body" class="notes-body prose lesson-body"></div>
+  </section>
+</main>
+
+<script>
+  window.LESSON_T = {
+    ns: "FlaskIDE",
+    themeKey: "flaskide-theme",
+    saveUrl: "{{ url_for('save_lesson', slug=item.slug) }}",
+    liveCode: {{ live_code | tojson }},
+    liveOn: {{ 'true' if live_on else 'false' }},
+    liveUrl: {{ live_url | tojson }},
+    goLive: {{ 'true' if go_live else 'false' }}
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='lesson_teacher.js') }}"></script>
+</body>
+</html>

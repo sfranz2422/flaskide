@@ -110,6 +110,12 @@ class Assignment(Base):
     # submission and every student's work; it just stops filling up the
     # dashboard months after the class moved on.
     archived = Column(Integer, nullable=False, default=0)
+    #: "code" — the ordinary assignment, a starter project students copy and
+    #: work in — or "lesson": notes with questions in them and no code at
+    #: all, shown to students full screen (PyIDE's lesson.html). A lesson
+    #: keeps its notes in `files` like any assignment's, so the answer keys,
+    #: grading, Classroom and the live link work on it unchanged.
+    kind = Column(String(16), nullable=False, default="code")
     #: What it is marked out of. NULL means not graded: no score boxes, and
     #: it cannot be posted to Google Classroom, which only takes grades on
     #: work that has points.
@@ -577,6 +583,10 @@ LATER_COLUMNS = [
      "ALTER TABLE drafts ADD COLUMN version BIGINT NOT NULL DEFAULT 0"),
     ("drafts", "writer",
      "ALTER TABLE drafts ADD COLUMN writer VARCHAR(24) NOT NULL DEFAULT ''"),
+    # Lessons. 'code' is right for every earlier assignment: they were all
+    # code, and a lesson could not be made before this.
+    ("assignments", "kind",
+     "ALTER TABLE assignments ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'code'"),
 ]
 
 

@@ -27,6 +27,10 @@
   <div class="meta"><span class="pagetitle">Assignments</span></div>
   <div class="actions">
     <a class="btn" href="{{ url_for('index') }}">New project</a>
+    {#  A lesson: notes and questions, no code — for classes that are not
+        programming. Made here, written and presented on its own page. #}
+    <button id="create-lesson" class="btn" type="button"
+            title="Slides with questions in them, and no code: students answer as they read">Create lesson</button>
     <span class="whoami">{{ user_email }}</span>
     <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
   </div>
@@ -42,13 +46,14 @@
         {% for a in list %}
           <tr data-slug="{{ a.slug }}" data-count="{{ counts.get(a.id, 0) }}"
               data-title="{{ a.title }}">
-            <td><a href="{{ url_for('teacher_assignment', slug=a.slug) }}">{{ a.title }}</a></td>
+            <td><a href="{{ url_for('teacher_assignment', slug=a.slug) }}">{{ a.title }}</a>{%
+              if a.kind == 'lesson' %} <span class="kind-tag">lesson</span>{% endif %}</td>
             <td class="dim">{{ a.created_at.strftime('%b %d, %Y') }}</td>
             <td><strong>{{ counts.get(a.id, 0) }}</strong></td>
             <td class="right rowactions">
               <a class="linkbtn" href="{{ url_for('teach_assignment_live', slug=a.slug) }}"
                  title="Teach this live: opens the editor with its starter and puts it on your class's screens">Go live</a>
-              <a class="linkbtn" href="{{ url_for('edit_assignment', slug=a.slug) }}">Edit</a>
+              <a class="linkbtn" href="{{ url_for('edit_lesson' if a.kind == 'lesson' else 'edit_assignment', slug=a.slug) }}">Edit</a>
               <button class="linkbtn js-archive">{{ "Restore" if archived else "Archive" }}</button>
               {% if counts.get(a.id, 0) == 0 %}
                 <button class="linkbtn js-delete danger">Delete</button>
@@ -172,6 +177,24 @@
         });
     }
   });
+
+  // Create lesson: a title, then straight to its page to write it.
+  (function () {
+    var btn = document.getElementById("create-lesson");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var title = window.prompt("What is the lesson called?", "");
+      if (title === null) return;
+      btn.disabled = true;
+      fetch("/api/lesson", { method: "POST", headers: { "Content-Type": "application/json" },
+                             body: JSON.stringify({ title: title }) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (out) {
+          if (!out.ok) { btn.disabled = false; alert(out.d.error || "Couldn't make the lesson."); return; }
+          location.href = out.d.url;
+        }).catch(function () { btn.disabled = false; alert("Couldn't make the lesson — check your connection."); });
+    });
+  })();
 </script>
 
 </body>

@@ -161,7 +161,7 @@
     <p class="dim">They join at <strong>{{ url_for('live_join', _external=True) }}</strong>
       and type that in.</p>
     <a id="teach-again" class="btn btn-primary"
-       href="{{ url_for('index', teach=live.code, a=(assignment.slug if assignment else none)) }}"
+       href="{% if assignment and assignment.kind == 'lesson' %}{{ url_for('edit_lesson', slug=assignment.slug, go='live') }}{% else %}{{ url_for('index', teach=live.code, a=(assignment.slug if assignment else none)) }}{% endif %}"
        title="Opens the editor with this lesson's {% if assignment %}starter and {% endif %}last code">
       {% if waiting %}Start this lesson{% elif live.ended %}Teach this lesson again{% else %}Teach this lesson{% endif %}</a>
   </div>

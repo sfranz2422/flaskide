@@ -1137,8 +1137,9 @@ def _my_assignment(item, draft, sub, when, earned=None):
         "updated": when(draft.updated_at) if draft else "",
         "submitted": when(sub.submitted_at) if sub else "",
         "times": (sub.times_submitted or 1) if sub else 0,
+        # A lesson's turn-in has no snapshot; the lesson itself is the link.
         "turned_in_url": (url_for("view_shared", slug=sub.snippet_slug)
-                          if sub else ""),
+                          if sub and sub.snippet_slug else ""),
         "feedback": (sub.feedback or "") if sub else "",
         "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
                           if sub and sub.feedback_at else ""),
@@ -1221,7 +1222,12 @@ def open_assignment(slug):
         # `?preview=1` still gives the student's view, on purpose.
         if (user is not None and user.id == item.teacher_id
                 and request.args.get("preview") != "1"):
-            return redirect(url_for("edit_assignment", slug=item.slug))
+            return redirect(url_for("edit_lesson" if _is_lesson(item)
+                                    else "edit_assignment", slug=item.slug))
+
+        # A lesson has no code to copy, so no draft: the page is the lesson.
+        if _is_lesson(item):
+            return _lesson_page(db, item, user)
 
         if user is None:
             ctx = user_context(db)
@@ -1277,6 +1283,8 @@ def edit_assignment(slug):
             slug=slug, app=APP_NAME).first()
         if item is None or item.teacher_id != user.id:
             abort(404)
+        if _is_lesson(item):
+            return redirect(url_for("edit_lesson", slug=item.slug))
 
         # Not the author's own draft, if one is lying about from before the
         # redirect in open_assignment existed — that is not a student who
@@ -1684,6 +1692,200 @@ def quiz_mine(slug):
 
 
 # --------------------------------------------------------------------------
+# Lessons
+#
+# An assignment with no code: notes, cut into slides, with questions in
+# them, shown to students full screen (lesson.html, lesson.js). For classes
+# that are not programming. It is an ordinary Assignment with kind "lesson"
+# and its notes in `files` as lesson.md, so everything built for notes in an
+# assignment — answer keys kept off the wire, marking, the dashboard, Google
+# Classroom, the live link — works on it without knowing it is a lesson.
+#
+# Opened from the assignment link a student moves through it at their own
+# pace. Opened from the live link it follows the teacher's slide, the way the
+# notes pane does in a coding lesson. That is the only difference.
+#
+# There is no draft: nothing is typed but answers, and those are kept as
+# they are given (quiz_answers). Turn in records a Submission with no
+# snapshot, so its points go to Classroom the way a coding assignment's do.
+# --------------------------------------------------------------------------
+
+LESSON_FILE = "lesson.md"
+
+LESSON_STARTER = """# {title}
+
+Write your notes here. A line with only `---` on it starts a new slide.
+
+---
+
+## A question
+
+Students answer it on the slide, once, and see straight away whether they
+were right. The points count when they press Turn in.
+
+```quiz
+What does a line with only --- on it do in these notes?
+- [ ] Draws a line across the slide
+- [x] Starts a new slide
+points: 1
+```
+"""
+
+
+def _is_lesson(item):
+    return item is not None and (item.kind or "code") == "lesson"
+
+
+def _lesson_notes(item):
+    return item.file_map().get(LESSON_FILE, "")
+
+
+@app.post("/api/lesson")
+def create_lesson():
+    """A new lesson, from the dashboard's Create lesson. Starts with a page of
+    example notes showing a slide and a question, which the teacher writes
+    over, rather than a blank file that explains nothing."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only a teacher can make a lesson."), 403
+        data = request.get_json(silent=True) or {}
+        title = clean(data.get("title"), 200) or "Untitled lesson"
+        item = accounts.Assignment(
+            slug=accounts.new_id(db, accounts.Assignment),
+            app=APP_NAME, teacher_id=user.id, title=title, kind="lesson",
+            code="", files=json.dumps({LESSON_FILE: LESSON_STARTER.format(title=title)}))
+        db.add(item)
+        db.commit()
+        _store_quiz_keys(db, item.id, item.file_map().values())
+        return jsonify(slug=item.slug, url=url_for("edit_lesson", slug=item.slug))
+    finally:
+        db.close()
+
+
+@app.get("/teacher/<slug>/lesson")
+def edit_lesson(slug):
+    """The teacher's lesson page: Write (the markdown, with the slides beside
+    it as students will see them) and Present (the slides full screen, and
+    Go live). `?go=live` arrives from the dashboard's Go live and starts
+    presenting live at once."""
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        item = db.query(accounts.Assignment).filter_by(slug=slug, app=APP_NAME).first()
+        if item is None or item.teacher_id != user.id or not _is_lesson(item):
+            abort(404)
+        lesson = _lesson_for(db, user, item)
+        ctx = user_context(db)
+        ctx.update(item=item, notes=_lesson_notes(item), live_code=lesson.code,
+                   live_on=not lesson.ended,
+                   live_url=url_for("live_page", code=lesson.code, _external=True,
+                                    _scheme=_scheme()),
+                   go_live=request.args.get("go") == "live")
+        return render_template("lesson_teacher.html", **ctx)
+    finally:
+        db.close()
+
+
+@app.post("/api/lesson/<slug>")
+def save_lesson(slug):
+    """Save the lesson's title and notes. Like editing an assignment, this is
+    what students get from now on; answers already given stay, and are
+    marked against the keys as they are now (see _quiz_earned)."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        if not _is_lesson(item):
+            return jsonify(error="That isn't a lesson."), 400
+        data = request.get_json(silent=True) or {}
+        notes = data.get("notes")
+        if not isinstance(notes, str):
+            return jsonify(error="Nothing to save."), 400
+        if len(notes.encode("utf-8")) > MAX_FILE_BYTES:
+            return jsonify(error="Those notes are too long to save."), 413
+        item.title = clean(data.get("title"), 200) or item.title
+        item.files = json.dumps({LESSON_FILE: notes})
+        db.commit()
+        _store_quiz_keys(db, item.id, [notes])
+        return jsonify(ok=True, title=item.title)
+    finally:
+        db.close()
+
+
+@app.post("/api/lesson/<slug>/turnin")
+def turn_in_lesson(slug):
+    """A student saying they are done. Nothing is copied — the work IS the
+    answers, already kept as given — so the Submission has no snapshot, and
+    exists so the teacher sees who finished and Sync sends their points, as
+    for any assignment. Pressing it again just moves the time."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in first, then you can turn it in."), 401
+        item = db.query(accounts.Assignment).filter_by(slug=slug, app=APP_NAME).first()
+        if not _is_lesson(item):
+            return jsonify(error="No such lesson."), 404
+        if item.closed:
+            return jsonify(error="That lesson is closed."), 403
+        row = db.query(accounts.Submission).filter_by(
+            assignment_id=item.id, student_id=user.id).first()
+        if row is None:
+            row = accounts.Submission(assignment_id=item.id, student_id=user.id,
+                                      snippet_slug="")
+            db.add(row)
+        else:
+            row.submitted_at = accounts.now()
+            row.times_submitted = (row.times_submitted or 1) + 1
+        db.commit()
+        return jsonify(ok=True, again=row.times_submitted > 1,
+                       submitted_at=row.submitted_at.strftime("%b %d at %I:%M %p"))
+    finally:
+        db.close()
+
+
+def _lesson_page(db, item, user, live=None):
+    """The student's lesson page, from the assignment link or (with `live`)
+    the live link. The notes go with the answer keys taken out, as every
+    copy a student is given does."""
+    submitted_at = ""
+    if user is not None:
+        done = db.query(accounts.Submission).filter_by(
+            assignment_id=item.id, student_id=user.id).first()
+        if done is not None:
+            submitted_at = done.submitted_at.strftime("%b %d at %I:%M %p")
+    ctx = user_context(db)
+    ctx.update(item=item, notes=quiz.redact(_lesson_notes(item)),
+               submitted_at=submitted_at, live=live,
+               waiting=_waiting(live) if live is not None else False,
+               is_host=bool(live is not None and user is not None
+                            and user.id == live.host_id))
+    return render_template("lesson.html", **ctx)
+
+
+def _lesson_answers(db, item):
+    """{student id: [(question, their answer, right?)]}, for the teacher's
+    page, which shows a lesson's answers where a coding assignment has an
+    Open link to the code."""
+    keys = {k.qid: k for k in db.query(accounts.QuizQuestion)
+            .filter_by(assignment_id=item.id).all()}
+    out = {}
+    for a in (db.query(accounts.QuizAnswer).filter_by(assignment_id=item.id)
+                .order_by(accounts.QuizAnswer.answered_at).all()):
+        key = keys.get(a.qid)
+        prompt = (key.prompt if key is not None else "A question since changed")
+        prompt = " ".join(prompt.split("\n")[0].split())[:120]
+        out.setdefault(a.student_id, []).append(
+            (prompt, a.response, key is not None and _mark(key, a.response)))
+    return out
+
+
+# --------------------------------------------------------------------------
 # The teacher's view
 # --------------------------------------------------------------------------
 
@@ -1936,12 +2138,17 @@ def teacher_assignment(slug):
                   .order_by(accounts.User.name).all())
         earned = _quiz_earned(db, item.id)
         possible = _quiz_possible(item)
+        answers = _lesson_answers(db, item) if _is_lesson(item) else {}
         handed_in = [{
             "name": student.display_name(),
             "email": student.email,
             "when": sub.submitted_at.strftime("%b %d at %I:%M %p"),
             "times": sub.times_submitted,
-            "url": url_for("view_shared", slug=sub.snippet_slug),
+            # A lesson's turn-in has no snapshot to open; its answers are
+            # listed instead.
+            "url": (url_for("view_shared", slug=sub.snippet_slug)
+                    if sub.snippet_slug else ""),
+            "answers": answers.get(student.id, []),
             "id": sub.id,
             "feedback": sub.feedback or "",
             "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
@@ -2817,6 +3024,7 @@ def live_assignments():
         rows = (db.query(accounts.Assignment)
                   .filter_by(teacher_id=user.id, app=APP_NAME,
                              archived=0, closed=0)
+                  .filter(accounts.Assignment.kind != "lesson")
                   .order_by(accounts.Assignment.created_at.desc())
                   .limit(40).all())
         return jsonify(assignments=[{"slug": a.slug, "title": a.title}
@@ -2932,6 +3140,8 @@ def teach_assignment_live(slug):
             slug=slug, app=APP_NAME).first()
         if item is None or item.teacher_id != user.id:
             abort(404)
+        if _is_lesson(item):
+            return redirect(url_for("edit_lesson", slug=item.slug, go="live"))
         live = _lesson_for(db, user, item)
         return redirect(url_for("index", teach=live.code, a=item.slug))
     finally:
@@ -3424,6 +3634,10 @@ def live_page(code):
         if live.assignment_id:
             item = db.query(accounts.Assignment).filter_by(
                 id=live.assignment_id).first()
+        # A lesson's class follows it full screen; its teacher still gets
+        # the card below, whose button goes to the lesson's Present.
+        if _is_lesson(item) and not (user is not None and user.id == live.host_id):
+            return _lesson_page(db, item, user, live)
         # If they have already handed this in, the button says so rather than
         # pretending nothing happened — the same wording the editor uses.
         if item is not None and user is not None:

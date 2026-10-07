@@ -157,7 +157,7 @@
               <td>{{ s.name }} <span class="period-tag dim small"></span><div class="dim small">{{ s.email }}</div></td>
               <td class="dim">{{ s.when }}</td>
               <td class="dim">{% if s.times > 1 %}{{ s.times }} attempts{% endif %}</td>
-              <td class="right"><a class="linkbtn" href="{{ s.url }}">Open</a></td>
+              <td class="right">{% if s.url %}<a class="linkbtn" href="{{ s.url }}">Open</a>{% endif %}</td>
             </tr>
             {#  Feedback, under every student, always open: a teacher marking
                 a class goes down the list typing, and a click to reveal each
@@ -166,6 +166,20 @@
                 box says so, because the comment may be about the old copy. #}
             <tr class="fb-row" data-sub="{{ s.id }}">
               <td colspan="4">
+                {#  A lesson has no code to open: what the student did is their
+                    answers, so they are listed, right or not, in the order
+                    given. In this row, not one of its own: the period tabs
+                    hide a student's row with the one straight after it. #}
+                {% if assignment.kind == 'lesson' %}
+                  {% if s.answers %}
+                    <ol class="lesson-answers small">
+                      {% for q, a, right in s.answers %}
+                        <li class="{{ 'is-right' if right else 'is-wrong' }}">{{ '✓' if right else '✗' }}
+                          <span class="dim">{{ q }}</span> — <strong>{{ a }}</strong></li>
+                      {% endfor %}
+                    </ol>
+                  {% else %}<p class="dim small">No questions answered.</p>{% endif %}
+                {% endif %}
                 <textarea class="field fb-text" rows="2" maxlength="5000"
                           placeholder="Feedback for {{ s.name }} — they see it on their My work page">{{ s.feedback }}</textarea>
                 <div class="fb-foot">

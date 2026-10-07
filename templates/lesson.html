@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ item.title }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  // The editor's light/dark choice, so this page matches it rather than the
+  // computer's setting, and never flashes the other one first.
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+{#  A LESSON: notes with questions in them, and no code (see "Lessons" in
+    app.py). The whole page is the notes, as slides. From the assignment
+    link a student moves through them at their own pace; from the live link
+    (`live` set) they follow the teacher's slide, with a way back to it if
+    they wander. That is the only difference between the two. #}
+<body class="lesson-page{% if live %} is-live{% endif %}">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">{{ item.title }}</span></div>
+  <div class="actions">
+    {% if live %}
+      <span id="live-state" class="chip live-chip" aria-live="polite">Connecting…</span>
+      <button id="lesson-back" type="button" class="linkbtn" hidden></button>
+    {% endif %}
+    <button id="theme" class="btn btn-icon-only" title="Switch between light and dark">
+      <span id="theme-glyph">☾</span>
+    </button>
+    {% if user %}
+      {#  Turn in: the answers are already kept as they are given, so this
+          only says "I'm done" — and is what sends the points to Classroom. #}
+      <span id="lesson-turned" class="savestate">{% if submitted_at %}Turned in {{ submitted_at }}{% endif %}</span>
+      <button id="lesson-turnin" class="btn btn-primary" type="button">{% if submitted_at %}Turn in again{% else %}Turn in{% endif %}</button>
+    {% elif login_enabled %}
+      <a class="btn btn-primary" href="{{ url_for('login', next=request.path) }}"
+         title="Sign in with your school account to answer the questions">Sign in</a>
+    {% endif %}
+  </div>
+</header>
+
+<main class="lesson-main">
+  <div class="lesson-pane subpane">
+    <div id="lesson-body" class="notes-body prose lesson-body"></div>
+  </div>
+</main>
+
+<script>
+  window.LESSON = {
+    ns: "FlaskIDE",
+    themeKey: "flaskide-theme",
+    slug: {{ item.slug | tojson }},
+    // The notes with the answer keys taken out, as every copy a student is
+    // given has them. A live lesson replaces them from the poll.
+    notes: {{ notes | tojson }},
+    live: {{ (live.code if live else '') | tojson }},
+    slide: {{ (live.slide if live else '') | tojson }},
+    waiting: {{ 'true' if waiting else 'false' }},
+    ended: {{ 'true' if (live and live.ended and not waiting) else 'false' }},
+    signedIn: {{ 'true' if user else 'false' }},
+    turnInUrl: "{{ url_for('turn_in_lesson', slug=item.slug) }}"
+  };
+</script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='lesson.js') }}"></script>
+</body>
+</html>
