@@ -25,6 +25,7 @@ Google is never called. `_google_post` and `_google_get` are the only two
 functions in app.py that reach it, and both are replaced here.
 """
 import os
+import re
 import sys
 import tempfile
 from urllib.parse import parse_qs, urlparse
@@ -448,7 +449,7 @@ r = teacher.post(POST, json={"course": P4})
 check("posting to the same class twice is refused, so it never sees two",
       r.status_code == 409 and len(posts()) == 1)
 
-r = teacher.post(POST, json={"course": P7, "draft": True})
+r = teacher.post(POST, json={"course": P7, "draft": True, "link": "live"})
 check("the same assignment can also go to Period 7",
       r.status_code == 200 and [p[0] for p in posts()] == [P4, P7], posts())
 check("  as its own Classroom assignment",
@@ -456,6 +457,20 @@ check("  as its own Classroom assignment",
 check("  posted as a draft when asked, for the teacher to assign there later",
       room[P7]["work"].get("state") == "DRAFT" and r.get_json().get("draft") is True,
       room[P7]["work"].get("state"))
+_live = re.search(r'id="live-url" type="text" readonly value="([^"]+)"',
+                  teacher.get("/teacher/%s" % hw).get_data(as_text=True))
+_p7link = ((room[P7]["work"].get("materials") or [{}])[0].get("link") or {}).get("url", "")
+check("  linked to the live lesson when asked: the assignment page's own live link",
+      _live is not None and _p7link == _live.group(1) and "/live/" in _p7link
+      and r.get_json().get("link") == "live", _p7link)
+check("  and told in Classroom that it is a live lesson",
+      "follow the lesson live" in room[P7]["work"].get("description", ""))
+check("  while Period 4, not asked, got the assignment link as before",
+      link.endswith("/a/%s" % hw) and "follow the lesson live" not in
+      (room[P4]["work"] or {}).get("description", ""))
+check("the page offers the choice, the assignment ticked",
+      'name="gc-link" value="assignment" checked' in
+      teacher.get("/teacher/%s" % hw).get_data(as_text=True))
 check("the page offers the draft box, ticked",
       'id="gc-draft" checked' in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
 page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)

@@ -102,6 +102,13 @@
           </div>
           <label class="small"><input type="checkbox" id="gc-draft" checked>
             Post as a draft — assign it from Classroom when you're ready</label>
+          {#  Which link the class is given in Classroom. The live lesson's is
+              the one shown above, made ahead for exactly this; turning in
+              from it still goes to this assignment, so grades sync the same. #}
+          <div class="gc-link small">Link students to:
+            <label><input type="radio" name="gc-link" value="assignment" checked> the assignment</label>
+            <label><input type="radio" name="gc-link" value="live"> the live lesson</label>
+          </div>
           {% if not posts %}
             <p class="dim small">Creates this assignment in that class with a link
               here, worth {{ assignment.out_of or "—" }} points. Grades can only be
@@ -298,12 +305,15 @@
       var choice = picker.options[picker.selectedIndex];
       if (!picker.value) { state.textContent = "Choose a class first."; return; }
       var draft = document.getElementById("gc-draft").checked;
+      var live = (document.querySelector('input[name="gc-link"]:checked') || {}).value === "live";
       if (!confirm("Post \u201c" + {{ assignment.title | tojson }} + "\u201d to " + choice.textContent
+                   + (live ? " (linked to the live lesson)" : "")
                    + (draft ? " as a draft? The class won't see it until you assign it in Google Classroom."
                             : "? The class will see it in Google Classroom straight away."))) return;
       this.disabled = true;
       var btn = this;
-      post(base + "/classroom/post", { course: picker.value, draft: draft }).then(function (out) {
+      post(base + "/classroom/post", { course: picker.value, draft: draft,
+                                       link: live ? "live" : "assignment" }).then(function (out) {
         if (!out.ok) { btn.disabled = false; state.textContent = out.d.error || "Not posted"; return; }
         location.reload();
       }).catch(function () { btn.disabled = false; state.textContent = "Not posted — check your connection"; });

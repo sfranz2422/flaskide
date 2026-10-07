@@ -2428,6 +2428,12 @@ def classroom_post(slug):
     it there does not change whose it is — Google still counts it as this
     app's, so Sync can grade it afterwards. A page from before the box
     existed sends no `draft`, and gets what it always got: published.
+
+    `link` is which link the class is given: "assignment" (the default, and
+    what a page from before the choice gets) or "live", the lesson's link
+    from the assignment page (_lesson_for), for work done in a live lesson.
+    Either way it is this assignment's: work turned in from the lesson goes
+    to the assignment, so Sync grades it the same.
     """
     db = SessionLocal()
     try:
@@ -2457,14 +2463,22 @@ def classroom_post(slug):
             return jsonify(error=_google_message(course, "Google couldn't find "
                                                  "that class.")), 502
 
-        link = url_for("open_assignment", slug=item.slug, _external=True,
-                       _scheme=_scheme())
+        live = asked.get("link") == "live"
+        if live:
+            link = url_for("live_page", code=_lesson_for(db, user, item).code,
+                           _external=True, _scheme=_scheme())
+            how = ("Open it to follow the lesson live in %s, and sign in with "
+                   "your school account. Press Turn in there when you're done.")
+        else:
+            link = url_for("open_assignment", slug=item.slug, _external=True,
+                           _scheme=_scheme())
+            how = ("Open it in %s and sign in with your school account. "
+                   "Press Turn in there when you're done.")
         status, work = _google_api(
             "POST", "%s/courses/%s/courseWork" % (CLASSROOM_API, course_id), access,
             body={
                 "title": item.title,
-                "description": "Open it in FlaskIDE and sign in with your school "
-                               "account. Press Turn in there when you're done.",
+                "description": how % "FlaskIDE",
                 "materials": [{"link": {"url": link}}],
                 "workType": "ASSIGNMENT",
                 "state": "DRAFT" if asked.get("draft") is True else "PUBLISHED",
@@ -2482,7 +2496,8 @@ def classroom_post(slug):
         db.add(post)
         db.commit()
         return jsonify(ok=True, course=post.course_name, url=post.url,
-                       draft=asked.get("draft") is True)
+                       draft=asked.get("draft") is True,
+                       link="live" if live else "assignment")
     finally:
         db.close()
 
