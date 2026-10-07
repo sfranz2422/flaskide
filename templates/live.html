@@ -139,7 +139,15 @@
     lesson it simply carries on in it. #}
 <main class="join-wrap">
   <div class="join-card">
-    {% if live.ended %}
+    {% if waiting %}
+      {#  Made ahead from the assignment page, so its link could be posted
+          before the lesson. Nothing has gone out under it yet. #}
+      <h1>Ready when you are</h1>
+      <p class="dim">Anyone who opens the link before you start is told the
+        lesson hasn't started, and their page picks it up the moment you
+        do{% if assignment %}. Work turned in from it goes to
+        <strong>{{ assignment.title }}</strong>{% endif %}.</p>
+    {% elif live.ended %}
       <h1>This lesson has ended</h1>
       <p class="dim">Teach it again under the same code, so the link your
         class already has works again{% if assignment %} and turning in still
@@ -155,7 +163,7 @@
     <a id="teach-again" class="btn btn-primary"
        href="{{ url_for('index', teach=live.code, a=(assignment.slug if assignment else none)) }}"
        title="Opens the editor with this lesson's {% if assignment %}starter and {% endif %}last code">
-      {% if live.ended %}Teach this lesson again{% else %}Teach this lesson{% endif %}</a>
+      {% if waiting %}Start this lesson{% elif live.ended %}Teach this lesson again{% else %}Teach this lesson{% endif %}</a>
   </div>
 </main>
 
@@ -273,8 +281,11 @@
         opens every link in a new tab, so thirty students clicking a link at
         once lose nothing. Hidden when the project has no notes. #}
     <div id="live-notes-view" class="subpane live-notes" hidden>
+      {#  The arrows are under the notes (notes.js, slideView); this is the
+          way back to the teacher's slide for a student who has gone ahead
+          or back, and is hidden while they are on it. #}
       <div class="pane-head"><span>Notes</span>
-        <span id="live-slide" class="dim" aria-live="polite"></span></div>
+        <button id="live-slide" type="button" class="linkbtn" hidden></button></div>
       <div id="live-notes" class="notes-body prose"></div>
     </div>
   </section>
@@ -290,6 +301,7 @@
     body: {{ (live.body if live else '') | tojson }},
     filename: {{ (live.filename if live else 'main.py') | tojson }},
     ended: {{ 'true' if (live and live.ended) else 'false' }},
+    waiting: {{ 'true' if waiting else 'false' }},
     notes: {{ (live.notes if live else '') | tojson }},
     slide: {{ (live.slide if live else '') | tojson }},
     output: {{ (live.output if live else '') | tojson }},

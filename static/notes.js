@@ -135,6 +135,96 @@ window.FlaskIDENotes = (function () {
     }).filter(function (s) { return s.trim(); });
   }
 
+  // ------------------------------------------------------- the slide viewer
+  /* Notes are always shown as slides when they have them — in the editor,
+     on a shared link and on the class's page in a live lesson — with ◀ ▶
+     under them so anyone can move through at their own pace. Notes with no
+     `---` (slides() returns []) are shown whole, as they always were.
+
+     ONE VIEWER, so the three places cannot drift apart in how they cut or
+     number. It owns a bar it puts straight after `body`, outside the part
+     that scrolls, so the arrows stay put on a long slide.
+
+       show(md, i) the notes, whole. Stays on the same slide number unless
+                   given `i`, so the author editing a slide, or the teacher
+                   typing during a lesson, does not throw the reader back to
+                   the start.
+       go(i)       to slide i (from 0), clamped.
+       onMove(fn)  told when the READER moved, never when go() was called —
+                   so the editor can tell a click from its own snapping.
+
+     Re-renders only when what is on screen would change. A live page calls
+     show() once a second; rendering that often would replace a link, or a
+     question's half-typed answer, under the student's hand. */
+  function slideView(body) {
+    var bar = document.createElement("div");
+    bar.className = "slide-nav";
+    bar.hidden = true;
+    var prev = el("button", "btn slide-btn", "◀");
+    prev.type = "button";
+    prev.title = "Previous slide";
+    var pos = el("span", "slide-pos");
+    pos.setAttribute("aria-live", "polite");
+    var next = el("button", "btn slide-btn", "▶");
+    next.type = "button";
+    next.title = "Next slide";
+    bar.appendChild(prev);
+    bar.appendChild(pos);
+    bar.appendChild(next);
+    body.parentNode.insertBefore(bar, body.nextSibling);
+
+    var md = null, cut = [], at = 0, drawn = null, moved = null;
+
+    function draw() {
+      var text = cut.length ? cut[at] : (md || "");
+      bar.hidden = !cut.length;
+      if (cut.length) {
+        pos.textContent = (at + 1) + " / " + cut.length;
+        prev.disabled = at <= 0;
+        next.disabled = at >= cut.length - 1;
+      }
+      if (text === drawn) return Promise.resolve(true);
+      var turned = drawn !== null;
+      drawn = text;
+      return render(body, text).then(function (ok) {
+        if (turned) body.scrollTop = 0;   // a new slide starts at its top
+        return ok;
+      });
+    }
+
+    function go(i) {
+      if (!cut.length) return Promise.resolve(true);
+      at = Math.max(0, Math.min(cut.length - 1, i));
+      return draw();
+    }
+
+    function step(by) {
+      if (!cut.length) return;
+      var was = at;
+      go(at + by);
+      if (at !== was && moved) moved(at);
+    }
+    prev.addEventListener("click", function () { step(-1); });
+    next.addEventListener("click", function () { step(1); });
+
+    return {
+      show: function (text, i) {
+        md = text || "";
+        var c = slides(md);
+        // One slide is not slides, as everywhere else.
+        cut = c.length >= 2 ? c : [];
+        if (typeof i === "number") at = i;
+        at = Math.max(0, Math.min(at, cut.length - 1));
+        return draw();
+      },
+      go: go,
+      at: function () { return at; },
+      count: function () { return cut.length; },
+      onMove: function (fn) { moved = fn; },
+      bar: bar
+    };
+  }
+
   // ------------------------------------------------- questions in the notes
   /* A ```quiz block is a question (quiz.py has the format, and why). By the
      time a student's page has one, the server has taken the answer key out
@@ -236,9 +326,14 @@ window.FlaskIDENotes = (function () {
 
   function enhanceQuizzes(root) {
     var codes = root.querySelectorAll("pre > code.language-quiz");
+    /* One at a time, each on its own: a question that cannot be built stays
+       on the page as the code block it came in, and the rest of the notes
+       still show. Without this one bad question threw out of render() and
+       the whole pane said "could not be displayed". */
     Array.prototype.forEach.call(codes, function (code) {
-      var q = parseQuiz(code.textContent);
-      code.parentNode.replaceWith(buildQuiz(q));
+      try {
+        code.parentNode.replaceWith(buildQuiz(parseQuiz(code.textContent)));
+      } catch (e) { /* left as the code block it was */ }
     });
   }
 
@@ -441,6 +536,7 @@ window.FlaskIDENotes = (function () {
     render: render,
     ensureRenderer: ensureRenderer,
     parseQuiz: parseQuiz,
-    setQuizContext: setQuizContext
+    setQuizContext: setQuizContext,
+    slideView: slideView
   };
 })();

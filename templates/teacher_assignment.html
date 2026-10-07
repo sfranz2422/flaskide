@@ -36,6 +36,25 @@
     </p>
   </section>
 
+  {#  The live lesson's link, made the first time this page is opened
+      (_lesson_for), so it can be posted in Google Classroom the day before.
+      It is the same link every time: students who open it early are told
+      the lesson hasn't started, and their page picks it up when it does. #}
+  <section class="handout">
+    <h2>The live lesson link</h2>
+    <div class="linkrow">
+      <input id="live-url" type="text" readonly value="{{ live_url }}">
+      <button id="live-copy" class="btn">Copy</button>
+      <a class="btn btn-primary" href="{{ url_for('teach_assignment_live', slug=assignment.slug) }}"
+         title="Opens the editor with this assignment's starter and puts it on your class's screens">{% if live_on %}Back to the lesson{% else %}Go live{% endif %}</a>
+    </div>
+    <p class="dim">
+      {% if live_on %}Live now.{% elif live_waiting %}Not started yet — post it
+      ahead of the lesson; anyone who opens it early sees it hasn't begun.{% else %}Taught
+      before. Going live again uses the same link, so the one your class has still works.{% endif %}
+    </p>
+  </section>
+
   {#  Grading. Points first, because everything after depends on them: the
       score boxes only appear on a graded assignment, and Google Classroom
       only takes grades on work with points. #}
@@ -394,6 +413,15 @@
 
   window.addEventListener("beforeunload", function (e) {
     if (dirty()) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  document.getElementById("live-copy").addEventListener("click", function () {
+    var field = document.getElementById("live-url"), btn = this;
+    field.select();
+    navigator.clipboard.writeText(field.value).then(function () {
+      btn.textContent = "Copied";
+      setTimeout(function () { btn.textContent = "Copy"; }, 1500);
+    }, function () { document.execCommand("copy"); });
   });
 
   document.getElementById("copy").addEventListener("click", function () {

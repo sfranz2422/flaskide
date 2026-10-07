@@ -86,18 +86,137 @@
     return "text/plain";
   }
 
-  function openFile(name) {
-    if (!(name in files)) return;
+  /* A .md TAB IS A VIEW SWITCH, NOT A FILE TO EDIT. The notes render on the
+   * right, in the preview's place, and the editor stays on the code — so a
+   * student reads the instructions beside the app.py they are writing in.
+   * The two take turns in one pane because this editor has no room for a
+   * third: the Notes | Preview switch, a code tab, or Run brings the preview
+   * back. Before this a .md opened in the editor as raw markdown, editable
+   * by anyone, and its questions (quiz.py) were unanswerable lines of text.
+   *
+   * The author still edits it: Edit source puts the markdown in the editor
+   * and the notes re-render as they type, the way PyIDE does it. */
+  var notesShown = null;      // the .md on the right, or null for the preview
+  var mdSource = false;       // the author has that .md open in the editor
+  var lastCode = null;        // the code file to go back to from the source
+
+  function isNotes(name) { return window.FlaskIDENotes.isMarkdown(name); }
+  function notesFiles() { return tabOrder().filter(isNotes); }
+
+  function loadIntoEditor(name) {
     if (editor && current in files) files[current] = editor.getValue();
     current = name;
+    if (!isNotes(name)) lastCode = name;
     if (editor) {
       editor.setValue(files[name]);
       editor.setOption("mode", modeFor(name));
       editor.clearHistory();
       editor.focus();
     }
+  }
+
+  /* Back to code, if the author was editing the notes' source: the editor
+     returns to the last code file, so typing never lands in the notes by
+     accident once they have moved on. */
+  function leaveSource() {
+    if (!mdSource) return;
+    mdSource = false;
+    var btn = $("notes-edit");
+    if (btn) btn.textContent = "Edit source";
+    var code = lastCode in files ? lastCode
+      : tabOrder().filter(function (n) { return !isNotes(n); })[0];
+    if (code) loadIntoEditor(code);
+  }
+
+  function openFile(name) {
+    if (!(name in files)) return;
+    if (isNotes(name)) {
+      if (notesShown !== name) leaveSource();
+      showNotes(name);
+      return;
+    }
+    mdSource = false;
+    var btn = $("notes-edit");
+    if (btn) btn.textContent = "Edit source";
+    loadIntoEditor(name);
+    showPreview();
+  }
+
+  /* Always as slides when the notes have `---` in them, with ◀ ▶ under
+     them (notes.js, slideView) — here, on a shared link, and on the class's
+     page in a live lesson alike. Made on first use: the pane is in the page
+     only once it has loaded. */
+  var notesSlides = null;
+  function slidesView() {
+    if (!notesSlides && $("notes-body")) {
+      notesSlides = window.FlaskIDENotes.slideView($("notes-body"));
+    }
+    return notesSlides;
+  }
+
+  function showNotes(name) {
+    notesShown = name;
+    var view = $("notes-view"), body = $("notes-body");
+    if (!view || !body) return;
+    $("notes-name").textContent = name;
+    $("preview-view").hidden = true;
+    view.hidden = false;
+    slidesView().show(name === current && editor ? editor.getValue() : files[name]);
+    paintSwitch();
     paintTabs();
   }
+
+  function toggleSource() {
+    if (!notesShown) return;
+    var btn = $("notes-edit");
+    if (mdSource) {
+      leaveSource();
+      showNotes(notesShown);
+      return;
+    }
+    mdSource = true;
+    loadIntoEditor(notesShown);
+    if (btn) btn.textContent = "Done";
+    paintTabs();
+  }
+
+  function showPreview() {
+    notesShown = null;
+    if ($("notes-view")) $("notes-view").hidden = true;
+    if ($("preview-view")) $("preview-view").hidden = false;
+    paintSwitch();
+    paintTabs();
+  }
+
+  /* After the files were replaced wholesale — the rescue, a starter loaded
+     on Go live: the notes on show may be gone, or say something new. */
+  function refreshNotes() {
+    mdSource = false;
+    if (notesShown && notesShown in files) showNotes(notesShown);
+    else showPreview();
+  }
+
+  /* The switch is in both pane heads, so it is always where the eye is. Only
+     when the project has notes: with none there is nothing to switch to. */
+  function paintSwitch() {
+    var has = notesFiles().length > 0;
+    Array.prototype.forEach.call(document.querySelectorAll(".view-switch"),
+      function (sw) {
+        sw.hidden = !has;
+        sw.querySelector('[data-view="notes"]').classList.toggle("is-on", !!notesShown);
+        var pv = sw.querySelector('[data-view="preview"]');
+        pv.classList.toggle("is-on", !notesShown);
+        pv.textContent = isSql() ? "Results" : "Preview";
+      });
+  }
+
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest(".view-switch [data-view]");
+    if (!b) return;
+    if (b.dataset.view === "preview") { showPreview(); return; }
+    var md = notesFiles();
+    if (md.length && !notesShown) showNotes(md[0]);
+  });
 
   /* Tabs, in an order that matches how Flask thinks: the file that runs
    * first, then the templates, then static. Alphabetical would put
@@ -124,7 +243,11 @@
       // PyIDE and WebIDE agree. This file drifted during the port, so the
       // open file had no highlight at all — nothing errors, the strip just
       // stops telling you which file you are editing.
-      tab.className = "tab" + (name === current ? " tab-on" : "");
+      // The notes' tab while they are on show; otherwise the file being
+      // edited. With the notes up the editor still holds the code, and
+      // marking both would leave nobody sure which tab they were on.
+      var on = notesShown ? name === notesShown : name === current;
+      tab.className = "tab" + (on ? " tab-on" : "");
       tab.setAttribute("role", "tab");
       tab.title = name;
 
@@ -151,6 +274,7 @@
           if (!window.confirm("Delete " + name + "? This cannot be undone."))
             return;
           delete files[name];
+          if (notesShown === name) { mdSource = false; showPreview(); }
           if (current === name) openFile(tabOrder()[0]);
           else paintTabs();
           applyKind();
@@ -203,6 +327,9 @@
       ? "{% extends \"base.html\" %}\n\n{% block body %}\n\n{% endblock %}\n"
       : "";
     openFile(name);
+    // A new notes file is empty, so there is nothing to read yet: its author
+    // is sent straight to the source to write it.
+    if (isNotes(name) && cfg.authoring) toggleSource();
     applyKind();
     touched();
   }
@@ -246,6 +373,9 @@
 
   async function run() {
     if (running) return;
+    // Run with the notes up would run into a pane nobody can see, and look
+    // like nothing happened.
+    if (notesShown) showPreview();
     running = true;
     hasRun = true;
     var btn = $("run");
@@ -486,6 +616,9 @@
 
     /* The button always offers the OTHER kind, which is what makes it read
        as a switch. */
+    paintSwitch();    // its label says Results in a SQL project, and a file
+                      // added or deleted can be the only notes there were
+
     var swap = $("switch-kind");
     if (swap) {
       swap.textContent = sql ? "+ Flask app" : "+ SQL";
@@ -588,9 +721,19 @@
     editor.on("change", function () {
       files[current] = editor.getValue();
       touched();
+      // The author's notes, re-rendered as they write them.
+      if (mdSource && notesShown === current) {
+        slidesView().show(files[current]);
+      }
     });
 
     paintTabs();
+    if ($("notes-edit")) $("notes-edit").addEventListener("click", toggleSource);
+
+    /* An assignment opens on its notes, or nobody reads them. Not for the
+       author: the notes are theirs, and they came to work on the code. */
+    if (!cfg.authoring && notesFiles().length) showNotes(notesFiles()[0]);
+    else paintSwitch();
 
     preview = new window.FlaskIDEPreview({
       frame: $("preview"),
@@ -700,7 +843,7 @@
           editor.setValue(files[current]);
           editor.setOption("mode",
                            /\.py$/i.test(current) ? "python" : "text/plain");
-          paintTabs();
+          refreshNotes();
           applyKind();
         },
         onRestored: function () { touched(); }
@@ -808,29 +951,24 @@
     }
 
     /* ------------------------------------------------------------ slides
-       Notes with `---` dividers are slides, and the class is sent ONE: the
-       one this teacher is on. Here the whole file stays in the editor, as
-       ever. The cutting happens in this browser, so the server stores and
-       students render exactly what they did before — the only new thing on
-       the wire is "3/5".
+       Notes with `---` dividers are slides. The class is sent the WHOLE
+       file and "3/5", the slide this teacher is on: every student can move
+       through the slides on their own (notes.js, slideView), and each time
+       the teacher moves, every screen jumps to the teacher's slide. Sending
+       one slide at a time, as this did first, made reading ahead or going
+       back to an earlier question impossible.
 
        `slideAt` is an index that survives editing the notes mid-lesson, and
        is clamped when slides are deleted out from under it. Two slides at
        least, or it is not slides: a file whose one `---` leaves only one
        slide with anything on it goes whole.
 
-       `wholeNotes` is Show all: the class gets the whole file, as if it had
-       no `---` at all. For notes that are a page of directions rather than
-       a deck, whose rules would otherwise chop them into pieces the
-       class can only see one at a time. slideAt is kept, so turning it off
-       goes back to the slide the class was on. Remembered for this lesson
-       across a reload of this page — otherwise a reload would snap thirty
-       screens back to one slide with nobody having asked. */
+       There was a Show all button that sent the whole file as one page.
+       With students free to move through the slides it had nothing left
+       to do, and it went. */
     var slideAt = 0;
-    var wholeNotes = false;
     var slideCtl = $("live-slides");
     var slideLabel = $("slide-at");
-    var wholeBtn = $("slide-whole");
 
     function currentSlides() {
       var cut = window.FlaskIDENotes.slides(liveNotes());
@@ -842,28 +980,13 @@
       slideCtl.hidden = !(liveCode && cut);
       if (slideCtl.hidden) return;
       slideLabel.textContent = (slideAt + 1) + " / " + cut.length;
-      slideLabel.hidden = $("slide-prev").hidden = $("slide-next").hidden
-        = wholeNotes;
       $("slide-prev").disabled = slideAt <= 0;
       $("slide-next").disabled = slideAt >= cut.length - 1;
-      wholeBtn.textContent = wholeNotes ? "Slides" : "Show all";
-      wholeBtn.title = wholeNotes
-        ? "Go back to sending the class one slide at a time"
-        : "Send the whole notes file to the class instead of one slide";
-    }
-
-    function setWhole(on) {
-      wholeNotes = on;
-      try {
-        if (on) localStorage.setItem("flaskide-live-whole", liveCode + "/" + slideAt);
-        else localStorage.removeItem("flaskide-live-whole");
-      } catch (e) {}
-      pushNow();                 // now, not on the next tick
     }
 
     function moveSlide(by) {
       var cut = currentSlides();
-      if (!liveCode || !cut || wholeNotes) return;
+      if (!liveCode || !cut) return;
       slideAt = Math.max(0, Math.min(cut.length - 1, slideAt + by));
       pushNow();                 // now, not on the next tick
     }
@@ -871,15 +994,12 @@
     if (slideCtl) {
       $("slide-prev").addEventListener("click", function () { moveSlide(-1); });
       $("slide-next").addEventListener("click", function () { moveSlide(1); });
-      wholeBtn.addEventListener("click", function () { setWhole(!wholeNotes); });
     }
 
-    /* What the class's Notes pane shows, shown here under the preview: the
-       current slide, or the whole notes when they are not slides or Show
-       all is on. Fed the
-       very `notes` and `slide` pushNow sends, so it cannot disagree with
-       the class about which slide they are on — a copy worked out
-       separately from slideAt could.
+    /* The slide the class is on, shown here under the preview — or the whole
+       notes when they are not slides. Fed by pushNow from the very cut and
+       `slide` it sends, so it cannot disagree with the class about which
+       slide that is — a copy worked out separately from slideAt could.
 
        Re-rendered only when they change. pushNow runs on every tick, and
        rendering markdown that often would reset the scroll under the
@@ -947,19 +1067,23 @@
 
     function pushNow() {
       if (!liveCode) return;
-      var name = current;
+      // The notes while they are on show: the editor still holds the code
+      // then, but the notes are what the teacher is looking at and talking
+      // to, and the class's mirror has always followed the open tab.
+      var name = notesShown || current;
       var text = (name === current) ? editor.getValue() : (files[name] || "");
-      var notes = liveNotes();
+      var notes = liveNotes();          // whole: students cut it themselves
       var slide = "";
+      var onSlide = notes;              // what "Class sees" shows
       var cut = currentSlides();
-      if (cut && !wholeNotes) {
+      if (cut) {
         slideAt = Math.min(slideAt, cut.length - 1);
-        notes = cut[slideAt];
+        onSlide = cut[slideAt];
         slide = (slideAt + 1) + "/" + cut.length;
         /* With the notes tab open, the mirror shows that file too — whole,
-           which would put every slide on screen at once and defeat the
-           point. It gets the current slide like the notes pane does. */
-        if (name === notesFile()) text = notes;
+           which would put every slide on screen at once in a pane that has
+           no arrows. It gets the teacher's slide. */
+        if (name === notesFile()) text = onSlide;
       }
       /* Where the caret is, so the class sees it blink in the mirror and
          the mirror scrolls to follow it. In the stamp below, so moving it
@@ -982,7 +1106,7 @@
         }
       }
       paintSlides(cut);
-      paintClassView(notes, slide);
+      paintClassView(onSlide, slide);
       var output = liveOutput();
       var page = livePage();
       var stamp = [name, text, notes, slide, output, page, cursor].join("\u0000");
@@ -1052,12 +1176,8 @@
       liveCode = null;
       if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
       lastSent = null;
-      wholeNotes = false;
       paintLive();
-      try {
-        localStorage.removeItem("flaskide-live-host");
-        localStorage.removeItem("flaskide-live-whole");
-      } catch (e) {}
+      try { localStorage.removeItem("flaskide-live-host"); } catch (e) {}
       if (code && !quietly) {
         fetch("/api/live/" + encodeURIComponent(code) + "/stop", { method: "POST" });
       }
@@ -1136,13 +1256,13 @@
       current = entry;
       editor.setValue(files[current]);
       editor.setOption("mode", /\.py$/i.test(current) ? "python" : "text/plain");
-      paintTabs();
+      refreshNotes();
       applyKind();
       touched();
     }
 
     function startLive(assignment, resume, reopen) {
-      var name = current;
+      var name = notesShown || current;
       var text = (name === current) ? editor.getValue() : (files[name] || "");
       fetch("/api/live/start", {
         method: "POST",
@@ -1174,13 +1294,6 @@
           // fresh lesson has none and starts at the beginning.
           var at = /^(\d+)\//.exec(data.slide || "");
           slideAt = at ? Math.max(0, parseInt(at[1], 10) - 1) : 0;
-          /* With Show all on, the class has no slide number to come back
-             to, so the one they were on is kept beside the flag — turning
-             it off after a reload would otherwise start them at slide 1. */
-          var whole = null;
-          try { whole = localStorage.getItem("flaskide-live-whole"); } catch (e) {}
-          wholeNotes = !!whole && whole.split("/")[0] === liveCode;
-          if (wholeNotes) slideAt = parseInt(whole.split("/")[1], 10) || 0;
           lastSent = null;
           try { localStorage.setItem("flaskide-live-host", liveCode); } catch (e) {}
           paintLive();

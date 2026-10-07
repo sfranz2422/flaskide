@@ -754,39 +754,62 @@
     if (Date.now() >= followAfter) mirror.scrollIntoView(show, 60);
   }
 
-  /* The project's notes, in their own pane under the console. Re-rendered
-     only when they change, for the same reason as the mirror's notes above:
-     every poll carries them whole, and re-rendering once a second would
-     replace a link under the cursor just as someone clicked it. */
+  /* The project's notes, in their own pane under the console, as slides when
+     they have `---` in them (notes.js, slideView). The teacher's editor
+     sends the WHOLE file and "3/5", the slide the teacher is on.
+
+     A student can move through the slides on their own — read ahead, go
+     back to a question — and every time the teacher moves, this jumps to
+     the teacher's slide: the class is brought back together by the person
+     teaching, not kept there. Only a MOVE snaps. The teacher typing on the
+     same slide leaves a student who has gone ahead where they are, or they
+     would be pulled back on every keystroke.
+
+     The viewer only re-renders when what is on screen changes, because
+     every poll carries the notes whole, and rendering once a second would
+     replace a link — or a half-typed answer — under the student's hand. */
   var notesView = $("live-notes-view");
   var notesBody = $("live-notes");
-  var shownNotes = null;
+  var notesSlides = notesBody ? window.FlaskIDENotes.slideView(notesBody) : null;
+  var teacherSlide = null;           // the last "3/5" the teacher sent
+  var teacherAt = -1;                // and that slide, from 0
 
+  /* "Teacher: slide 3", in the pane head, and a way back to it for a
+     student who has wandered off. Hidden while they are on it. */
   var slideMark = $("live-slide");
-  var shownSlide = null;
 
-  /* Slides need nothing special here. When the teacher's notes are cut into
-     slides, `notes` is only the current one — the editor does the cutting —
-     and `slide` says where it is ("3/5"). A new slide is new notes, so it
-     renders through the same path; all this adds is the marker, and going
-     back to the top, because the last slide's scroll position means nothing
-     on the next one and a class would start reading it halfway down. */
-  function showNotes(data) {
-    if (!notesView || typeof data.notes !== "string") return;
-    var slide = typeof data.slide === "string" ? data.slide : "";
-    if (data.notes === shownNotes && slide === shownSlide) return;
-    var moved = slide !== shownSlide;
-    shownNotes = data.notes;
-    shownSlide = slide;
+  function paintTeacherMark() {
+    if (!slideMark || !notesSlides) return;
+    var away = teacherAt >= 0 && notesSlides.count() > 0
+      && notesSlides.at() !== teacherAt;
+    slideMark.hidden = !away;
+    slideMark.textContent = away ? "Back to the teacher's slide (" + (teacherAt + 1) + ")" : "";
+  }
+
+  if (notesSlides) {
+    notesSlides.onMove(paintTeacherMark);
     if (slideMark) {
-      var m = slide.match(/^(\d+)\/(\d+)$/);
-      slideMark.textContent = m ? "Slide " + m[1] + " of " + m[2] : "";
+      slideMark.addEventListener("click", function () {
+        if (teacherAt >= 0) notesSlides.go(teacherAt);
+        paintTeacherMark();
+      });
     }
+  }
+
+  function showNotes(data) {
+    if (!notesView || !notesSlides || typeof data.notes !== "string") return;
+    var slide = typeof data.slide === "string" ? data.slide : "";
     notesView.hidden = !data.notes.trim();
     if (notesView.hidden) return;
-    window.FlaskIDENotes.render(notesBody, data.notes).then(function () {
-      if (moved) notesBody.scrollTop = 0;
-    });
+    var jump;
+    if (slide !== teacherSlide) {
+      teacherSlide = slide;
+      var m = slide.match(/^(\d+)\/(\d+)$/);
+      teacherAt = m ? parseInt(m[1], 10) - 1 : -1;
+      if (teacherAt >= 0) jump = teacherAt;
+    }
+    notesSlides.show(data.notes, jump);
+    paintTeacherMark();
   }
 
   // ------------------------------------------- what the teacher's Run made
@@ -929,7 +952,14 @@
   }
 
   var POLL_MS = 1000;
+  /* A lesson made ahead from the assignment page, whose link was posted
+     before it began. Its page keeps checking — not every second, since a
+     tab opened the night before would ask all night — and the lesson
+     appears within a few seconds of the teacher starting it. */
+  var WAITING_MS = 15000;
+  var waiting = false;
   var misses = 0;
+
 
   function poll() {
     fetch("/api/live/" + encodeURIComponent(L.code) + "?v=" + seen,
@@ -937,6 +967,7 @@
       .then(function (res) {
         if (res.status === 304) {         // the usual answer: nothing new
           misses = 0;
+          waiting = false;                // only a lesson on the air says 304
           setState("Live", "on");
           return null;
         }
@@ -950,6 +981,12 @@
       .then(function (data) {
         misses = 0;
         if (!data) return;
+        if (data.ended && data.waiting) {
+          waiting = true;
+          setState("Not started yet", "wait");
+          return;
+        }
+        waiting = false;
         if (data.ended) {
           showMirror(data);
           setState("Lesson ended", "off");
@@ -972,7 +1009,7 @@
       .finally(function () {
         if (stateChip && stateChip.textContent === "Lesson ended") return;
         if (stateChip && stateChip.textContent === "Lesson not found") return;
-        setTimeout(poll, POLL_MS);
+        setTimeout(poll, waiting ? WAITING_MS : POLL_MS);
       });
   }
 

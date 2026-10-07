@@ -1983,6 +1983,12 @@ def teacher_assignment(slug):
         ctx.update(classroom_on=classroom_configured(),
                    classroom_connected=(classroom_configured()
                                         and _classroom_link(db, user) is not None))
+        # The lesson's link, under the handout link, for posting ahead.
+        lesson = _lesson_for(db, user, item)
+        ctx.update(live_url=url_for("live_page", code=lesson.code,
+                                    _external=True, _scheme=_scheme()),
+                   live_on=not lesson.ended,
+                   live_waiting=_waiting(lesson))
         ctx.update(quiz_count=len(possible),
                    quiz_points=_score_text(sum(q["points"] for q in possible)))
         ctx.update(assignment=item, handed_in=handed_in, not_yet=not_yet,
@@ -2764,6 +2770,61 @@ def _title_of_assignment(db, assignment_id):
     return row.title if row else ""
 
 
+def _lesson_for(db, user, item):
+    """The live lesson for this assignment, made now if it has none.
+
+    MADE AHEAD, NOT STARTED. A teacher posts the lesson's link in Google
+    Classroom the day before, so the link has to exist before the lesson
+    does. It is made ended, with version 0 — "not started yet" (see
+    _waiting) — and comes on the air the ordinary way: the teacher opens
+    it and presses Teach, which reopens this row under the same code.
+
+    The newest lesson already held for the assignment is reused rather than
+    a new one made, because the link a class has is the one that must keep
+    working (the same rule as Teach this lesson again).
+    """
+    live = (db.query(accounts.LiveSession)
+              .filter_by(host_id=user.id, app=APP_NAME, assignment_id=item.id)
+              .order_by(accounts.LiveSession.started_at.desc(),
+                        accounts.LiveSession.id.desc()).first())
+    if live is None:
+        live = accounts.LiveSession(
+            code=accounts.new_id(db, accounts.LiveSession, "code"),
+            app=APP_NAME, host_id=user.id, host_name=user.display_name(),
+            title=item.title, body="", filename="main.py", version=0,
+            assignment_id=item.id, ended=1)
+        db.add(live)
+        db.commit()
+    return live
+
+
+def _waiting(live):
+    """Made ahead and never taught: ended, with nothing ever pushed. Its
+    class is told it has not started, and their page keeps checking, rather
+    than being told a lesson that has not happened is over."""
+    return bool(live.ended) and not live.version
+
+
+@app.get("/teacher/<slug>/live")
+def teach_assignment_live(slug):
+    """Go live on an assignment, from the dashboard: its lesson, made if
+    need be, opened in the editor the way Teach this lesson again opens it —
+    the starter loaded and the lesson's own code put back on the air."""
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        item = db.query(accounts.Assignment).filter_by(
+            slug=slug, app=APP_NAME).first()
+        if item is None or item.teacher_id != user.id:
+            abort(404)
+        live = _lesson_for(db, user, item)
+        return redirect(url_for("index", teach=live.code, a=item.slug))
+    finally:
+        db.close()
+
+
 @app.post("/api/live/start")
 def live_start():
     """Open a session, or hand back the one already running.
@@ -2833,6 +2894,27 @@ def live_start():
             old.ended = 0
             live = old
 
+        # THE LINK MADE AHEAD FOR THIS ASSIGNMENT, if it has never been
+        # taught. The teacher posted it in Classroom yesterday (_lesson_for);
+        # going live on the assignment from here instead of from the
+        # dashboard must not put the class under a new code nobody has,
+        # while the posted link says "not started" all period. Only a link
+        # never taught: anything else would be guessing which old lesson
+        # was meant, which Go live deliberately never does.
+        if live is None and item is not None and not reopen:
+            ahead = (db.query(accounts.LiveSession)
+                       .filter_by(host_id=user.id, app=APP_NAME,
+                                  assignment_id=item.id, ended=1, version=0)
+                       .order_by(accounts.LiveSession.id.desc()).first())
+            if ahead is not None:
+                ahead.ended = 0
+                ahead.version = 1
+                ahead.body = body
+                ahead.filename = clean(data.get("filename"), 200) or "main.py"
+                ahead.title = clean(data.get("title"), 200) or ahead.title
+                ahead.host_name = user.display_name()
+                live = ahead
+
         if live is None:
             live = accounts.LiveSession(
                 code=accounts.new_id(db, accounts.LiveSession, "code"),
@@ -2842,7 +2924,10 @@ def live_start():
                 title=clean(data.get("title"), 200) or "Live lesson",
                 body=body,
                 filename=clean(data.get("filename"), 200) or "main.py",
-                version=0,
+                # 1, not 0: version 0 on an ended lesson means "made ahead
+                # and never taught" (_waiting), and a lesson started here
+                # and ended before its first push must not look like that.
+                version=1,
                 assignment_id=item.id if item else None,
             )
             db.add(live)
@@ -3060,6 +3145,7 @@ def live_poll(code):
             title=live.title,
             host=live.host_name,
             ended=bool(live.ended),
+            waiting=_waiting(live),
             notes=live.notes or "",
             slide=live.slide or "",
             output=live.output or "",
@@ -3287,6 +3373,7 @@ def live_page(code):
             starter=starter,
             starter_files=starter_files,
             draft_version=draft_version,
+            waiting=_waiting(live),
             entry=entry,
             sql_entry=SQL_ENTRY,
             error="",

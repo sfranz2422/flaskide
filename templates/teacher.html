@@ -36,6 +36,8 @@
             <td class="dim">{{ a.created_at.strftime('%b %d, %Y') }}</td>
             <td><strong>{{ counts.get(a.id, 0) }}</strong></td>
             <td class="right rowactions">
+              <a class="linkbtn" href="{{ url_for('teach_assignment_live', slug=a.slug) }}"
+                 title="Teach this live: opens the editor with its starter and puts it on your class's screens">Go live</a>
               <a class="linkbtn" href="{{ url_for('edit_assignment', slug=a.slug) }}">Edit</a>
               <button class="linkbtn js-archive">{{ "Restore" if archived else "Archive" }}</button>
               {% if counts.get(a.id, 0) == 0 %}

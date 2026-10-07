@@ -471,7 +471,7 @@ _css = open(os.path.join(HERE, "..", "static", "style.css")).read()
 for _sel in (".live-right .live-notes", ".pane-right .class-view"):
     _rule = re.search(re.escape(_sel) + r"\s*\{([^}]*)\}", _css)
     check("%s is a fixed size" % _sel,
-          _rule and re.search(r"flex:\s*0 0 38%", _rule.group(1)),
+          _rule and re.search(r"flex:\s*0 0 \d+%", _rule.group(1)),
           _rule.group(1).strip() if _rule else "no rule")
 check("  and the preview beside them takes only what is left",
       re.search(r"\.pane-right #preview-view\s*\{\s*flex:\s*1 1 0;", _css))
@@ -1445,9 +1445,15 @@ check("  and on the page's first paint, before any poll",
       "the first poll answers 304, so a late joiner would never see them")
 _notes_fn = live_code[live_code.index("function showNotes"):]
 _notes_fn = _notes_fn[:_notes_fn.index("\n  }\n")]
-check("  re-rendering only when they change",
-      "if (data.notes === shownNotes && slide === shownSlide) return;" in _notes_fn,
+check("  through the slide viewer, which re-renders only when the slide changes",
+      "notesSlides.show(data.notes, jump);" in _notes_fn
+      and "if (text === drawn) return Promise.resolve(true);"
+      in open(os.path.join(HERE, "..", "static", "notes.js")).read(),
       "a re-render every second replaces the link a student is clicking")
+check("  and jumps to the teacher's slide only when the teacher moves",
+      re.search(r"if \(slide !== teacherSlide\) \{\s*teacherSlide = slide;", _notes_fn)
+      is not None,
+      "typing on the same slide would drag back every student who read ahead")
 
 # ------------------------------------- slides, output and the page, built
 def fn_body(src, name):
@@ -1546,10 +1552,13 @@ check("the editor sends slide, console and page with every push",
       and re.search(r"var stamp = [^;]*\bslide\b[^;]*\boutput\b[^;]*\bpage\b", _push_fn)
       is not None,
       "moving a slide, or a Run, would otherwise reach nobody")
-check("  only the current slide goes out as the notes",
-      "notes = cut[slideAt];" in _push_fn)
-check("  and the notes tab, if open, mirrors that slide, not the file",
-      "if (name === notesFile()) text = notes;" in _push_fn,
+check("  the WHOLE notes go out, so students can move through the slides",
+      "var notes = liveNotes();" in _push_fn
+      and len(re.findall(r"(?<![\w.])notes\s*=(?!=)", _push_fn)) == 1
+      and "notes: notes," in _push_fn,
+      "one slide at a time, nobody could read ahead or go back to a question")
+check("  and the notes tab, if open, mirrors the teacher's slide, not the file",
+      "if (name === notesFile()) text = onSlide;" in _push_fn,
       "the mirror would put every slide on screen at once")
 check("  and nothing of a Run is sent before the first one",
       re.search(r"function liveOutput\(\)\s*\{\s*if \(!hasRun \|\| !out\) return \"\";", _push) is not None
@@ -1690,33 +1699,20 @@ _cv = _page.find('id="class-view"')
 check("the slide controls sit in the Class sees pane, not the top bar",
       -1 < _cv < _page.find('id="live-slides"') < _page.find('id="class-notes"'),
       "the top bar had no room for them")
-check("  with a Show all button beside them",
-      _cv < _page.find('id="slide-whole"') < _page.find('id="class-notes"'))
-check("Show all sends the whole notes file instead of one slide",
-      "if (cut && !wholeNotes) {" in _push_fn,
-      "the button would change nothing the class sees")
-check("  and survives a reload of the editor, for this lesson only",
-      'wholeNotes = !!whole && whole.split("/")[0] === liveCode;' in _push,
-      "a reload would snap every screen back to one slide")
-check("  keeping the slide to go back to when it is turned off",
-      'localStorage.setItem("flaskide-live-whole", liveCode + "/" + slideAt);' in _push
-      and 'if (wholeNotes) slideAt = parseInt(whole.split("/")[1], 10) || 0;' in _push,
-      "off after a reload would start the class at slide 1")
+check("  and no Show all: students move through the slides themselves",
+      'id="slide-whole"' not in _page and "wholeNotes" not in _push,
+      "it sent the whole file as one page, which the class now always has")
 _stop_fn = fn_body(_push, "stopLive")
-check("  and is put away when the lesson ends",
-      "wholeNotes = false;" in _stop_fn
-      and 'localStorage.removeItem("flaskide-live-whole");' in _stop_fn,
-      "the next lesson would start with no slides")
-check("  the arrows really hide while it is on",
+check("  the arrows' [hidden] really hides them",
       re.search(r"\.slide-ctl \.btn\[hidden\]\s*\{\s*display:\s*none",
                 open(os.path.join(HERE, "..", "static", "style.css")).read())
       is not None,
       ".btn sets display, so [hidden] alone shows them anyway")
 # The teacher sees what the class's Notes pane shows, fed from what is sent.
-check("the teacher sees what the class's notes pane shows",
-      "paintClassView(notes, slide);" in _push_fn
-      and _push_fn.index("notes = cut[slideAt];")
-          < _push_fn.index("paintClassView(notes, slide);")
+check("the teacher sees the slide the class is sent to",
+      "paintClassView(onSlide, slide);" in _push_fn
+      and _push_fn.index("onSlide = cut[slideAt];")
+          < _push_fn.index("paintClassView(onSlide, slide);")
           < _push_fn.index("if (stamp === lastSent) return;"),
       "fed anything but what is sent, it can show a slide the class is not on")
 _class_fn = fn_body(_push, "paintClassView")
@@ -1937,6 +1933,156 @@ console.log(JSON.stringify(out));
 else:
     check("node is available to run the live page's start-up", bool(_m),
           "brew install node" if _m else "the block in live.js moved")
+
+# ------------------------------------------------ the slide viewer, run
+# notes.js's slideView, in node, with just enough of a DOM to hold it. It is
+# what the editor, a shared link and the class's live page all show notes
+# through, so how it cuts, numbers and moves is checked by running it.
+print("\nThe slide viewer, run")
+_notes_src = open(os.path.join(HERE, "..", "static", "notes.js")).read()
+if shutil.which("node"):
+    harness = r"""
+function El(tag) {
+  this.tag = tag; this.children = []; this.hidden = false; this.disabled = false;
+  this.textContent = ""; this.className = ""; this.handlers = {}; this.scrollTop = 0;
+  this._html = ""; this.renders = 0;
+}
+El.prototype.appendChild = function (c) { this.children.push(c); c.parentNode = this; return c; };
+El.prototype.insertBefore = function (c) { this.children.push(c); c.parentNode = this; return c; };
+El.prototype.setAttribute = function () {};
+El.prototype.addEventListener = function (ev, fn) { this.handlers[ev] = fn; };
+El.prototype.querySelectorAll = function () { return []; };
+Object.defineProperty(El.prototype, "innerHTML", {
+  get: function () { return this._html; },
+  set: function (v) { this._html = v; this.renders++; } });
+var document = { createElement: function (t) { return new El(t); } };
+var window = { marked: { parse: function (s) { return s; } },
+               DOMPurify: { sanitize: function (s) { return s; } } };
+""" + _notes_src + r"""
+var N = window.FlaskIDENotes;
+var pane = new El("div"), body = pane.appendChild(new El("div"));
+var v = N.slideView(body), bar = v.bar;
+var prev = bar.children[0], pos = bar.children[1], next = bar.children[2];
+var moves = [];
+v.onMove(function (i) { moves.push(i); });
+var deck = "# One\n\n---\n\n## Two\n\n---\n\n## Three";
+var out = {};
+(async function () {
+  await v.show(deck);
+  out.first = [body.innerHTML, pos.textContent, bar.hidden, prev.disabled];
+  next.handlers.click(); await null; await null;
+  out.next = [body.innerHTML, pos.textContent, moves.slice()];
+  await v.show(deck, 2);
+  out.snap = [body.innerHTML, moves.slice()];
+  var before = body.renders;
+  await v.show(deck);
+  out.sameAgain = body.renders - before;
+  await v.show(deck.replace("## Three", "## Three, edited"));
+  out.edited = [body.innerHTML, v.at()];
+  await v.show("# Just one page\n\nNo dividers.");
+  out.whole = [body.innerHTML, bar.hidden];
+  console.log(JSON.stringify(out));
+})();
+"""
+    res = subprocess.run(["node", "-e", harness], capture_output=True, text=True)
+    try:
+        got = json.loads(res.stdout)
+    except ValueError:
+        got = {}
+    check("notes with --- open on the first slide, with arrows under them",
+          got.get("first") == ["# One", "1 / 3", False, True],
+          repr(got.get("first") or res.stderr[-300:]))
+    check("  ▶ moves on, and says so to whoever is listening",
+          got.get("next") == ["## Two", "2 / 3", [1]], repr(got.get("next")))
+    check("  being sent to a slide is not reported as the reader moving",
+          got.get("snap") == ["## Three", [1]],
+          "the live page would take its own snapping for a student wandering off")
+    check("  the same notes again do not re-render",
+          got.get("sameAgain") == 0,
+          "every poll would replace the slide under the student's hand")
+    check("  editing a slide keeps the reader on it",
+          got.get("edited") == ["## Three, edited", 2], repr(got.get("edited")))
+    check("  notes with no --- are shown whole, with no arrows",
+          got.get("whole") == ["# Just one page\n\nNo dividers.", True],
+          repr(got.get("whole")))
+else:
+    check("node is available to run the slide viewer", False, "brew install node")
+
+# ---------------------------------------- a lesson's link, made ahead
+print("\nA lesson's link, made ahead from the assignment page")
+ahead = teacher.post("/api/assignment", json={
+    "title": "Tomorrow",
+    "files": {'app.py': 'from flask import Flask\n', "notes.md": "# Tomorrow\n"}}).get_json()["slug"]
+page = teacher.get("/teacher/" + ahead).get_data(as_text=True)
+_ahead = re.search(r'id="live-url" type="text" readonly value="[^"]*/live/([a-z0-9]+)"', page)
+check("the assignment page shows a live lesson link under the handout link",
+      _ahead is not None
+      and page.index("The link to hand out") < page.index("The live lesson link"))
+AHEAD = _ahead.group(1) if _ahead else ""
+again = re.search(r'/live/([a-z0-9]+)"', teacher.get("/teacher/" + ahead).get_data(as_text=True))
+check("  the same link every time the page is opened",
+      again is not None and again.group(1) == AHEAD,
+      "the link posted in Classroom yesterday would no longer be the lesson")
+_r = lesson_row(AHEAD)
+check("  made ended and never pushed: not on anyone's screen yet",
+      _r is not None and _r.ended == 1 and _r.version == 0
+      and _r.assignment_id is not None)
+check("  and not the teacher's open lesson, so Go live elsewhere is untouched",
+      teacher.post("/api/live/start", json={"resume": AHEAD}).get_json().get("resumed") is False)
+poll = stranger.get("/api/live/" + AHEAD).get_json()
+check("a student opening it early is told it has not started",
+      poll.get("ended") is True and poll.get("waiting") is True, repr(poll)[:120])
+check("  and their page keeps checking, slowly, rather than giving up",
+      re.search(r"if \(data\.ended && data\.waiting\) \{\s*waiting = true;", live_code) is not None
+      and "setTimeout(poll, waiting ? WAITING_MS : POLL_MS);" in live_code,
+      "a student who opened the link early would sit on a dead page")
+host = teacher.get("/live/" + AHEAD).get_data(as_text=True)
+check("its teacher, opening it, is offered Start this lesson",
+      "Start this lesson" in host and "Ready when you are" in host)
+r = teacher.get("/teacher/%s/live" % ahead)
+check("Go live on the dashboard opens the editor on that lesson",
+      r.status_code == 302 and ("teach=" + AHEAD) in r.headers.get("Location", "")
+      and ("a=" + ahead) in r.headers.get("Location", ""),
+      r.headers.get("Location", r.status_code))
+check("  and the assignments list has a Go live for each assignment",
+      ('/teacher/%s/live' % ahead) in teacher.get("/teacher").get_data(as_text=True))
+check("  which nobody else can use",
+      student.get("/teacher/%s/live" % ahead).status_code == 404
+      and other.get("/teacher/%s/live" % ahead).status_code == 404)
+r = teacher.post("/api/live/start", json={"reopen": AHEAD, "body": "print(1)",
+                                          "filename": "main.py"})
+teacher.post("/api/live/%s/push" % AHEAD, json={"body": "print(1)", "seq": 50})
+poll = stranger.get("/api/live/" + AHEAD).get_json()
+check("starting it puts the same code on the air",
+      r.get_json().get("code") == AHEAD and poll.get("ended") is False
+      and poll.get("waiting") is False, repr(poll)[:120])
+teacher.post("/api/live/%s/stop" % AHEAD)
+check("  and once taught, it is not 'not started' any more",
+      stranger.get("/api/live/" + AHEAD).get_json().get("waiting") is False)
+fresh = teacher.post("/api/live/start", json={"body": "x"}).get_json()["code"]
+teacher.post("/api/live/%s/stop" % fresh)
+check("a lesson ended before its first push is not 'not started' either",
+      stranger.get("/api/live/" + fresh).get_json().get("waiting") is False,
+      "its link would say Ready when you are, not Teach this lesson again")
+
+# Posted ahead, then started from the editor's own Go live, not the dashboard.
+ahead2 = teacher.post("/api/assignment", json={
+    "title": "Thursday", "files": {'app.py': 'from flask import Flask\n'}}).get_json()["slug"]
+posted = re.search(r'/live/([a-z0-9]+)"',
+                   teacher.get("/teacher/" + ahead2).get_data(as_text=True)).group(1)
+got = teacher.post("/api/live/start", json={"body": "print('t')",
+                                            "assignment": ahead2}).get_json()
+check("Go live in the editor on an assignment uses the link posted ahead",
+      got.get("code") == posted,
+      "the class would be live under a new code while the posted link said "
+      "'not started' all period")
+check("  and it is on the air", stranger.get("/api/live/" + posted).get_json().get("ended") is False)
+teacher.post("/api/live/%s/stop" % posted)
+again = teacher.post("/api/live/start", json={"body": "print('t')",
+                                              "assignment": ahead2}).get_json()
+check("  but a link already taught is not picked up again: Go live starts fresh",
+      again.get("code") not in ("", None, posted), repr(again.get("code")))
+teacher.post("/api/live/%s/stop" % again.get("code"))
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

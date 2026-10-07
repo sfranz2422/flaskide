@@ -448,6 +448,10 @@ check("the editor says which assignment answers go to",
       "setQuizContext({ assignment: cfg.assignmentSlug," in app_js)
 check("so does the live page",
       "setQuizContext({ assignment: L.assignment," in live_js)
+check("one question that fails to build does not take the notes with it",
+      re.search(r"try \{\s*code\.parentNode\.replaceWith\(buildQuiz\(parseQuiz\(",
+                notes_js) is not None,
+      "the whole pane said 'could not be displayed' instead")
 check("rendered notes turn quiz blocks into questions",
       re.search(r"hardenLinks\(target\);\s*enhanceQuizzes\(target\);", notes_js)
       is not None)
@@ -455,6 +459,41 @@ check("the answer box can be typed in under the no-select rule",
       re.search(r"body:not\(\.is-authoring\) \.notes-body \.quiz-text,[^{]*\{\s*"
                 r"user-select: text;\s*-webkit-user-select: text;", css) is not None,
       "Safari will not type into it otherwise")
+
+# ------------------------------------------- the notes pane in the editor
+print("\nThe notes pane in FlaskIDE's editor")
+
+# FlaskIDE's editor had a notes pane in its page that nothing ever filled, so
+# a .md opened as raw text and its questions could not be answered. The notes
+# now take the preview's place on the right (app.js, showNotes); there is no
+# room for both. These read the code, because running the editor needs a
+# browser: each line is the one whose loss would quietly bring that back.
+page_html = open(os.path.join(PYIDE, "templates", "index.html")).read()
+check("the Notes | Preview switch is in both of the right pane's heads",
+      page_html.count('class="view-switch"') == 2)
+check("  and hides properly (it sets display, so [hidden] alone would not)",
+      re.search(r"\.view-switch\[hidden\]\s*\{\s*display:\s*none", css) is not None)
+_open = re.search(r"function openFile\(name\) \{(.*?)\n  \}\n", app_js, re.S)
+_open = _open.group(1) if _open else ""
+check("a .md tab shows the notes and leaves the editor on the code",
+      re.search(r"if \(isNotes\(name\)\) \{[^}]*showNotes\(name\);\s*return;", _open)
+      is not None, "it would open the markdown as text again")
+check("  and a code tab brings the preview back",
+      _open.rstrip().endswith("loadIntoEditor(name);\n    showPreview();"))
+check("Run with the notes up shows the preview first",
+      re.search(r"async function run\(\) \{\s*if \(running\) return;[^}]*?"
+                r"if \(notesShown\) showPreview\(\);", app_js) is not None,
+      "Run would draw into a pane nobody can see")
+check("an assignment opens on its notes, except for its author",
+      "if (!cfg.authoring && notesFiles().length) showNotes(notesFiles()[0]);" in app_js)
+check("the author's Edit source re-renders the notes as they type",
+      re.search(r"if \(mdSource && notesShown === current\) \{\s*"
+                r"slidesView\(\)\.show\(files\[current\]\);", app_js) is not None)
+check("a live lesson shows the class the notes while they are on show",
+      app_js.count("var name = notesShown || current;") == 2,
+      "the mirror would show code while the teacher talks to the notes")
+check("replacing the files (rescue, a starter) re-checks the notes on show",
+      app_js.count("refreshNotes();") == 2)
 
 failed = results.count(False)
 print("\n%s (%d checks, %d failed)" % (

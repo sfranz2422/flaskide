@@ -212,9 +212,18 @@
 
   <section class="pane pane-right">
     <div id="preview-view" class="subpane">
+      {#  The notes and the preview take turns in this pane — there is no
+          room for both (app.js, showNotes). The switch is in both heads,
+          and only when the project has notes. #}
       <div class="pane-head">
         <span id="right-title">Preview</span>
-        <span class="hint">Ctrl+Enter to run</span>
+        <span class="head-right">
+          <span class="hint">Ctrl+Enter to run</span>
+          <span class="view-switch" role="group" aria-label="Show in this pane" hidden>
+            <button type="button" class="view-btn" data-view="notes">Notes</button>
+            <button type="button" class="view-btn" data-view="preview">Preview</button>
+          </span>
+        </span>
       </div>
       <!-- Every URL here is imaginary — it exists only as a rule in the
            student's url_map — so this is an address bar over a function
@@ -253,9 +262,15 @@
     <div id="notes-view" class="subpane" hidden>
       <div class="pane-head">
         <span id="notes-name">Notes</span>
-        {% if authoring %}
-          <button id="notes-edit" class="linkbtn">Edit source</button>
-        {% endif %}
+        <span class="head-right">
+          {% if authoring %}
+            <button id="notes-edit" class="linkbtn">Edit source</button>
+          {% endif %}
+          <span class="view-switch" role="group" aria-label="Show in this pane" hidden>
+            <button type="button" class="view-btn" data-view="notes">Notes</button>
+            <button type="button" class="view-btn" data-view="preview">Preview</button>
+          </span>
+        </span>
       </div>
       <div id="notes-body" class="notes-body prose"></div>
     </div>
@@ -267,17 +282,15 @@
     {% if is_teacher %}
       <div id="class-view" class="subpane class-view" hidden>
         <div class="pane-head"><span>Class sees</span>
-          {#  Only when the notes have two or more slides, divided by `---`. The class
-              sees the one slide, or the whole file once Show all is on;
-              this editor keeps the whole file either way. Here rather than
-              on the top bar, which had no room to spare, and beside the
+          {#  Only when the notes have two or more slides, divided by `---`.
+              Moving here moves every student's notes to this slide; between
+              moves they can go through the slides on their own. Here rather
+              than on the top bar, which had no room to spare, and beside the
               thing they move. #}
           <span id="live-slides" class="slide-ctl" hidden>
-            <button id="slide-prev" class="btn" title="Previous slide for the class">◀</button>
+            <button id="slide-prev" class="btn" title="Previous slide — moves the class with you">◀</button>
             <span id="slide-at" class="slide-at" title="The slide your class is on"></span>
-            <button id="slide-next" class="btn" title="Next slide for the class">▶</button>
-            <button id="slide-whole" class="btn"
-                    title="Send the whole notes file to the class instead of one slide">Show all</button>
+            <button id="slide-next" class="btn" title="Next slide — moves the class with you">▶</button>
           </span></div>
         <div id="class-notes" class="notes-body prose"></div>
       </div>
