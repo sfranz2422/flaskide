@@ -111,6 +111,23 @@
 
   footer { text-align: center; color: #777; font-size: 14px; padding: 0 16px 32px; }
 
+  /* a lesson: its name, then a Live and an Assignment button */
+  .topics ul li.lesson::before { content: "📘"; }
+  .topics a.live, .topics a.assign {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 12px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .topics a.live { background: var(--red); color: #fff; }
+  .topics a.live::before { content: "● "; }
+  .topics a.live:hover { background: var(--red-dark); color: #fff; }
+  .topics a.assign { border: 1.5px solid var(--ink); color: var(--ink); }
+  .topics a.assign:hover { background: var(--ink); color: #fff; }
+
   @media (max-width: 760px) {
     main.wrap { grid-template-columns: 1fr; }
     header h1 { font-size: 36px; }
@@ -142,6 +159,14 @@
         <li class="quiz"><a href="LINK">Quiz: ...</a></li>               ✅
         <li class="video"><a href="LINK">Video: ...</a></li>             🎬
         <li><a href="LINK">Anything else</a></li>                         🔗
+
+      A lesson is its name, then a button for each link it has. Leave out the
+      Live line for a lesson you won't teach live:
+
+        <li class="lesson">Lists                                          📘
+          <a class="live" href="/live/CODE">Live</a>
+          <a class="assign" href="/a/CODE">Assignment</a>
+        </li>
 
       A new topic is a whole block — copy one from below, newest at the bottom:
 
