@@ -1038,10 +1038,10 @@
   // decided by the student's own entry file (see MAIN), not by a setting, so
   // a SQL lesson and a Flask lesson need nothing switched by hand.
 
-  /* The syntax card, over their own editor — never the mirror: it is about
-     their code. `reveal` opens the tab the error is in. */
+  /* The syntax card, covering their own console (opened first, in run) —
+     never the teacher's. `reveal` opens the tab the error is in. */
   var syntaxCard = window.FlaskIDESyntax.attach({
-    host: mine.getWrapperElement().parentNode,
+    host: $("output-view"),
     editor: mine,
     reveal: function (file) {
       if (!docs[file]) return null;
@@ -1165,6 +1165,7 @@
         if (note) write(note + "\n", "dim");
       });
       if (bad) {
+        openConsole(true);                    // the card is in it, so it must show
         write("SyntaxError in " + bad.file + " on line " + bad.line + ": " + bad.msg + "\n"
             + (bad.text.trim() ? "    " + bad.text.trim() + "\n" : ""), "err");
         syntaxCard.show(bad);

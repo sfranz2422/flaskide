@@ -196,7 +196,7 @@ for page, js in (("editor", "app.js"), ("live page", "live.js")):
     check("  and stops there when Python can't read it",
           re.search(r"if \(bad\) \{[^}]*syntaxCard\.show\(bad\);\s*return;\s*\}", run) is not None)
     check("  and still prints Python's message in the console",
-          re.search(r"if \(bad\) \{\s*\w+\(\"SyntaxError in \"", run) is not None)
+          re.search(r"if \(bad\) \{[^}]*?\w+\(\"SyntaxError in \"", run) is not None)
 check("flask.js offers the check, and a broken one says null",
       re.search(r"async function check\(files, report\)[\s\S]*?catch \(e\) \{\s*return null;",
                 _flask_js) is not None
@@ -207,6 +207,23 @@ for tpl in ("index.html", "live.html"):
 _code = re.sub(r"/\*[\s\S]*?\*/|//[^\n]*", "", syntax_js)   # code, not comments
 check("the card is built as text, never innerHTML", "innerHTML" not in _code,
       "the message quotes the student's own characters")
+# Over the output pane, where Run's result would have gone — not the editor,
+# and not under Python's raw message: one message to read.
+for js, host in {'app.js': 'host: $("preview-view"),', 'live.js': 'host: $("output-view"),'}.items():
+    src = open(os.path.join(ROOT, "static", js)).read()
+    at = src.find("window.FlaskIDESyntax.attach({")
+    check("the card covers the output pane (%s)" % js,
+          at > -1 and src[at:at + 200].find(host) > -1,
+          "it sat over the editor, under the friendly message's raw twin")
+live_src = open(os.path.join(ROOT, "static", "live.js")).read()
+live_run = live_src[live_src.index("async function run()"):]
+live_run = live_run[:live_run.index("\n  }\n")]
+check("  the live page opens its folded console before showing it",
+      re.search(r"if \(bad\) \{[^}]*?openConsole\(true\);[^}]*?syntaxCard\.show\(bad\)",
+                live_run) is not None,
+      "the card would be put inside a pane that is folded shut")
+check("  and fills it", re.search(r"\.syntax-card \{[^}]*inset: 8px",
+                                  open(os.path.join(ROOT, "static", "style.css")).read()) is not None)
 check("the card goes away as soon as they type",
       'ed.on("change", onChange)' in syntax_js)
 

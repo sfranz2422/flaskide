@@ -759,10 +759,11 @@
     paintTabs();
     if ($("notes-edit")) $("notes-edit").addEventListener("click", toggleSource);
 
-    /* The syntax card, over the editor. `reveal` opens the file the error
-       is in, so an error in models.py is shown in models.py. */
+    /* The syntax card, covering the preview and console — where Run's result
+       would have gone. `reveal` opens the file the error is in, so an error
+       in models.py is shown in models.py. */
     syntaxCard = window.FlaskIDESyntax.attach({
-      host: editor.getWrapperElement().parentNode,
+      host: $("preview-view"),
       editor: editor,
       reveal: function (file) {
         if (!(file in files)) return null;

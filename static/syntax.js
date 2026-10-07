@@ -2,12 +2,16 @@
  *
  * When a student presses Run, the page first asks Python whether it can READ
  * the program at all (_flaskide_check in flask.js: compile, never run). If it
- * cannot, nothing runs, and this shows a card over the editor:
+ * cannot, nothing runs, and this shows a card over the output pane —
+ * where the result of Run would have gone, and where the student looks:
  *
  *     Line 4: you're missing a closing `)`. The `(` here is never closed.
  *     Python says: SyntaxError: '(' was never closed
  *
- * with that line highlighted and a button that puts the cursor on it.
+ * with that line highlighted in the editor and the cursor put on it. The
+ * card covers the output pane rather than sitting under Python's message
+ * there: one clear message, not the friendly one and the raw one stacked.
+ * The raw one is still in the pane, underneath, once the card is closed.
  *
  * SYNTAX ONLY, AND BY CONSTRUCTION. The card can only appear for code that
  * Python cannot read. A program that reads but does the wrong thing runs
@@ -249,9 +253,9 @@ window.FlaskIDESyntax = (function () {
     });
   }
 
-  /* One card per page, over the editor.
+  /* One card per page, covering the output pane.
 
-       opts.host     the element it sits in (positioned by the stylesheet)
+       opts.host     the output pane; the card fills it
        opts.editor   the CodeMirror instance, for the highlight
        opts.reveal   function(file) that makes `file` the open tab, and
                      returns the CodeMirror doc to mark, or null
@@ -323,6 +327,7 @@ window.FlaskIDESyntax = (function () {
       raw.textContent = "Python says: " + said.python;
       card.appendChild(raw);
 
+      opts.host.classList.add("syntax-host");    // the card is placed inside it
       opts.host.appendChild(card);
       mark(info);
 
