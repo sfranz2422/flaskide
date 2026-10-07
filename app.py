@@ -25,7 +25,6 @@ from flask import (
     redirect,
     render_template,
     request,
-    send_from_directory,
     session,
     url_for,
 )
@@ -463,20 +462,6 @@ def new_sql():
 
 
 @app.get("/")
-def class_home():
-    """The class's front page: a plain HTML file, edited by hand.
-
-    It is served as it is, not rendered as a template, so the teacher can add
-    a link with nothing but a text editor and a push. That is also why it
-    lives in static/ - a stray {{ in it can't break the page. The editor that
-    used to be here is /new; everything links to it through url_for("index"),
-    which still names the editor, so only bookmarks of the bare site moved.
-    """
-    return send_from_directory(
-        os.path.join(app.static_folder, "classes"), "web-design-2.html")
-
-
-@app.get("/new")
 def index():
     return render_template(
         "index.html",

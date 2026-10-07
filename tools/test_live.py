@@ -430,15 +430,15 @@ check("  and is not made to download Python to show a code",
 check("  while a student following along does get it",
       "pyodide.js" in page and "flask.js" in page)
 
-r = teacher.get("/new")
+r = teacher.get("/")
 check("the editor offers Go live to a teacher", 'id="go-live"' in
       r.get_data(as_text=True))
-r = student.get("/new")
+r = student.get("/")
 check("  and does not offer it to a student", 'id="go-live"' not in
       r.get_data(as_text=True))
 check("  nor a copy of what the class's notes pane shows",
       'id="class-view"' not in r.get_data(as_text=True))
-r = teacher.get("/new")
+r = teacher.get("/")
 check("the teacher's editor has a pane showing the slide the class is on",
       'id="class-view"' in r.get_data(as_text=True)
       and 'id="class-notes"' in r.get_data(as_text=True))
@@ -451,7 +451,7 @@ _ask = _tp.find('id="share-ask"')
 check("a teacher's Share asks first, with Hide code inside that dialog",
       _ask != -1 and _tp.find('id="hide-code"') > _ask,
       "share-ask at %d, hide-code at %d" % (_ask, _tp.find('id="hide-code"')))
-_sp = student.get("/new").get_data(as_text=True)
+_sp = student.get("/").get_data(as_text=True)
 check("  and a student gets neither", 'id="share-ask"' not in _sp
       and 'id="hide-code"' not in _sp)
 
@@ -1027,7 +1027,7 @@ check("its teacher, opening its link, can teach it again",
       "the link the class still has could never be used again")
 check("  into the editor, with the lesson and its assignment's starter",
       _teach is not None and _teach.group(1).replace("&amp;", "&")
-      in ("/new?teach=%s&a=%s" % (LESSON, hw), "/new?a=%s&teach=%s" % (hw, LESSON)),
+      in ("/?teach=%s&a=%s" % (LESSON, hw), "/?a=%s&teach=%s" % (hw, LESSON)),
       _teach.group(1) if _teach else "")
 check("  and is not offered End lesson for a lesson already over",
       'id="live-stop"' not in host_page)
@@ -1714,7 +1714,7 @@ else:
           "brew install node")
 
 # Show all, and the slide controls in the Class sees pane head.
-r = teacher.get("/new")
+r = teacher.get("/")
 _page = r.get_data(as_text=True)
 _cv = _page.find('id="class-view"')
 check("the slide controls sit in the Class sees pane, not the top bar",
