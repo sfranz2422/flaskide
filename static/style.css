@@ -883,6 +883,13 @@ body:not(.is-authoring) .notes-body .quiz-text,
   -webkit-user-select: text;
 }
 
+/* The notes button(s) in the top bar (app.js, renderNotesButtons): pressed
+   while the notes are on show, like a tab that is open. */
+.notes-buttons { display: inline-flex; gap: 6px; }
+.notes-buttons:empty { display: none; }
+.notes-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent);
+                                  border-color: var(--accent); }
+
 /* What goes in the brackets (sighint.js): small, dim, above the line, and
    never in the way — it takes no clicks, so it cannot steal one meant for
    the code under it. */

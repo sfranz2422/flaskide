@@ -234,11 +234,48 @@
     return (entry in files ? [entry] : []).concat(rest);
   }
 
+  /* NOTES ARE A BUTTON, NOT A TAB, for anyone reading notes they did not
+     write — a student on an assignment, a shared link. They never edit the
+     .md, so a tab beside app.py read as another file to type in. A button
+     in the top bar, named for the file (instructions.md is "instructions"),
+     shows them, and a second press goes back to the preview — as the
+     Notes | Preview switch in the pane head does.
+
+     Whoever owns the notes keeps the tab, because Edit source is there —
+     EXCEPT WHILE TEACHING LIVE: the teacher's editor is on the projector
+     then, and should show the class what their own page has. A function,
+     not a flag, because going live and ending a lesson change the answer. */
+  function notesAsButtons() { return !cfg.authoring || !!liveCode; }
+
+  function renderNotesButtons() {
+    var bar = $("notes-buttons");
+    if (!bar) return;
+    bar.textContent = "";
+    if (!notesAsButtons()) return;
+    notesFiles().forEach(function (name) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn notes-btn";
+      var on = name === notesShown;
+      b.setAttribute("aria-pressed", String(on));
+      b.textContent = name.replace(/\.(md|markdown)$/i, "");
+      b.title = on ? "Back to the preview" : "Show " + name;
+      b.addEventListener("click", function () {
+        if (notesShown === name) showPreview();
+        else openFile(name);
+      });
+      bar.appendChild(b);
+    });
+  }
+
   function paintTabs() {
     var strip = $("file-tabs");
     if (!strip) return;
     strip.textContent = "";
-    tabOrder().forEach(function (name) {
+    renderNotesButtons();
+    tabOrder().filter(function (name) {
+      return !(notesAsButtons() && isNotes(name));
+    }).forEach(function (name) {
       var tab = document.createElement("button");
       // tab-on, not tab-active: the stylesheet has always said .tab-on, and
       // PyIDE and WebIDE agree. This file drifted during the port, so the
@@ -247,7 +284,9 @@
       // The notes' tab while they are on show; otherwise the file being
       // edited. With the notes up the editor still holds the code, and
       // marking both would leave nobody sure which tab they were on.
-      var on = notesShown ? name === notesShown : name === current;
+      // With the notes up from their button there is no notes tab to
+      // light, so the file in the editor stays lit.
+      var on = notesShown && !notesAsButtons() ? name === notesShown : name === current;
       tab.className = "tab" + (on ? " tab-on" : "");
       tab.setAttribute("role", "tab");
       tab.title = name;
@@ -1195,6 +1234,7 @@
     });
 
     function paintLive() {
+      paintTabs();           // live, the notes are a button (notesAsButtons)
       if (liveCode) {
         liveBtn.textContent = "End lesson";
         liveBtn.classList.add("btn-live-on");

@@ -685,8 +685,11 @@
     }
 
     if (data.filename) {
+      // The notes are "instructions" on every page a student sees, never
+      // "instructions.md": the class meets them as a button, not a file.
       var name = document.getElementById("mirror-name");
-      if (name) name.textContent = data.filename;
+      if (name) name.textContent = asNotes
+        ? data.filename.replace(/\.(md|markdown)$/i, "") : data.filename;
     }
     seen = data.version;
     showNotes(data);

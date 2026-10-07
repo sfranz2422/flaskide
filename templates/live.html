@@ -182,7 +182,7 @@
     <div class="live-pane live-mirror">
       <div class="pane-head">
         <span>What {{ live.host_name or "your teacher" }} is typing</span>
-        <span id="mirror-name" class="dim">{{ live.filename }}</span>
+        <span id="mirror-name" class="dim">{% if live.filename.lower().endswith(('.md', '.markdown')) %}{{ live.filename.rsplit('.', 1)[0] }}{% else %}{{ live.filename }}{% endif %}</span>
       </div>
       <div id="mirror-wrap" class="editor-wrap"><textarea id="mirror"></textarea></div>
       {#  A .md file the teacher opens is class notes, not code: it renders
