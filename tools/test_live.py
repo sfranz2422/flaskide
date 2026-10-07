@@ -999,6 +999,14 @@ def set_row(code, **fields):
     finally:
         db.close()
 
+def item_id(slug):
+    db = F.SessionLocal()
+    try:
+        return db.query(accounts.Assignment).filter_by(slug=slug).first().id
+    finally:
+        db.close()
+
+
 def lesson_row(code):
     db = F.SessionLocal()
     try:
@@ -2083,6 +2091,50 @@ again = teacher.post("/api/live/start", json={"body": "print('t')",
 check("  but a link already taught is not picked up again: Go live starts fresh",
       again.get("code") not in ("", None, posted), repr(again.get("code")))
 teacher.post("/api/live/%s/stop" % again.get("code"))
+
+# ------------------------------- a lesson never changes its assignment
+print("\nA lesson's code always belongs to its assignment")
+# The bug: Go live on assignment B while A's lesson was still open carried
+# on in A's lesson, relabelled B. B's live link then said "taught" and its
+# Teach again loaded B's notes with A's code.
+asg_a = teacher.post("/api/assignment", json={"title": "A", "files": {"app.py": "x = 1"}}).get_json()["slug"]
+asg_b = teacher.post("/api/assignment", json={"title": "B", "files": {"app.py": "x = 1"}}).get_json()["slug"]
+la = teacher.post("/api/live/start", json={"body": "print('A')", "assignment": asg_a}).get_json()["code"]
+teacher.post("/api/live/%s/push" % la, json={"body": "print('A taught')", "seq": 99})
+lb = teacher.post("/api/live/start", json={"body": "print('B')", "assignment": asg_b}).get_json()["code"]
+check("Go live on another assignment, with one still open, is a new lesson",
+      lb != la, "it carried on in A's lesson and relabelled it B")
+row_a = lesson_row(la)
+check("  the old one ends, still A's, with A's code",
+      row_a.ended == 1 and row_a.body == "print('A taught')"
+      and row_a.assignment_id == item_id(asg_a))
+check("  and B's live link is B's lesson, not A's",
+      re.search(r'/live/([a-z0-9]+)"', teacher.get("/teacher/" + asg_b).get_data(as_text=True)).group(1) == lb)
+same = teacher.post("/api/live/start", json={"body": "x", "assignment": asg_b}).get_json()["code"]
+check("Go live again on the same assignment still carries on in its lesson", same == lb)
+resumed = teacher.post("/api/live/start", json={"resume": lb}).get_json()
+check("  and a reload's resume does too", resumed.get("code") == lb)
+teacher.post("/api/live/%s/stop" % lb)
+
+# The repair: forget what the lesson last had on screen, keep the link.
+RESET = "/api/assignment/%s/live/reset" % asg_a
+page = teacher.get("/teacher/" + asg_a).get_data(as_text=True)
+check("a taught lesson's page offers Start from the starter next time", 'id="live-reset"' in page)
+check("  only its teacher can", student.post(RESET).status_code == 403
+      and other.post(RESET).status_code in (403, 404))
+r = teacher.post(RESET)
+row_a = lesson_row(la)
+check("  it forgets the code, and keeps the link",
+      r.status_code == 200 and row_a.body == "" and row_a.code == la
+      and re.search(r'/live/([a-z0-9]+)"', teacher.get("/teacher/" + asg_a).get_data(as_text=True)).group(1) == la)
+check("  so Teach again loads only the starter (nothing to lay over it)",
+      stranger.get("/api/live/%s?v=-1" % la).get_json().get("body") == "")
+teacher.post("/api/live/start", json={"reopen": la, "body": "x"})
+check("  and is refused while the lesson is live", teacher.post(RESET).status_code == 409)
+teacher.post("/api/live/%s/stop" % la)
+check("a lesson made ahead and never taught does not offer it",
+      'id="live-reset"' not in teacher.get("/teacher/" + teacher.post(
+          "/api/assignment", json={"title": "C", "files": {"app.py": "x = 1"}}).get_json()["slug"]).get_data(as_text=True))
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

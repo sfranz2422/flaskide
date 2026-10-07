@@ -3119,6 +3119,35 @@ def _lesson_for(db, user, item):
     return live
 
 
+@app.post("/api/assignment/<slug>/live/reset")
+def reset_live(slug):
+    """Forget what this assignment's lesson last had on screen — its code,
+    output and slide — keeping its link, so teaching it again starts from
+    the assignment's own starter rather than where the last lesson ended.
+
+    For a lesson that ended in the wrong place, and for the ones the old Go
+    live relabelled (see live_start), which hold another assignment's code
+    and look, from here, exactly like any other taught lesson."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        live = _lesson_for(db, user, item)
+        if not live.ended:
+            return jsonify(error="It's live now. End the lesson first."), 409
+        live.body = ""
+        live.output = ""
+        live.cursor = ""
+        live.slide = ""
+        live.snippet = ""
+        live.filename = "main.py"
+        db.commit()
+        return jsonify(ok=True)
+    finally:
+        db.close()
+
+
 def _waiting(live):
     """Made ahead and never taught: ended, with nothing ever pushed. Its
     class is told it has not started, and their page keeps checking, rather
@@ -3216,6 +3245,20 @@ def live_start():
                        synchronize_session=False))
             old.ended = 0
             live = old
+
+        # GO LIVE ON A DIFFERENT ASSIGNMENT ends the lesson still open. It
+        # used to carry on in it and only relabel it with the new assignment,
+        # so the row kept the OLD assignment's code under the NEW one's name:
+        # from then on that was the new assignment's live lesson, its link
+        # said "Teach this lesson again", and teaching it loaded the right
+        # notes with the other assignment's code. A lesson's code and its
+        # assignment must always belong together. The same assignment, or a
+        # resume (which never says which assignment), carries on as before.
+        if (live is not None and not reopen and not resume and "assignment" in data
+                and live.assignment_id != (item.id if item else None)):
+            live.ended = 1
+            live.updated_at = _live_now()
+            live = None
 
         # THE LINK MADE AHEAD FOR THIS ASSIGNMENT, if it has never been
         # taught. The teacher posted it in Classroom yesterday (_lesson_for);

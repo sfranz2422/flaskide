@@ -63,6 +63,14 @@
       ahead of the lesson; anyone who opens it early sees it hasn't begun.{% else %}Taught
       before. Going live again uses the same link, so the one your class has still works.{% endif %}
     </p>
+    {#  Teaching again picks up where the last lesson left off. This makes it
+        start from the starter instead — for a lesson that ended in the wrong
+        place, or one holding another assignment's code (see reset_live). #}
+    {% if not live_on and not live_waiting and assignment.kind != 'lesson' %}
+      <p class="small"><button id="live-reset" type="button" class="linkbtn"
+         title="Teaching it again will open the starter, not where the last lesson left off">Start from the starter next time</button>
+        <span id="live-reset-state" class="dim"></span></p>
+    {% endif %}
   </section>
 
   {#  Grading. Points first, because everything after depends on them: the
@@ -517,6 +525,22 @@
   window.addEventListener("beforeunload", function (e) {
     if (dirty()) { e.preventDefault(); e.returnValue = ""; }
   });
+
+  (function () {
+    var b = document.getElementById("live-reset");
+    if (!b) return;
+    b.addEventListener("click", function () {
+      if (!confirm("Forget where the last lesson left off? Teaching it again will open "
+                   + "this assignment's starter. The link stays the same, and nothing "
+                   + "students have saved or turned in changes.")) return;
+      b.disabled = true;
+      post(base + "/live/reset").then(function (out) {
+        document.getElementById("live-reset-state").textContent =
+          out.ok ? "Done — it will start from the starter." : (out.d.error || "Not done");
+        b.disabled = out.ok;
+      }).catch(function () { b.disabled = false; });
+    });
+  })();
 
   document.getElementById("live-copy").addEventListener("click", function () {
     var field = document.getElementById("live-url"), btn = this;
