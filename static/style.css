@@ -964,6 +964,7 @@ body:not(.is-authoring) .notes-body .quiz-text,
 .quiz-wrong .quiz-result { color: var(--red); font-weight: 600; }
 .quiz-warn { color: var(--red); }
 .fb-quiz { white-space: nowrap; }
+#gc-topic[hidden], #gc-topic-note[hidden] { display: none; }
 .gc-link { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 4px; }
 
 /* -------------------------------------------------------------- 404 page */

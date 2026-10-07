@@ -142,6 +142,18 @@ def fake_classroom_get(url, params):
         base = P.CLASSROOM_API + "/courses/" + cid
         if url == base:
             return 200, {"id": cid, "name": c["name"]}
+        if url == base + "/topics":
+            # Period 4's topics, two pages of them. Period 7 plays a
+            # connection made without the topics permission.
+            if cid != P4:
+                return 403, {"error": {"message": "Request had insufficient authentication scopes."}}
+            page = int(params.get("pageToken") or 0)
+            pages = [[{"topicId": "111", "name": "Unit 1: Loops"}],
+                     [{"topicId": "222", "name": "Unit 2: Lists"}]]
+            data = {"topic": pages[page]}
+            if page + 1 < len(pages):
+                data["nextPageToken"] = str(page + 1)
+            return 200, data
         if url == base + "/students":
             page = int(params.get("pageToken") or 0)
             data = {"students": c["roster"][page]}
@@ -244,6 +256,8 @@ WANTED = {
     "https://www.googleapis.com/auth/classroom.coursework.students",
     "https://www.googleapis.com/auth/classroom.rosters.readonly",
     "https://www.googleapis.com/auth/classroom.profile.emails",
+    # optional: only fills the topic dropdown when posting
+    "https://www.googleapis.com/auth/classroom.topics.readonly",
 }
 check("  asking for every Classroom permission at once",
       set(q.get("scope", "").split()) == WANTED, q.get("scope"))
@@ -302,6 +316,12 @@ check("  and nothing is stored, and Google is told to forget it",
 google["email"] = "Teacher@School.org"          # Google may differ in case
 
 r = callback(teacher, code="abc")
+# ALL is the required permissions only, so this is also a teacher who
+# unticked topics, or connected before topics were asked for.
+check("topics are asked for but not required to connect",
+      "classroom.topics.readonly" not in google["scope"]
+      and "https://www.googleapis.com/auth/classroom.topics.readonly"
+      in P.CLASSROOM_OPTIONAL_SCOPES)
 check("the right account, everything ticked: connected",
       r.status_code == 302 and "classroom=connected" in r.headers["Location"],
       r.status_code)
@@ -429,8 +449,27 @@ check("a student cannot post it", student.post(POST, json={"course": P4}).status
 r = teacher.post(POST, json={"course": "../evil"})
 check("a class id that is not one is refused", r.status_code == 400)
 
+t4 = teacher.get("/api/classroom/courses/%s/topics" % P4).get_json()
+check("a class's topics are listed for the dropdown, every page of them",
+      t4.get("topics") == [{"id": "111", "name": "Unit 1: Loops"},
+                           {"id": "222", "name": "Unit 2: Lists"}], t4)
+t7 = teacher.get("/api/classroom/courses/%s/topics" % P7).get_json()
+check("  a connection without the topics permission is told to reconnect",
+      t7.get("reconnect") is True and t7.get("topics") == []
+      and t7.get("connect_url", "").endswith("/classroom/connect"), t7)
+check("  only for a teacher",
+      student.get("/api/classroom/courses/%s/topics" % P4).status_code == 403)
+check("  and only for a class id that is one",
+      teacher.get("/api/classroom/courses/../topics").status_code in (400, 404))
+r = teacher.post(POST, json={"course": P4, "topic": "x/../y"})
+check("a topic id that is not one is refused before Google is asked",
+      r.status_code == 400 and room[P4]["work"] is None)
+
 calls.clear()
-r = teacher.post(POST, json={"course": P4})
+r = teacher.post(POST, json={"course": P4, "topic": "222"})
+check("  posted under the topic chosen",
+      (room[P4]["work"] or {}).get("topicId") == "222" and r.get_json().get("topic") == "222",
+      (room[P4]["work"] or {}).get("topicId"))
 check("the teacher posts it to Period 4", r.status_code == 200
       and r.get_json().get("course") == "Programming 1 — Period 4",
       r.get_data(as_text=True)[:90])
@@ -452,6 +491,8 @@ check("posting to the same class twice is refused, so it never sees two",
 r = teacher.post(POST, json={"course": P7, "draft": True, "link": "live"})
 check("the same assignment can also go to Period 7",
       r.status_code == 200 and [p[0] for p in posts()] == [P4, P7], posts())
+check("  with no topic when none was chosen, as before topics existed",
+      "topicId" not in room[P7]["work"])
 check("  as its own Classroom assignment",
       room[P7]["work"] is not None and room[P7]["work"].get("maxPoints") == 10)
 check("  posted as a draft when asked, for the teacher to assign there later",
@@ -468,6 +509,8 @@ check("  and told in Classroom that it is a live lesson",
 check("  while Period 4, not asked, got the assignment link as before",
       link.endswith("/a/%s" % hw) and "follow the lesson live" not in
       (room[P4]["work"] or {}).get("description", ""))
+check("the page has the topic dropdown, hidden until a class is chosen",
+      'id="gc-topic" class="field" hidden' in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
 check("the page offers the choice, the assignment ticked",
       'name="gc-link" value="assignment" checked' in
       teacher.get("/teacher/%s" % hw).get_data(as_text=True))

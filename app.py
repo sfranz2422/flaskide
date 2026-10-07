@@ -2088,6 +2088,15 @@ CLASSROOM_SCOPES = [
     "https://www.googleapis.com/auth/classroom.profile.emails",
 ]
 
+#: Asked for, but not required. Topics only fill the dropdown when posting;
+#: without them an assignment posts with no topic, exactly as it did before
+#: topics existed here. So a teacher who unticks this one on Google's screen
+#: still connects, and a connection made before it was asked for still
+#: posts and syncs — the dropdown just says how to turn topics on.
+CLASSROOM_OPTIONAL_SCOPES = [
+    "https://www.googleapis.com/auth/classroom.topics.readonly",
+]
+
 
 def classroom_configured():
     """Read at request time, not import, like nothing else here needs to be:
@@ -2247,7 +2256,7 @@ def classroom_connect():
             "redirect_uri": url_for("classroom_callback", _external=True,
                                     _scheme=_scheme()),
             "response_type": "code",
-            "scope": " ".join(CLASSROOM_SCOPES),
+            "scope": " ".join(CLASSROOM_SCOPES + CLASSROOM_OPTIONAL_SCOPES),
             # offline: a refresh token, so grades can go later. consent: ask
             # every time, because Google only hands out a refresh token on a
             # consent screen, and a reconnect without one would store nothing.
@@ -2409,6 +2418,38 @@ def classroom_courses():
         db.close()
 
 
+@app.get("/api/classroom/courses/<course_id>/topics")
+def classroom_topics(course_id):
+    """One class's topics, for the dropdown that appears once a class is
+    chosen. `reconnect` when Google refuses for want of the topics
+    permission — a connection made before it was asked for, or with its box
+    unticked — so the page can say what to do instead of showing nothing."""
+    db = SessionLocal()
+    try:
+        if not classroom_configured():
+            abort(404)
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only a teacher can do that."), 403
+        if not re.fullmatch(r"[0-9]{1,30}", course_id or ""):
+            return jsonify(error="No such class."), 400
+        access, why = _classroom_token(db, user)
+        if access is None:
+            return jsonify(error=why), 409
+        topics, status = _google_list(
+            "%s/courses/%s/topics" % (CLASSROOM_API, course_id), access, "topic")
+        if status == 403:
+            return jsonify(topics=[], reconnect=True,
+                           connect_url=url_for("classroom_connect"))
+        if status != 200:
+            return jsonify(error="Google wouldn't list that class's topics."), 502
+        return jsonify(topics=[{"id": str(t.get("topicId", "")),
+                                "name": t.get("name", "")} for t in topics
+                               if t.get("topicId")])
+    finally:
+        db.close()
+
+
 @app.post("/api/assignment/<slug>/classroom/post")
 def classroom_post(slug):
     """Create this assignment in one of the teacher's Classroom classes.
@@ -2429,6 +2470,9 @@ def classroom_post(slug):
     app's, so Sync can grade it afterwards. A page from before the box
     existed sends no `draft`, and gets what it always got: published.
 
+    `topic` is a topic id from that class (classroom_topics), or nothing
+    for none. Google refuses one that is not the class's, and says so.
+
     `link` is which link the class is given: "assignment" (the default, and
     what a page from before the choice gets) or "live", the lesson's link
     from the assignment page (_lesson_for), for work done in a live lesson.
@@ -2447,6 +2491,9 @@ def classroom_post(slug):
         course_id = str(asked.get("course") or "")
         if not re.fullmatch(r"[0-9]{1,30}", course_id):
             return jsonify(error="Choose a class."), 400
+        topic = str(asked.get("topic") or "")
+        if topic and not re.fullmatch(r"[0-9A-Za-z_-]{1,40}", topic):
+            return jsonify(error="That isn't one of the class's topics."), 400
         already = [p for p in _posts(db, item) if p.course_id == course_id]
         if already:
             return jsonify(error="It's already posted to %s."
@@ -2483,6 +2530,7 @@ def classroom_post(slug):
                 "workType": "ASSIGNMENT",
                 "state": "DRAFT" if asked.get("draft") is True else "PUBLISHED",
                 "maxPoints": item.out_of,
+                **({"topicId": topic} if topic else {}),
             })
         if status != 200 or not work.get("id"):
             return jsonify(error=_google_message(work, "Google wouldn't create "
@@ -2497,7 +2545,7 @@ def classroom_post(slug):
         db.commit()
         return jsonify(ok=True, course=post.course_name, url=post.url,
                        draft=asked.get("draft") is True,
-                       link="live" if live else "assignment")
+                       link="live" if live else "assignment", topic=topic)
     finally:
         db.close()
 

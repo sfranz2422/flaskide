@@ -97,6 +97,9 @@
         {% if classroom_connected %}
           <div class="grade-line">
             <select id="gc-course" class="field"><option value="">Loading your classes…</option></select>
+            {#  The chosen class's topics, fetched when a class is picked. #}
+            <select id="gc-topic" class="field" hidden aria-label="Topic"></select>
+            <span id="gc-topic-note" class="dim small" hidden></span>
             <button id="gc-post" class="btn">{% if posts %}Also post to this class{% else %}Post to Google Classroom{% endif %}</button>
             <span id="gc-post-state" class="dim small"></span>
           </div>
@@ -300,6 +303,49 @@
         picker.appendChild(o);
       });
     });
+    /* The class's topics, once a class is chosen — as Classroom itself
+       asks. "No topic" first, and chosen, so leaving it alone posts the
+       way it always did. A connection without the topics permission gets
+       a sentence and a link instead of a dropdown, and posts without one. */
+    var topicPick = document.getElementById("gc-topic");
+    var topicNote = document.getElementById("gc-topic-note");
+    var topicAsk = 0;
+    picker.addEventListener("change", function () {
+      var ask = ++topicAsk;
+      topicPick.hidden = true;
+      topicNote.hidden = true;
+      topicPick.textContent = "";
+      if (!picker.value) return;
+      fetch("/api/classroom/courses/" + encodeURIComponent(picker.value) + "/topics")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (ask !== topicAsk) return;          // a later pick has answered since
+          if (d.reconnect) {
+            topicNote.textContent = "";
+            topicNote.appendChild(document.createTextNode("To choose a topic, "));
+            var a = document.createElement("a");
+            a.href = d.connect_url;
+            a.textContent = "connect Classroom again";
+            topicNote.appendChild(a);
+            topicNote.appendChild(document.createTextNode(" and allow topics."));
+            topicNote.hidden = false;
+            return;
+          }
+          if (!d.topics || !d.topics.length) return;   // no topics: nothing to pick
+          var none = document.createElement("option");
+          none.value = "";
+          none.textContent = "No topic";
+          topicPick.appendChild(none);
+          d.topics.forEach(function (t) {
+            var o = document.createElement("option");
+            o.value = t.id;
+            o.textContent = t.name;
+            topicPick.appendChild(o);
+          });
+          topicPick.hidden = false;
+        }).catch(function () { /* no dropdown; it posts with no topic */ });
+    });
+
     document.getElementById("gc-post").addEventListener("click", function () {
       var state = document.getElementById("gc-post-state");
       var choice = picker.options[picker.selectedIndex];
@@ -308,12 +354,15 @@
       var live = (document.querySelector('input[name="gc-link"]:checked') || {}).value === "live";
       if (!confirm("Post \u201c" + {{ assignment.title | tojson }} + "\u201d to " + choice.textContent
                    + (live ? " (linked to the live lesson)" : "")
+                   + (!topicPick.hidden && topicPick.value
+                      ? " under \u201c" + topicPick.options[topicPick.selectedIndex].textContent + "\u201d" : "")
                    + (draft ? " as a draft? The class won't see it until you assign it in Google Classroom."
                             : "? The class will see it in Google Classroom straight away."))) return;
       this.disabled = true;
       var btn = this;
       post(base + "/classroom/post", { course: picker.value, draft: draft,
-                                       link: live ? "live" : "assignment" }).then(function (out) {
+                                       link: live ? "live" : "assignment",
+                                       topic: topicPick.hidden ? "" : topicPick.value }).then(function (out) {
         if (!out.ok) { btn.disabled = false; state.textContent = out.d.error || "Not posted"; return; }
         location.reload();
       }).catch(function () { btn.disabled = false; state.textContent = "Not posted — check your connection"; });
