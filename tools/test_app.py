@@ -60,7 +60,7 @@ def done():
 client = A.app.test_client()
 
 # ------------------------------------------------------------- the page
-r = client.get("/")
+r = client.get("/new")
 check("the editor loads", r.status_code == 200, "%d bytes" % len(r.data))
 page = r.data.decode()
 
