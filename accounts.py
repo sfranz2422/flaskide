@@ -17,6 +17,8 @@ same database and already owns `projects`:
     live_sessions  a lesson the class is watching the teacher type
     classroom_links  a teacher's connection to their Google Classroom
     classroom_posts  each Classroom class an assignment was posted to
+    quiz_questions   the answer key to each question in an assignment's notes
+    quiz_answers     a student's one answer to one of those questions
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -220,6 +222,68 @@ class Submission(Base):
     #: The score last sent to Google Classroom. Differs from `score` when it
     #: has changed since the last Sync, which is how the page knows to say so.
     score_synced = Column(Float, nullable=True)
+
+
+# --------------------------------------------------------------------------
+# Questions in the notes
+# --------------------------------------------------------------------------
+
+class QuizQuestion(Base):
+    """The answer key to one question written in an assignment's notes.
+
+    The notes go to students whole, so the key cannot travel in them: it is
+    taken out of every copy a student is sent and kept here instead (quiz.py
+    in PyIDE says how). Written whenever the teacher saves the assignment or
+    pushes notes in a live lesson, so a question added mid-lesson can be
+    answered without the assignment being saved first.
+
+    `qid` is a hash of the question as the student sees it. Rewording a
+    question makes a new row, and the old one is kept, because a student
+    with an older copy may still answer it. Changing only the key or the
+    points rewrites this row, and every answer already given is marked
+    against the new key — that is a teacher fixing a mistake.
+    """
+    __tablename__ = "quiz_questions"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "qid", name="uq_quiz_question"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("assignments.id"),
+                           index=True, nullable=False)
+    qid = Column(String(16), nullable=False)
+    #: "choice" or "text".
+    kind = Column(String(8), nullable=False, default="choice")
+    prompt = Column(Text, nullable=False, default="")
+    #: JSON lists: every choice shown, the ones that are right, and for a
+    #: short answer the answers accepted.
+    choices = Column(Text, nullable=False, default="[]")
+    correct = Column(Text, nullable=False, default="[]")
+    answers = Column(Text, nullable=False, default="[]")
+    points = Column(Float, nullable=False, default=1.0)
+    updated_at = Column(DateTime, nullable=False, default=now)
+
+
+class QuizAnswer(Base):
+    """A student's one answer to one question. One try: the unique
+    constraint is the lock, so two workers taking the same student's two
+    quick clicks cannot both record one.
+
+    Whether it is right is NOT stored. It is worked out against the key
+    whenever it is needed, so a corrected key corrects the marks."""
+    __tablename__ = "quiz_answers"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "student_id", "qid",
+                         name="uq_quiz_answer"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("assignments.id"),
+                           index=True, nullable=False)
+    student_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    qid = Column(String(16), nullable=False)
+    response = Column(Text, nullable=False, default="")
+    answered_at = Column(DateTime, nullable=False, default=now)
 
 
 # --------------------------------------------------------------------------
