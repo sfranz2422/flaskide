@@ -2101,9 +2101,22 @@ check("  and it is on the air", stranger.get("/api/live/" + posted).get_json().g
 teacher.post("/api/live/%s/stop" % posted)
 again = teacher.post("/api/live/start", json={"body": "print('t')",
                                               "assignment": ahead2}).get_json()
-check("  but a link already taught is not picked up again: Go live starts fresh",
-      again.get("code") not in ("", None, posted), repr(again.get("code")))
-teacher.post("/api/live/%s/stop" % again.get("code"))
+# The link is posted once — Classroom, the class page — and must last the
+# unit. Going live from the editor a second time used to make a new code, and
+# the class sat on the posted link reading "this lesson has ended".
+check("  and a link already taught is picked up again too, not replaced",
+      again.get("code") == posted, repr(again.get("code")))
+check("    back on the air, under the link the class has",
+      stranger.get("/api/live/" + posted).get_json().get("ended") is False)
+check("    with what the editor has now, not last time's file",
+      stranger.get("/api/live/" + posted).get_json().get("body") == "print('t')")
+check("    and the assignment page still shows that same link",
+      "/live/%s\"" % posted in teacher.get("/teacher/" + ahead2).get_data(as_text=True))
+teacher.post("/api/live/%s/stop" % posted)
+nothing = teacher.post("/api/live/start", json={"body": "x"}).get_json()
+check("  Go live with no assignment still starts fresh",
+      nothing.get("code") not in ("", None, posted), repr(nothing.get("code")))
+teacher.post("/api/live/%s/stop" % nothing.get("code"))
 
 # ------------------------------- a lesson never changes its assignment
 print("\nA lesson's code always belongs to its assignment")

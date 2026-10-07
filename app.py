@@ -3260,26 +3260,33 @@ def live_start():
             live.updated_at = _live_now()
             live = None
 
-        # THE LINK MADE AHEAD FOR THIS ASSIGNMENT, if it has never been
-        # taught. The teacher posted it in Classroom yesterday (_lesson_for);
-        # going live on the assignment from here instead of from the
-        # dashboard must not put the class under a new code nobody has,
-        # while the posted link says "not started" all period. Only a link
-        # never taught: anything else would be guessing which old lesson
-        # was meant, which Go live deliberately never does.
+        # THIS ASSIGNMENT'S OWN LINK, taught before or not. The teacher posts
+        # it ahead (_lesson_for) — in Classroom, on the class page — and it
+        # has to keep working for the whole unit. This used to reuse only a
+        # link never taught, and start a new code for one already taught, on
+        # the grounds that anything else was guessing which old lesson was
+        # meant. It is not a guess: an assignment has one lesson, the one its
+        # page shows, and the newest is that one. The cost of the new code
+        # was real and silent — the class sat on the posted link reading
+        # "this lesson has ended" while the teacher taught to nobody, and the
+        # assignment page swapped to the new link so the old one looked
+        # wrong. Go live with no assignment still starts fresh.
         if live is None and item is not None and not reopen:
-            ahead = (db.query(accounts.LiveSession)
-                       .filter_by(host_id=user.id, app=APP_NAME,
-                                  assignment_id=item.id, ended=1, version=0)
-                       .order_by(accounts.LiveSession.id.desc()).first())
-            if ahead is not None:
-                ahead.ended = 0
-                ahead.version = 1
-                ahead.body = body
-                ahead.filename = clean(data.get("filename"), 200) or "main.py"
-                ahead.title = clean(data.get("title"), 200) or ahead.title
-                ahead.host_name = user.display_name()
-                live = ahead
+            own = (db.query(accounts.LiveSession)
+                     .filter_by(host_id=user.id, app=APP_NAME,
+                                assignment_id=item.id)
+                     .order_by(accounts.LiveSession.started_at.desc(),
+                               accounts.LiveSession.id.desc()).first())
+            if own is not None:
+                own.ended = 0
+                # 0 is "made ahead, never taught" (_waiting); a taught one
+                # moves on so every student's poll sees the new file.
+                own.version = (own.version or 0) + 1
+                own.body = body
+                own.filename = clean(data.get("filename"), 200) or "main.py"
+                own.title = clean(data.get("title"), 200) or own.title
+                own.host_name = user.display_name()
+                live = own
 
         if live is None:
             live = accounts.LiveSession(
