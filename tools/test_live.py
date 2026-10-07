@@ -1424,11 +1424,24 @@ check("the editor sends the remembered code when it resumes",
       re.search(r"startLive\(undefined, resumeCode\)", _app_code) is not None
       and "resume: resume" in _app_code)
 check("  and forgets it when the server says that lesson is over",
-      re.search(r"data\.resumed === false\)\s*\{[^}]*removeItem\(\"flaskide-live-host\"\)",
-                _app_code) is not None)
+      re.search(r"data\.resumed === false\)\s*\{[^}]*forgetLive\(\);", _app_code) is not None)
 check("  and forgets it on any page with no Go live button",
-      re.search(r"\}\s*else\s*\{\s*try\s*\{\s*localStorage\.removeItem\(\"flaskide-live-host\"\)",
-                _app_code) is not None)
+      re.search(r'\}\s*else\s*\{\s*try\s*\{\s*sessionStorage\.removeItem\("flaskide-live-host"\);', _app_code)
+      is not None)
+# Only the tab that went live, on the page it went live from, rejoins. The
+# marker was shared by the whole browser, so any editor the teacher opened
+# while live took over the broadcast with its own file — the class watched
+# an untitled default template while the teacher typed in another tab.
+check("the lesson is remembered per tab, not for the whole browser",
+      'sessionStorage.setItem(HOST_KEY, JSON.stringify({ code: code, path: location.pathname }));'
+      in _app_code and "localStorage.setItem(HOST_KEY" not in _app_code
+      and 'localStorage.setItem("flaskide-live-host"' not in _app_code,
+      "any editor tab would take over the class's screens")
+check("  and rejoined only on the page it went live from",
+      'return saved && saved.path === location.pathname ? saved.code : null;' in _app_code
+      and "var resumeCode = liveToResume();" in _app_code)
+check("  and the old shared marker is cleared, so it can never rejoin anything",
+      "try { localStorage.removeItem(HOST_KEY); }" in _app_code)
 
 # The notes pane: the editor sends the project's first .md on every push,
 # and changing only the notes still counts as something to push — otherwise
