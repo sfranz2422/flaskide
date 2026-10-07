@@ -2494,13 +2494,22 @@ def classroom_post(slug):
         topic = str(asked.get("topic") or "")
         if topic and not re.fullmatch(r"[0-9A-Za-z_-]{1,40}", topic):
             return jsonify(error="That isn't one of the class's topics."), 400
-        already = [p for p in _posts(db, item) if p.course_id == course_id]
-        if already:
-            return jsonify(error="It's already posted to %s."
-                           % (already[0].course_name or "that class")), 409
         access, why = _classroom_token(db, user)
         if access is None:
             return jsonify(error=why), 409
+        # Already posted there — unless the Classroom assignment has since been
+        # deleted in Classroom, which is the usual reason to post again. Then
+        # the old record is forgotten and this posts fresh, rather than refusing
+        # with "already posted" about something that no longer exists.
+        already = [p for p in _posts(db, item) if p.course_id == course_id]
+        if already:
+            status, _ = _google_get("%s/courses/%s/courseWork/%s" % (
+                CLASSROOM_API, course_id, already[0].work_id), access)
+            if status != 404:
+                return jsonify(error="It's already posted to %s. If you deleted it "
+                                     "in Classroom, use Unlink first."
+                               % (already[0].course_name or "that class")), 409
+            _forget_post(db, item, already[0])
 
         # Asked of Google rather than trusted from the page: the class's name
         # for the dashboard, and proof that this teacher teaches it.
@@ -2550,6 +2559,22 @@ def classroom_post(slug):
         db.close()
 
 
+def _forget_post(db, item, post):
+    """Stop treating `post` as where this assignment's grades go.
+
+    Only the record here goes: the assignment, its code and notes, every
+    student's work and score stay, and nothing in Google Classroom is
+    touched. Every score is marked not yet in Classroom, because the
+    "✓ in Classroom" it had meant the coursework just forgotten — and a
+    re-post to the same class is new coursework, which has none of them.
+    The next Sync sends them all again; a class still posted gets the same
+    numbers it already has, which changes nothing there."""
+    db.delete(post)
+    (db.query(accounts.Submission).filter_by(assignment_id=item.id)
+       .update({"score_synced": None}, synchronize_session=False))
+    db.commit()
+
+
 def _class_lists(db, item, access):
     """Ask Classroom, for every class this assignment was posted to, who is in
     it and which Classroom submission is theirs.
@@ -2574,8 +2599,7 @@ def _class_lists(db, item, access):
         status, work = _google_get("%s/courseWork/%s" % (base, post.work_id), access)
         if status == 404:
             gone.append(post.course_name or "a class")
-            db.delete(post)
-            db.commit()
+            _forget_post(db, item, post)
             continue
         if status != 200:
             return [], [], set(), ("Google wouldn't say how the assignment "
@@ -2604,6 +2628,32 @@ def _class_lists(db, item, access):
                 emails[email] = by_user.get(st.get("userId"))
         classes.append((post, emails))
     return classes, gone, drafts, ""
+
+
+@app.post("/api/assignment/<slug>/classroom/unlink")
+def classroom_unlink(slug):
+    """Forget one class this assignment was posted to (_forget_post): for a
+    Classroom assignment deleted, or no longer wanted, in Classroom. The
+    assignment itself, and everything students did, is untouched, so it
+    can be posted to that class again, or to another."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        try:
+            post_id = int((request.get_json(silent=True) or {}).get("post"))
+        except (TypeError, ValueError):
+            return jsonify(error="No such class."), 404
+        post = db.query(accounts.ClassroomPost).filter_by(
+            id=post_id, assignment_id=item.id).first()
+        if post is None:
+            return jsonify(error="No such class."), 404
+        name = post.course_name or "that class"
+        _forget_post(db, item, post)
+        return jsonify(ok=True, course=name, left=len(_posts(db, item)))
+    finally:
+        db.close()
 
 
 @app.get("/api/assignment/<slug>/classroom/periods")

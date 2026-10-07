@@ -182,6 +182,7 @@ def fake_api(method, url, token, body=None, params=None):
     for cid, c in room.items():
         if method == "POST" and url == P.CLASSROOM_API + "/courses/%s/courseWork" % cid:
             c["work"] = body
+            c["gone"] = False            # posted again: it exists again
             return 200, {"id": "w-" + cid,
                          "alternateLink": "https://classroom.google.com/c/%s/a/w" % cid}
     if method == "PATCH" and "/studentSubmissions/" in url:
@@ -611,6 +612,57 @@ check("all of them deleted: said so, and every post forgotten",
       and posts() == [])
 check("  so the page offers Post again",
       'id="gc-post"' in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
+
+# Deleted in Classroom with no Sync since: the editor still thinks it is
+# posted. Posting again must notice, rather than refuse "already posted".
+UNLINK = "/api/assignment/%s/classroom/unlink" % hw
+r = teacher.post(POST, json={"course": P4})
+teacher.post(SYNC)
+check("posted to Period 4 again, and synced",
+      r.status_code == 200 and sub_of("kid1@school.org").score_synced is not None)
+room[P4]["gone"] = True
+r = teacher.post(POST, json={"course": P4})
+check("posting again where it was deleted in Classroom posts it fresh",
+      r.status_code == 200 and [p[0] for p in posts()] == [P4]
+      and room[P4]["gone"] is False, r.get_data(as_text=True)[:120])
+check("  and its grades are marked not in Classroom, for the new one",
+      sub_of("kid1@school.org").score_synced is None
+      and sub_of("kid1@school.org").score == 18)
+r = teacher.post(POST, json={"course": P4})
+check("posting where it still exists is refused, and says Unlink",
+      r.status_code == 409 and "Unlink" in r.get_json()["error"])
+
+# Unlink: forget one class here, keep everything else.
+teacher.post(SYNC)
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+pid = None
+db = P.SessionLocal()
+try:
+    pid = db.query(accounts.ClassroomPost).filter_by(assignment_id=assignment().id).first().id
+finally:
+    db.close()
+check("each posted class has an Unlink button",
+      'class="linkbtn gc-unlink" data-post="%d"' % pid in page)
+check("a student cannot unlink", student.post(UNLINK, json={"post": pid}).status_code == 403)
+check("  nor can a post id that is not this assignment's",
+      teacher.post(UNLINK, json={"post": pid + 999}).status_code == 404
+      and teacher.post(UNLINK, json={"post": "x"}).status_code == 404)
+code_before = assignment().code
+calls.clear()
+r = teacher.post(UNLINK, json={"post": pid})
+# Asked first: everything after reads through the assignment.
+_kept = assignment() is not None and assignment().code == code_before
+check("Unlink keeps the assignment, the work and the scores",
+      _kept and sub_of("kid1@school.org") is not None
+      and sub_of("kid1@school.org").score == 18)
+check("  and forgets that class", _kept and r.status_code == 200 and posts() == []
+      and r.get_json().get("left") == 0, r.get_data(as_text=True)[:120])
+check("  marking the scores not in Classroom, ready for a new post",
+      sub_of("kid1@school.org").score_synced is None)
+check("  and nothing is asked of Google: the Classroom side is untouched",
+      calls == [], calls)
+check("  and the page offers Post again",
+      "Posted to" not in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
 
 # A SQL assignment is a FlaskIDE assignment like any other: it posts and its
 # scores go across the same way. Nothing in grading looks at the files.

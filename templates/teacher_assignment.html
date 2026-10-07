@@ -79,9 +79,14 @@
     {% if classroom_on %}
       <div class="gc">
         {% if posts %}
+          {#  Unlink forgets one class here and nothing else: for a Classroom
+              assignment deleted there. The code, notes and students' work stay. #}
           <p>Posted to
             {% for p in posts %}<strong>{{ p.course_name or "a class" }}</strong>{%
-              if p.url %} (<a href="{{ p.url }}" target="_blank" rel="noopener">open</a>){% endif %}{%
+              if p.url %} (<a href="{{ p.url }}" target="_blank" rel="noopener">open</a>){% endif %}
+              <button type="button" class="linkbtn gc-unlink" data-post="{{ p.id }}"
+                      data-name="{{ p.course_name or 'that class' }}"
+                      title="Forget this Classroom post here — for one deleted in Classroom">Unlink</button>{%
               if not loop.last %}, {% endif %}{% endfor %}</p>
           <div class="grade-line">
             <button id="gc-sync" class="btn btn-primary">Sync grades to Classroom</button>
@@ -368,6 +373,21 @@
       }).catch(function () { btn.disabled = false; state.textContent = "Not posted — check your connection"; });
     });
   }
+
+  // Unlinking a class: forget it here, keep everything else.
+  document.querySelectorAll(".gc-unlink").forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (!confirm("Unlink " + b.dataset.name + "? FlaskIDE forgets this Classroom "
+                   + "post: it won't send grades there, and you can post it again. "
+                   + "Nothing in Google Classroom is changed, and this assignment, "
+                   + "your students' work and their scores all stay.")) return;
+      b.disabled = true;
+      post(base + "/classroom/unlink", { post: b.dataset.post }).then(function (out) {
+        if (!out.ok) { b.disabled = false; alert(out.d.error || "Not unlinked"); return; }
+        location.reload();
+      }).catch(function () { b.disabled = false; alert("Not unlinked — check your connection"); });
+    });
+  });
 
   // Sending grades. What happened, said in full: who went across, who could
   // not be matched, and why any were refused.
