@@ -125,6 +125,18 @@
     }
   });
 
+  /* What goes in the brackets (sighint.js), as in the editor. Their own
+     defs come from THEIR tabs only, never the teacher's pane — the same
+     rule as completion below, for the same reason. */
+  window.FlaskIDESigHint.attach(mine, {
+    flask: true,
+    sources: function () {
+      return Object.keys(docs).filter(function (n) { return /\.py$/i.test(n); })
+        .map(function (n) { return docs[n].getValue(); });
+    },
+    isPython: function () { return modeFor(active) === "python"; }
+  });
+
   /* Completion of the student's own names, as in the editor. Their own
      Python is the only source — never the teacher's pane, which would be the
      copy button by another route — and only while a .py tab is open: a word
@@ -1026,6 +1038,18 @@
   // decided by the student's own entry file (see MAIN), not by a setting, so
   // a SQL lesson and a Flask lesson need nothing switched by hand.
 
+  /* The syntax card, over their own editor — never the mirror: it is about
+     their code. `reveal` opens the tab the error is in. */
+  var syntaxCard = window.FlaskIDESyntax.attach({
+    host: mine.getWrapperElement().parentNode,
+    editor: mine,
+    reveal: function (file) {
+      if (!docs[file]) return null;
+      switchTo(file);
+      return docs[file];
+    }
+  });
+
   function write(text, cls) {
     var span = document.createElement("span");
     if (cls) span.className = cls;
@@ -1132,6 +1156,20 @@
         return;
       }
 
+      /* Can Python read it at all? Asked before the app is loaded, so a
+         missing bracket gets a plain-words card over the editor (syntax.js)
+         instead of a traceback from inside Flask. Python's own message
+         still goes in the console. */
+      syntaxCard.clear();
+      var bad = await runtime.check(project, function (note) {
+        if (note) write(note + "\n", "dim");
+      });
+      if (bad) {
+        write("SyntaxError in " + bad.file + " on line " + bad.line + ": " + bad.msg + "\n"
+            + (bad.text.trim() ? "    " + bad.text.trim() + "\n" : ""), "err");
+        syntaxCard.show(bad);
+        return;
+      }
       var res = await runtime.run(project, function (note) {
         if (note) write(note + "\n", "dim");
       });

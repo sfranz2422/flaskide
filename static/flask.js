@@ -367,6 +367,29 @@ def _flaskide_write(files):
             fh.write(text)
 
 
+def _flaskide_check(files_json):
+    """The first syntax error in the project's Python files, as JSON, or ''
+    when Python can read them all. Run BEFORE the app is loaded, by the page,
+    for syntax.js's card. Compiles only and never runs anything: the card is
+    for code Python cannot read at all, and what a program does is never its
+    business. app.py first, then the other .py files by name."""
+    files = json.loads(files_json)
+    names = sorted(n for n in files if n.endswith('.py') and isinstance(files[n], str))
+    if 'app.py' in names:
+        names.remove('app.py')
+        names.insert(0, 'app.py')
+    for name in names:
+        try:
+            compile(files[name], name, 'exec')
+        except SyntaxError as err:
+            return json.dumps({
+                'file': name, 'kind': type(err).__name__, 'msg': err.msg or '',
+                'line': err.lineno or 0, 'col': err.offset or 0,
+                'end_line': err.end_lineno or 0, 'end_col': err.end_offset or 0,
+                'text': (err.text or '').rstrip('\\n'),
+            })
+    return ''
+
 def _flaskide_load(files_json):
     """Write the files, import app.py, and find the Flask object in it."""
     from flask import Flask
@@ -513,6 +536,23 @@ def _flaskide_trace():
     return JSON.parse(raw);
   }
 
+  /* Can Python read every .py file? The first syntax error as an object
+     (see _flaskide_check), or null. Boots Python if this is the first Run,
+     as run() would have. A check that breaks says null: it must never be
+     the thing that stops a Run. */
+  async function check(files, report) {
+    const py = await boot(report);
+    try {
+      py.globals.set("_files_json", JSON.stringify(files));
+      const raw = py.runPython("_flaskide_check(_files_json)");
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    } finally {
+      py.globals.delete("_files_json");
+    }
+  }
+
   window.FlaskIDERuntime = { boot, run, runSql, request, setOutput, isReady,
-                             PROJECT };
+                             check, PROJECT };
 })();

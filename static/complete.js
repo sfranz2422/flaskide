@@ -2,8 +2,9 @@
  *
  * The same idea as PyIDE's: only their own names — variables, loop targets,
  * unpacked tuples, with-as and except-as targets, functions and their
- * parameters, classes, imports. No builtins, no Flask API, no signature
- * help. The point is to stop NameError typos, not to write the program.
+ * parameters, classes, imports. No builtins, no Flask API. The point is to
+ * stop NameError typos, not to write the program. What goes in a call's
+ * brackets is sighint.js's, which shows it without inserting anything.
  *
  * WHY THIS IS NOT PYTHON'S OWN `ast`, AS IT IS IN PYIDE
  *

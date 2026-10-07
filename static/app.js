@@ -96,6 +96,7 @@
    *
    * The author still edits it: Edit source puts the markdown in the editor
    * and the notes re-render as they type, the way PyIDE does it. */
+  var syntaxCard = null;      // made once the editor exists; see below
   var notesShown = null;      // the .md on the right, or null for the preview
   var mdSource = false;       // the author has that .md open in the editor
   var lastCode = null;        // the code file to go back to from the source
@@ -393,6 +394,20 @@
       return;
     }
     try {
+      /* Can Python read it at all? Asked before the app is loaded, so a
+         missing bracket gets a plain-words card over the editor (syntax.js)
+         instead of a traceback from inside Flask. Python's own message
+         still goes in the console. */
+      syntaxCard.clear();
+      var bad = await runtime.check(project.files, function (note) {
+        if (note) say(note + "\n", "dim");
+      });
+      if (bad) {
+        say("SyntaxError in " + bad.file + " on line " + bad.line + ": " + bad.msg + "\n"
+            + (bad.text.trim() ? "    " + bad.text.trim() + "\n" : ""), "err");
+        syntaxCard.show(bad);
+        return;
+      }
       var res = await runtime.run(project.files, function (note) {
         if (note) say(note + "\n", "dim");
       });
@@ -706,6 +721,20 @@
     });
     editor.setValue(files[current] || "");
 
+    /* What goes in the brackets, above the line while a call is typed
+       (sighint.js): Python's own, Flask's, sqlite3's, and their own defs
+       from every .py file. */
+    window.FlaskIDESigHint.attach(editor, {
+      flask: true,
+      // files[current] is already up to date: the change handler above
+      // runs before the cursor moves, which is when this is asked.
+      sources: function () {
+        return Object.keys(files).filter(function (n) { return /\.py$/i.test(n); })
+          .map(function (n) { return files[n]; });
+      },
+      isPython: function () { return /\.py$/i.test(current); }
+    });
+
     /* Completion of the student's own names, in .py files only — the open
        file is asked on every keystroke, because switching tabs changes it
        under the same editor. Every .py in the project counts, so a name
@@ -729,6 +758,18 @@
 
     paintTabs();
     if ($("notes-edit")) $("notes-edit").addEventListener("click", toggleSource);
+
+    /* The syntax card, over the editor. `reveal` opens the file the error
+       is in, so an error in models.py is shown in models.py. */
+    syntaxCard = window.FlaskIDESyntax.attach({
+      host: editor.getWrapperElement().parentNode,
+      editor: editor,
+      reveal: function (file) {
+        if (!(file in files)) return null;
+        if (file !== current) openFile(file);
+        return editor.getDoc();
+      }
+    });
 
     /* An assignment opens on its notes, or nobody reads them. Not for the
        author: the notes are theirs, and they came to work on the code. */
