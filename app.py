@@ -3342,6 +3342,23 @@ def _title_of_assignment(db, assignment_id):
     return row.title if row else ""
 
 
+def _newest_lesson(db, host_id, assignment_id):
+    """The assignment's lesson: the newest one its teacher has for it.
+
+    ONE ASSIGNMENT, ONE LESSON. Every way in goes here — the assignment
+    page's link (_lesson_for), Go live (live_start), and any older link for
+    the same assignment, which the class page and the poll send on to this
+    one (live_page, live_poll). Older rows exist: before Go live reused a
+    taught lesson, teaching one again made a new code, and the link posted
+    in Classroom for one section kept opening the old row — ended, holding
+    another section's last code — while the teacher taught in the new one.
+    """
+    return (db.query(accounts.LiveSession)
+              .filter_by(host_id=host_id, app=APP_NAME, assignment_id=assignment_id)
+              .order_by(accounts.LiveSession.started_at.desc(),
+                        accounts.LiveSession.id.desc()).first())
+
+
 def _lesson_for(db, user, item):
     """The live lesson for this assignment, made now if it has none.
 
@@ -3355,10 +3372,7 @@ def _lesson_for(db, user, item):
     a new one made, because the link a class has is the one that must keep
     working (the same rule as Teach this lesson again).
     """
-    live = (db.query(accounts.LiveSession)
-              .filter_by(host_id=user.id, app=APP_NAME, assignment_id=item.id)
-              .order_by(accounts.LiveSession.started_at.desc(),
-                        accounts.LiveSession.id.desc()).first())
+    live = _newest_lesson(db, user.id, item.id)
     if live is None:
         live = accounts.LiveSession(
             code=accounts.new_id(db, accounts.LiveSession, "code"),
@@ -3522,12 +3536,22 @@ def live_start():
         # "this lesson has ended" while the teacher taught to nobody, and the
         # assignment page swapped to the new link so the old one looked
         # wrong. Go live with no assignment still starts fresh.
-        if live is None and item is not None and not reopen:
-            own = (db.query(accounts.LiveSession)
-                     .filter_by(host_id=user.id, app=APP_NAME,
-                                assignment_id=item.id)
-                     .order_by(accounts.LiveSession.started_at.desc(),
-                               accounts.LiveSession.id.desc()).first())
+        #
+        # And the lesson already open, or the one reopened from its link, is
+        # swapped for that one when it is an older row for the assignment
+        # (see _newest_lesson): the class is sent to the newest, so teaching
+        # anywhere else would be teaching to an empty room. A resume too: it
+        # only gets this far for a lesson already on the air, and carrying on
+        # in an older row would be carrying on where the class can't follow.
+        target = item.id if item is not None else None
+        if (live is not None and live.assignment_id is not None
+                and _newest_lesson(db, user.id, live.assignment_id).id != live.id):
+            target = live.assignment_id
+            live.ended = 1
+            live.updated_at = _live_now()
+            live = None
+        if live is None and target is not None:
+            own = _newest_lesson(db, user.id, target)
             if own is not None:
                 own.ended = 0
                 # 0 is "made ahead, never taught" (_waiting); a taught one
@@ -3762,6 +3786,14 @@ def live_poll(code):
 
         if seen == live.version and not live.ended:
             return ("", 304)
+        # A page left open on an older link for the assignment is sent on to
+        # its lesson, as live_page sends one opened there. Only asked of an
+        # ended row: an older one always is (live_start ends it), and that
+        # keeps the extra query off the once-a-second poll of a lesson on air.
+        if live.ended and live.assignment_id:
+            newest = _newest_lesson(db, live.host_id, live.assignment_id)
+            if newest is not None and newest.id != live.id:
+                return jsonify(moved=newest.code, ended=True)
         return jsonify(
             version=live.version,
             body=live.body,
@@ -3929,6 +3961,11 @@ def live_page(code):
         live = _find_live(db, code)
         if live is None:
             return redirect(url_for("live_join", error="No lesson with that code."))
+        # An older link for the assignment opens its lesson (_newest_lesson).
+        if live.assignment_id:
+            newest = _newest_lesson(db, live.host_id, live.assignment_id)
+            if newest is not None and newest.id != live.id:
+                return redirect(url_for("live_page", code=newest.code))
         user = current_user(db)
         item = None
         submitted_at = ""

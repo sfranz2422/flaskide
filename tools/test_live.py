@@ -1414,9 +1414,10 @@ check("the Run button comes back when the request is answered",
       "setBusy(false)" in live_code,
       "otherwise it stays disabled and the lesson looks frozen")
 
-check("a finished lesson stops the polling",
-      'throw new Error("ended")' in live_code,
-      "thirty browsers polling an ended lesson until home time")
+# An ended lesson used to stop the polling, and that is what left a class on
+# yesterday's code: they opened the link before their teacher pressed Go
+# live, saw "Lesson ended", and nothing ever asked again. It keeps asking now,
+# slowly — see the poll run for real under "an ended lesson keeps checking".
 
 # Resuming (see "Resuming after a reload" above): the editor's half.
 _app_code = code_only(open(os.path.join(HERE, "..", "static", "app.js")).read())
@@ -2053,10 +2054,7 @@ check("  and not the teacher's open lesson, so Go live elsewhere is untouched",
 poll = stranger.get("/api/live/" + AHEAD).get_json()
 check("a student opening it early is told it has not started",
       poll.get("ended") is True and poll.get("waiting") is True, repr(poll)[:120])
-check("  and their page keeps checking, slowly, rather than giving up",
-      re.search(r"if \(data\.ended && data\.waiting\) \{\s*waiting = true;", live_code) is not None
-      and "setTimeout(poll, waiting ? WAITING_MS : POLL_MS);" in live_code,
-      "a student who opened the link early would sit on a dead page")
+# (and that their page keeps checking, slowly: the poll, run for real, below)
 host = teacher.get("/live/" + AHEAD).get_data(as_text=True)
 check("its teacher, opening it, is offered Start this lesson",
       "Start this lesson" in host and "Ready when you are" in host)
@@ -2161,6 +2159,177 @@ teacher.post("/api/live/%s/stop" % la)
 check("a lesson made ahead and never taught does not offer it",
       'id="live-reset"' not in teacher.get("/teacher/" + teacher.post(
           "/api/assignment", json={"title": "C", "files": {"app.py": "x = 1"}}).get_json()["slug"]).get_data(as_text=True))
+
+# ------------------------------------------ an ended lesson keeps checking
+# live.js's start-up mirror and its poll, lifted and run in node against
+# scripted answers. What the class sees, what the chip says, and how soon it
+# asks again — the three things that left a class on yesterday's code.
+_pm = re.search(r'(  var everLive = !L\.ended;.*?\n  poll\(\);\n)', _live_now_js, re.S)
+if shutil.which("node") and _pm:
+    harness = """
+var scripts = %s, out = {};
+function settle() { return new Promise(function (r) { setImmediate(r); }); }
+async function run(name) {
+  var c = scripts[name], answers = c.answers.slice(), log = [];
+  var shownPageId = "";
+  var L = c.L, seen = -1, shown = [], state = "", next = null, moved = null;
+  var stateChip = {get textContent() { return state; }};
+  function setState(t) { state = t; }
+  function showMirror(d) { shown.push(d.body); seen = d.version; }
+  var location = {replace: function (u) { moved = u; }};
+  function setTimeout(fn, ms) { next = {fn: fn, ms: ms}; }
+  function fetch() {
+    var a = answers.shift();
+    if (a === 304) return Promise.resolve({status: 304, ok: false});
+    return Promise.resolve({status: 200, ok: true,
+                            json: function () { return Promise.resolve(a); }});
+  }
+  %s
+  for (;;) {
+    for (var i = 0; i < 6; i++) await settle();
+    log.push({shown: shown.slice(), state: state, next: next ? next.ms : null,
+              moved: moved});
+    if (!next || !answers.length) break;
+    var n = next; next = null; n.fn();
+  }
+  out[name] = log;
+}
+(async function () {
+  for (var k of Object.keys(scripts)) await run(k);
+  console.log(JSON.stringify(out));
+})();
+""" % (json.dumps({
+        # Opened before the teacher went live: yesterday's row, ended.
+        "early": {"L": {"ended": True, "body": "yesterday", "version": 5},
+                  "answers": [{"ended": True, "waiting": False, "body": "yesterday", "version": 5},
+                              {"ended": False, "body": "today", "version": 9}]},
+        # Watched it live, then the teacher ended it, then taught it again.
+        "watched": {"L": {"ended": False, "body": "live", "version": 5},
+                    "answers": [{"ended": True, "body": "final", "version": 6},
+                                {"ended": False, "body": "again", "version": 7}]},
+        "made_ahead": {"L": {"ended": True, "waiting": True, "body": "", "version": 0},
+                       "answers": [{"ended": True, "waiting": True, "body": "", "version": 0}]},
+        "older_link": {"L": {"ended": True, "body": "old", "version": 5},
+                       "answers": [{"moved": "NEW1", "ended": True}]},
+    }), _pm.group(1))
+    res = subprocess.run(["node", "-e", harness], capture_output=True, text=True)
+    got = json.loads(res.stdout or "{}") if res.returncode == 0 else {}
+    e = got.get("early", [{}, {}])
+    check("opened before the teacher goes live: no leftover code on screen",
+          e[0].get("shown") == [] and e[0].get("state") == "Not started yet",
+          e or res.stderr[-300:])
+    check("  and it keeps checking every few seconds",
+          e[0].get("next") == 5000, e)
+    check("  so the class gets today's code when the teacher goes live",
+          len(e) > 1 and e[1].get("shown") == ["today"] and e[1].get("state") == "Live"
+          and e[1].get("next") == 1000, e)
+    w = got.get("watched", [{}, {}])
+    check("watched it end: the last code stays on screen",
+          w[0].get("shown") == ["live", "final"] and w[0].get("state") == "Lesson ended", w)
+    check("  and it keeps checking, so teaching it again brings the class along",
+          w[0].get("next") == 5000 and len(w) > 1
+          and w[1].get("shown")[-1:] == ["again"] and w[1].get("state") == "Live", w)
+    m = got.get("made_ahead", [{}])
+    check("made ahead and never taught: told it has not started, checked slowly",
+          m[0].get("state") == "Not started yet" and m[0].get("next") == 15000, m)
+    o = got.get("older_link", [{}])
+    check("an older link for the assignment goes on to its lesson, and stops asking",
+          o[0].get("moved") == "/live/NEW1" and o[0].get("next") is None, o)
+    # The slides page (lesson.js) polls the same way. Its poll drives the
+    # slide viewer, so it is read rather than run: it must follow a moved
+    # link, and keep asking after an ended lesson.
+    _lj = open(os.path.join(FLASKIDE, "static", "lesson.js")).read()
+    check("the slides page follows an older link on, too",
+          re.search(r'if \(data\.moved\) \{\s*moving = true;\s*location\.replace\("/live/"',
+                    _lj) is not None)
+    check("  and keeps checking after the lesson ends",
+          re.search(r'if \(data\.ended\) \{[^}]*pace = ENDED_MS;[^}]*return;', _lj) is not None
+          and 'throw new Error("ended")' not in _lj
+          and "setTimeout(poll, pace);" in _lj)
+else:
+    check("node is available to run the live page's poll", bool(_pm),
+          "brew install node" if _pm else "the block in live.js moved")
+
+
+# ------------------------------------- one assignment, one lesson, every link
+# Before Go live reused a taught lesson, teaching one again made a new code,
+# so an assignment can have older lesson rows whose links are still out —
+# posted in Classroom for one section. A class on one of those sat looking
+# at another section's code from yesterday while the teacher taught in the
+# new one. Every link for the assignment now leads to its newest lesson.
+print("\nOlder links for an assignment lead to its lesson")
+from urllib.parse import parse_qs, urlparse                   # noqa: E402
+db = F.SessionLocal()
+try:
+    db.query(accounts.LiveSession).filter_by(host_id=TEACHER).update({"ended": 1})
+    db.commit()
+finally:
+    db.close()
+asg_old = teacher.post("/api/assignment", json={"title": "Lists", "files": {"app.py": "starter\n"}}).get_json()["slug"]
+_go = teacher.get("/teacher/%s/live" % asg_old).headers.get("Location", "")
+OLD = parse_qs(urlparse(_go).query).get("teach", [""])[0]
+teacher.post("/api/live/start", json={"reopen": OLD, "body": "yesterday's code"})
+teacher.post("/api/live/%s/stop" % OLD)
+db = F.SessionLocal()
+try:
+    _o = db.query(accounts.LiveSession).filter_by(code=OLD).first()
+    _new = accounts.LiveSession(
+        code="newer1", app=F.APP_NAME, host_id=TEACHER, host_name="T", title="Lists",
+        body="the other section's code", filename="main.py", version=50, ended=1,
+        assignment_id=_o.assignment_id,
+        started_at=_o.started_at + F.timedelta(hours=1))
+    db.add(_new)
+    db.commit()
+finally:
+    db.close()
+r = stranger.get("/live/" + OLD)
+check("an older link for the assignment opens its newest lesson",
+      r.status_code == 302 and r.headers.get("Location", "").endswith("/live/newer1"),
+      (r.status_code, r.headers.get("Location")))
+check("  for its teacher too, so Teach again teaches where the class is",
+      teacher.get("/live/" + OLD).headers.get("Location", "").endswith("/live/newer1"))
+check("  the newest one opens as itself",
+      stranger.get("/live/newer1").status_code == 200)
+d = stranger.get("/api/live/%s?v=-1" % OLD).get_json()
+check("a page already open on the older link is told where it moved",
+      d.get("moved") == "newer1" and "body" not in d, d)
+check("  and the newest is told nothing of the kind",
+      "moved" not in stranger.get("/api/live/newer1?v=-1").get_json())
+check("the assignment page's own link is the newest",
+      "/live/newer1" in teacher.get("/teacher/" + asg_old).get_data(as_text=True))
+
+# Teach again from the older link, as an old bookmark would.
+r = teacher.post("/api/live/start", json={"reopen": OLD, "body": "today's code"}).get_json()
+check("reopening the older one goes live in the newest instead",
+      r.get("code") == "newer1" and lesson_row("newer1").ended == 0
+      and lesson_row("newer1").body == "today's code" and lesson_row(OLD).ended == 1, r)
+teacher.post("/api/live/newer1/stop")
+
+# An older row left open (yesterday, never ended), then Go live on the
+# assignment: the class is on the newest, so that is where it goes.
+set_row(OLD, ended=0)
+r = teacher.post("/api/live/start", json={"assignment": asg_old, "body": "starter\n"}).get_json()
+check("Go live with an older lesson still open moves to the newest",
+      r.get("code") == "newer1" and lesson_row(OLD).ended == 1
+      and lesson_row("newer1").ended == 0 and lesson_row("newer1").body == "starter\n", r)
+check("  leaving one open lesson, not two", open_lessons(TEACHER) == 1)
+check("a resume of an ended lesson still gets nothing",
+      teacher.post("/api/live/start", json={"resume": OLD}).get_json().get("resumed") is False)
+teacher.post("/api/live/newer1/stop")
+# The editor reloaded while an older row was the one open: carrying on there
+# would be teaching where every link sends the class away from.
+set_row(OLD, ended=0)
+r = teacher.post("/api/live/start", json={"resume": OLD, "body": "mid-lesson"}).get_json()
+check("a resume of an older open lesson carries on in the newest",
+      r.get("code") == "newer1" and lesson_row(OLD).ended == 1
+      and lesson_row("newer1").body == "mid-lesson", r)
+teacher.post("/api/live/newer1/stop")
+
+_plain = teacher.post("/api/live/start", json={"assignment": "", "body": "x"}).get_json()["code"]
+teacher.post("/api/live/%s/stop" % _plain)
+check("a lesson with no assignment opens as itself",
+      stranger.get("/live/" + _plain).status_code == 200
+      and "moved" not in stranger.get("/api/live/%s?v=-1" % _plain).get_json())
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

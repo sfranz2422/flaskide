@@ -956,7 +956,13 @@
     stateChip.className = "chip live-chip" + (kind ? " live-" + kind : "");
   }
 
-  if (typeof L.body === "string") {
+  /* NOT ON AIR WHEN THIS PAGE OPENED: show nothing of it. What an ended
+     lesson holds is where it last stopped — for a lesson taught to several
+     sections, another section's code from yesterday, which a class opening
+     the link before their teacher goes live took for today's. A page that
+     watched the lesson end keeps its last code (poll, below). */
+  var everLive = !L.ended;
+  if (typeof L.body === "string" && everLive) {
     showMirror({ body: L.body, version: L.version, filename: L.filename,
                  notes: L.notes, slide: L.slide, output: L.output,
                  cursor: L.cursor,
@@ -972,7 +978,13 @@
      tab opened the night before would ask all night — and the lesson
      appears within a few seconds of the teacher starting it. */
   var WAITING_MS = 15000;
-  var waiting = false;
+  /* An ended lesson keeps checking too. It used to stop, so a class that
+     opened the link before their teacher pressed Go live sat on "Lesson
+     ended" — and the last lesson's code — for the whole lesson, and only a
+     reload brought it up. Teaching it again reopens the same link. */
+  var ENDED_MS = 5000;
+  var pace = POLL_MS;        // set by each answer: how soon to ask again
+  var moving = false;        // sent on to another link; this page is done
   var misses = 0;
 
 
@@ -982,7 +994,8 @@
       .then(function (res) {
         if (res.status === 304) {         // the usual answer: nothing new
           misses = 0;
-          waiting = false;                // only a lesson on the air says 304
+          pace = POLL_MS;                 // only a lesson on the air says 304
+          everLive = true;
           setState("Live", "on");
           return null;
         }
@@ -996,25 +1009,32 @@
       .then(function (data) {
         misses = 0;
         if (!data) return;
-        if (data.ended && data.waiting) {
-          waiting = true;
+        // An older link for this assignment: on to its lesson (live_poll).
+        if (data.moved) {
+          moving = true;
+          location.replace("/live/" + encodeURIComponent(data.moved));
+          return;
+        }
+        // Made ahead and never taught, or not on air since this page
+        // opened: nothing of it is shown until the teacher goes live.
+        if (data.ended && (data.waiting || !everLive)) {
+          pace = data.waiting ? WAITING_MS : ENDED_MS;
           setState("Not started yet", "wait");
           return;
         }
-        waiting = false;
         if (data.ended) {
+          pace = ENDED_MS;
           showMirror(data);
           setState("Lesson ended", "off");
-          // Stop asking. The row is not going to change again, and thirty
-          // browsers politely polling a finished lesson until home time is
-          // exactly the kind of traffic nobody notices they are paying for.
-          throw new Error("ended");
+          return;
         }
+        pace = POLL_MS;
+        everLive = true;
         showMirror(data);
         setState("Live", "on");
       })
       .catch(function (err) {
-        if (err && (err.message === "ended" || err.message === "gone")) return;
+        if (err && err.message === "gone") return;
         // A dropped poll is normal on school wifi and says nothing about the
         // lesson. Only a run of them is worth telling anyone about, and the
         // next success clears it.
@@ -1022,9 +1042,9 @@
         if (misses >= 3) setState("Reconnecting…", "wait");
       })
       .finally(function () {
-        if (stateChip && stateChip.textContent === "Lesson ended") return;
         if (stateChip && stateChip.textContent === "Lesson not found") return;
-        setTimeout(poll, waiting ? WAITING_MS : POLL_MS);
+        if (moving) return;
+        setTimeout(poll, pace);
       });
   }
 

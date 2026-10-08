@@ -119,11 +119,14 @@
 
   apply({ notes: "", slide: L.slide });
 
-  var POLL_MS = 1000, WAITING_MS = 15000;
+  // ENDED_MS: an ended lesson keeps checking, so teaching it again brings
+  // the class along without a reload (the same as live.js).
+  var POLL_MS = 1000, WAITING_MS = 15000, ENDED_MS = 5000, pace = POLL_MS;
+  var moving = false;      // sent on to another link; this page is done
   function poll() {
     fetch("/api/live/" + encodeURIComponent(L.live) + "?v=" + seen, { cache: "no-store" })
       .then(function (res) {
-        if (res.status === 304) { misses = 0; waiting = false; setState("Live", "on"); return null; }
+        if (res.status === 304) { misses = 0; waiting = false; pace = POLL_MS; setState("Live", "on"); return null; }
         if (res.status === 404) { setState("Lesson not found", "off"); throw new Error("gone"); }
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
@@ -131,26 +134,34 @@
       .then(function (data) {
         misses = 0;
         if (!data) return;
-        if (data.ended && data.waiting) { waiting = true; setState("Not started yet", "wait"); return; }
+        // An older link for this assignment: on to its lesson (live_poll).
+        if (data.moved) {
+          moving = true;
+          location.replace("/live/" + encodeURIComponent(data.moved));
+          return;
+        }
+        if (data.ended && data.waiting) { waiting = true; pace = WAITING_MS; setState("Not started yet", "wait"); return; }
         waiting = false;
         seen = data.version;
         apply(data);
         if (data.ended) {
-          // The slides stay; they stop following, and stop asking.
+          // The slides stay and stop following, but it keeps asking.
+          pace = ENDED_MS;
           setState("Lesson ended", "off");
-          throw new Error("ended");
+          return;
         }
+        pace = POLL_MS;
         setState("Live", "on");
       })
       .catch(function (err) {
-        if (err && (err.message === "ended" || err.message === "gone")) return;
+        if (err && err.message === "gone") return;
         misses += 1;
         if (misses >= 3) setState("Reconnecting…", "wait");
       })
       .finally(function () {
         var t = state.textContent;
-        if (t === "Lesson ended" || t === "Lesson not found") return;
-        setTimeout(poll, waiting ? WAITING_MS : POLL_MS);
+        if (t === "Lesson not found" || moving) return;
+        setTimeout(poll, pace);
       });
   }
   poll();
