@@ -742,6 +742,10 @@ def auth_callback():
             user.email = email                   # a school can rename a mailbox
             user.name = info.get("name") or user.name
             user.last_seen = accounts.now()
+        # Kept apart for Skyward, which matches on exactly these. A token
+        # without them keeps what was there rather than blanking it.
+        user.first_name = (info.get("given_name") or user.first_name or "")[:80]
+        user.last_name = (info.get("family_name") or user.last_name or "")[:80]
         db.commit()
         session["uid"] = user.id
     finally:
@@ -2973,6 +2977,139 @@ def classroom_sync(slug):
                                if _is_synced(s, totals[s.id])])
     finally:
         db.close()
+
+
+# --------------------------------------------------------------------------
+# Skyward
+#
+# Skyward's gradebook takes scores from a file: Assignment Import, template
+# "Import Scores and Create Assignments", seven columns and no header row —
+#
+#     last name, first name, assignment, due date (MMDDYYYY), category,
+#     max score, score
+#
+# It matches a student on the two names alone, against the class picked on
+# its own import screen. A row it can't match is refused on its own ("Unable
+# to find a matching student") and the rest still go in, which is what makes
+# a guessed name safe to send: the worst case is one student left for the
+# teacher to type, named in Skyward's preview before anything is saved.
+# --------------------------------------------------------------------------
+
+#: What a category code may look like. Skyward's are short codes the
+#: district sets per class (N, Prj, Q); anything longer is a typo or a
+#: description pasted in by mistake, and would make every row fail.
+SKYWARD_CATEGORY = re.compile(r"^[A-Za-z0-9]{1,10}$")
+
+
+def _split_name(full):
+    """(first, last) guessed from one full name: the last word is the last
+    name. Wrong for "Ana De La Cruz", which is why it is only a fallback and
+    the student is named as guessed."""
+    words = (full or "").split()
+    if len(words) < 2:
+        return "", ""
+    return " ".join(words[:-1]), words[-1]
+
+
+@app.post("/api/assignment/<slug>/skyward")
+def skyward_file(slug):
+    """The scores as a Skyward import file, with what the teacher should know
+    before using it. Returned as JSON (the page saves `csv` as a file) so an
+    error, or a list of guessed names, can be shown rather than downloaded.
+
+    `post` narrows it to one Classroom class: Skyward imports into one class
+    section at a time, and every other section's students would come back as
+    unmatched rows. That class's roster also fills in first and last names
+    for students who haven't signed in since names were kept, and keeps
+    them, so the next file needs no Google at all.
+    """
+    import csv
+    import io
+
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        if not item.out_of:
+            return jsonify(error="Set what it's out of first — Skyward needs "
+                                 "a max score."), 400
+        data = request.get_json(silent=True) or {}
+        category = (data.get("category") or "").strip()
+        if not SKYWARD_CATEGORY.match(category):
+            return jsonify(error="Type the category code Skyward uses for this "
+                                 "class, like N, Prj or Q."), 400
+        try:
+            due = datetime.strptime(str(data.get("due") or ""), "%Y-%m-%d")
+        except ValueError:
+            return jsonify(error="Pick a due date."), 400
+
+        roster = None              # {email: (first, last)} for one class
+        wanted = data.get("post")
+        if wanted:
+            post = next((p for p in _posts(db, item) if str(p.id) == str(wanted)),
+                        None)
+            if post is None:
+                return jsonify(error="That class isn't one this was posted to."), 400
+            access, why = _classroom_token(db, user)
+            if access is None:
+                return jsonify(error=why), 409
+            people, status = _google_list(
+                "%s/courses/%s/students" % (CLASSROOM_API, post.course_id),
+                access, "students")
+            if status != 200:
+                return jsonify(error="Google wouldn't list the students in %s."
+                                     % (post.course_name or "that class")), 502
+            roster = {}
+            for st in people:
+                prof = st.get("profile") or {}
+                email = (prof.get("emailAddress") or "").lower()
+                name = prof.get("name") or {}
+                if email:
+                    roster[email] = ((name.get("givenName") or "").strip(),
+                                     (name.get("familyName") or "").strip())
+
+        rows = (db.query(accounts.Submission, accounts.User)
+                  .join(accounts.User, accounts.Submission.student_id == accounts.User.id)
+                  .filter(accounts.Submission.assignment_id == item.id).all())
+        earned = _quiz_earned(db, item.id)
+        lines, guessed, ungraded, nameless = [], [], [], []
+        for sub, student in rows:
+            email = student.email.lower()
+            if roster is not None and email not in roster:
+                continue                   # another section's student
+            total = _total(sub.score, earned.get(sub.student_id))
+            if total is None:
+                ungraded.append(student.display_name())
+                continue
+            first, last = student.first_name, student.last_name
+            if not (first and last) and roster and all(roster[email]):
+                first, last = roster[email]
+                student.first_name, student.last_name = first[:80], last[:80]
+            if not (first and last):
+                first, last = _split_name(student.name)
+                if not (first and last):
+                    nameless.append(student.display_name())
+                    continue               # nothing to match on at all
+                guessed.append(student.display_name())
+            lines.append([last, first, item.title, due.strftime("%m%d%Y"),
+                          category, item.out_of, _score_text(total)])
+        db.commit()                        # names learned from the roster
+
+        lines.sort(key=lambda r: (r[0].lower(), r[1].lower()))
+        out = io.StringIO()
+        csv.writer(out, lineterminator="\r\n").writerows(lines)
+        return jsonify(csv=out.getvalue(), count=len(lines),
+                       guessed=sorted(guessed), ungraded=sorted(ungraded),
+                       nameless=sorted(nameless),
+                       filename=_safe_filename(item.title) + " - Skyward.csv")
+    finally:
+        db.close()
+
+
+def _safe_filename(title):
+    """A title as a file name every OS will save."""
+    return re.sub(r'[\\/:*?"<>|]+', "-", title).strip(" .-") or "assignment"
 
 
 # --------------------------------------------------------------------------

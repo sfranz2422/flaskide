@@ -148,6 +148,39 @@
         {% endif %}
       </div>
     {% endif %}
+
+    {#  Skyward takes scores from a file it imports into one class section;
+        see skyward_file in app.py for the format and why names are enough. #}
+    {% if assignment.out_of %}
+      <div class="gc skyward">
+        <div class="grade-line">
+          <label for="sky-cat">Skyward category</label>
+          <input id="sky-cat" class="field" list="sky-cats" size="5" maxlength="10"
+                 placeholder="N" autocomplete="off">
+          <datalist id="sky-cats">
+            <option value="N">Notes</option>
+            <option value="Prj">Project</option>
+            <option value="Q">Quiz</option>
+          </datalist>
+          <label for="sky-due">Due</label>
+          <input id="sky-due" class="field" type="date">
+          {% if posts %}
+            <select id="sky-post" class="field" aria-label="Which class">
+              {% for p in posts %}<option value="{{ p.id }}">{{ p.course_name or "A class" }}</option>{% endfor %}
+              <option value="">Everyone, all classes</option>
+            </select>
+          {% endif %}
+          <button id="sky-get" class="btn">Download for Skyward</button>
+        </div>
+        <p id="sky-state" class="small" hidden></p>
+        <p class="dim small">In Skyward: Assignment Import, template
+          <strong>Import Scores and Create Assignments</strong>, the same class,
+          and leave <em>Import File Has Header Row</em> unticked. Students are
+          matched by first and last name; Skyward's preview shows any it can't
+          match before anything is saved. Import each assignment once — a second
+          import would make it again.</p>
+      </div>
+    {% endif %}
   </section>
 
   <section>
@@ -317,6 +350,62 @@
         location.reload();
       }).catch(function () { state.textContent = "Not saved — check your connection"; });
   });
+
+  /* Skyward. The file comes back as JSON so a mistake, or the students
+     whose names had to be guessed, can be said here instead of being
+     buried in a download. The category is remembered per browser: it is
+     usually the same few codes, and only this teacher uses this page. */
+  (function () {
+    var get = document.getElementById("sky-get");
+    if (!get) return;
+    var cat = document.getElementById("sky-cat");
+    var due = document.getElementById("sky-due");
+    var which = document.getElementById("sky-post");
+    var state = document.getElementById("sky-state");
+    try { cat.value = localStorage.getItem("skyward-category") || ""; } catch (e) {}
+    var d = new Date();
+    due.value = d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2)
+                + "-" + ("0" + d.getDate()).slice(-2);
+
+    function say(text) {
+      state.hidden = !text;
+      state.textContent = text;
+    }
+
+    get.addEventListener("click", function () {
+      get.disabled = true;
+      say("Making the file…");
+      post(base + "/skyward", { category: cat.value.trim(), due: due.value,
+                                post: which ? which.value : "" })
+        .then(function (out) {
+          get.disabled = false;
+          if (!out.ok) { say(out.d.error || "Couldn't make the file."); return; }
+          try { localStorage.setItem("skyward-category", cat.value.trim()); } catch (e) {}
+          if (!out.d.count) { say("Nobody here has a score yet, so there's nothing to import."); return; }
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([out.d.csv], { type: "text/csv" }));
+          a.download = out.d.filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          var parts = [out.d.count + (out.d.count === 1 ? " score" : " scores") + " in the file."];
+          if (out.d.guessed.length) {
+            parts.push("Names guessed from the full name — check these in Skyward's preview: "
+                       + out.d.guessed.join(", ") + ". They'll be exact once they sign in again.");
+          }
+          if (out.d.nameless.length) {
+            parts.push("Left out, no name to match on: " + out.d.nameless.join(", ") + ".");
+          }
+          if (out.d.ungraded.length) {
+            parts.push("Not scored yet, so not in the file: " + out.d.ungraded.join(", ") + ".");
+          }
+          say(parts.join(" "));
+        }).catch(function () {
+          get.disabled = false;
+          say("Couldn't make the file — check your connection.");
+        });
+    });
+  })();
 
   // Posting: the teacher's classes, from Google, into the picker.
   var picker = document.getElementById("gc-course");

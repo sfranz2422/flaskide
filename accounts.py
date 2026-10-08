@@ -74,6 +74,13 @@ class User(Base):
     google_sub = Column(String(64), unique=True, index=True, nullable=False)
     email = Column(String(320), index=True, nullable=False)
     name = Column(String(160), nullable=False, default="")
+    #: First and last name apart, as Google gives them at sign-in. Skyward's
+    #: score import matches a student on exactly these two, and `name` can't
+    #: be split back into them reliably ("Mary Ann Smith", "Ana De La Cruz").
+    #: Empty until the student next signs in, or until a Classroom roster
+    #: supplies them (see the Skyward download in each app).
+    first_name = Column(String(80), nullable=False, default="")
+    last_name = Column(String(80), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=now)
     last_seen = Column(DateTime, nullable=False, default=now)
 
@@ -587,6 +594,13 @@ LATER_COLUMNS = [
     # code, and a lesson could not be made before this.
     ("assignments", "kind",
      "ALTER TABLE assignments ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'code'"),
+    # First and last name for Skyward. Empty is true, not merely valid, for
+    # every earlier user: nothing was ever stored, and every reader treats
+    # empty as "not known yet" and falls back rather than writing a blank.
+    ("users", "first_name",
+     "ALTER TABLE users ADD COLUMN first_name VARCHAR(80) NOT NULL DEFAULT ''"),
+    ("users", "last_name",
+     "ALTER TABLE users ADD COLUMN last_name VARCHAR(80) NOT NULL DEFAULT ''"),
 ]
 
 
