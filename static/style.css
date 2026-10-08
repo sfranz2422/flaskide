@@ -1694,3 +1694,10 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 /* The class page's Classroom tag: posted, or not yet. */
 .kind-tag.tag-classroom { color: #2f9e6b; border-color: #2f9e6b; }
 .kind-tag.tag-not-posted { opacity: .55; }
+/* The teacher's class page gets the width: titles, tags, descriptions and
+   six actions share each row, and at the site's 860px the title column was
+   squeezed until a tag broke in half. Students' pages keep the reading width. */
+.class-teacher .sheet { max-width: 1240px; }
+.class-teacher .class-list td.rowactions { white-space: nowrap; }
+.class-teacher .desc-preview { max-width: 720px; }
+.kind-tag { white-space: nowrap; display: inline-block; }

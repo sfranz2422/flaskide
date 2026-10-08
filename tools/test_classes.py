@@ -286,6 +286,13 @@ db.query(accounts.ClassroomPost).filter_by(assignment_id=a.id).delete()
 db.commit()
 db.close()
 
+_css = open(os.path.join(PYIDE, "static", "style.css")).read()
+_w = re.search(r"\.class-teacher \.sheet \{ max-width: (\d+)px; \}", _css)
+check("the teacher's class page is wider than the site's 860px, for the descriptions",
+      '<body class="class-page class-teacher">' in page and _w is not None and int(_w.group(1)) >= 1100)
+check("  and a tag never breaks in half",
+      re.search(r"\.kind-tag \{[^}]*white-space: nowrap", _css) is not None)
+
 # ------------------------------------------------------- the student's side
 print("\nThe class as its students see it")
 page = kid1.get("/class/%d" % C4).get_data(as_text=True)
