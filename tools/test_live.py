@@ -2160,6 +2160,72 @@ check("a lesson made ahead and never taught does not offer it",
       'id="live-reset"' not in teacher.get("/teacher/" + teacher.post(
           "/api/assignment", json={"title": "C", "files": {"app.py": "x = 1"}}).get_json()["slug"]).get_data(as_text=True))
 
+# ------------------------------------------ whose typing a browser keeps
+# One Chrome profile shared by two students in a lab: the second used to
+# open the lesson to the first one's typing, and a Save made it theirs.
+# live.js's choice of key, lifted and run against a stand-in localStorage.
+_km = re.search(r'(  var ANON_KEY = .*?\n  \}\n)', _live_now_js, re.S)
+if shutil.which("node") and _km:
+    harness = """
+var cases = %s, out = {};
+Object.keys(cases).forEach(function (k) {
+  var c = cases[k], store = Object.assign({}, c.store);
+  var window = {localStorage: {
+    getItem: function (n) { return n in store ? store[n] : null; },
+    setItem: function (n, v) { store[n] = String(v); },
+    removeItem: function (n) { delete store[n]; }}};
+  var L = c.L;
+  %s
+  out[k] = {key: DRAFT_KEY, store: store};
+});
+console.log(JSON.stringify(out));
+""" % (json.dumps({
+        "signed_out": {"L": {"code": "abc", "me": None},
+                       "store": {"flaskide-live-abc": "typed signed out"}},
+        "signs_in": {"L": {"code": "abc", "me": 7},
+                     "store": {"flaskide-live-abc": "typed signed out",
+                               "flaskide-live-abc-files": "{}", "flaskide-live-abc-base": "3",
+                               "flaskide-live-abc-slug": "someones"}},
+        "next_student": {"L": {"code": "abc", "me": 8},
+                         "store": {"flaskide-live-abc-u7": "student 7's work",
+                                   "flaskide-live-abc-u7-slug": "d7"}},
+        "has_own": {"L": {"code": "abc", "me": 7},
+                    "store": {"flaskide-live-abc-u7": "mine", "flaskide-live-abc": "a stranger's"}},
+    }), _km.group(1))
+    res = subprocess.run(["node", "-e", harness], capture_output=True, text=True)
+    got = json.loads(res.stdout or "{}") if res.returncode == 0 else {}
+    o = got.get("signed_out", {})
+    check("signed out: typing kept under the lesson's code, as before",
+          o.get("key") == "flaskide-live-abc"
+          and o.get("store") == {"flaskide-live-abc": "typed signed out"}, o or res.stderr[-300:])
+    i = got.get("signs_in", {})
+    check("signed in: under their own account",
+          i.get("key") == "flaskide-live-abc-u7", i)
+    check("  taking over what was typed before signing in",
+          (i.get("store") or {}).get("flaskide-live-abc-u7") == "typed signed out"
+          and (i.get("store") or {}).get("flaskide-live-abc-u7-base") == "3"
+          and "flaskide-live-abc" not in (i.get("store") or {}), i)
+    check("  but never a draft somebody else saved",
+          "flaskide-live-abc-u7-slug" not in (i.get("store") or {}), i)
+    n = got.get("next_student", {})
+    check("the next student in the same browser starts clean",
+          n.get("key") == "flaskide-live-abc-u8"
+          and "flaskide-live-abc-u8" not in (n.get("store") or {})
+          and (n.get("store") or {}).get("flaskide-live-abc-u7") == "student 7's work", n)
+    h = got.get("has_own", {})
+    check("their own kept typing wins over anything signed out",
+          (h.get("store") or {}).get("flaskide-live-abc-u7") == "mine", h)
+else:
+    check("node is available to run the live page's storage key", bool(_km),
+          "brew install node" if _km else "the block in live.js moved")
+_lv = F.app.test_client()
+with _lv.session_transaction() as _s:
+    _s["uid"] = STUDENT
+_html = _lv.get("/live/" + LESSON).get_data(as_text=True)
+check("the page tells live.js who is signed in, by id",
+      ("me: %d," % STUDENT) in _html
+      and "me: null," in stranger.get("/live/" + LESSON).get_data(as_text=True))
+
 # ------------------------------------------ an ended lesson keeps checking
 # live.js's start-up mirror and its poll, lifted and run in node against
 # scripted answers. What the class sees, what the chip says, and how soon it

@@ -50,7 +50,32 @@
   var stateChip = $("live-state");
   var savedNote = $("mine-saved");
 
-  var DRAFT_KEY = "flaskide-live-" + L.code;
+  /* WHOSE TYPING. Kept in this browser under the lesson's code — and, for a
+     signed-in student, their account too. Under the code alone, whoever
+     used this browser (one Chrome profile shared round a lab) for the
+     lesson before them had their editor filled with that person's work,
+     and one Save made it theirs. Signed out, nobody can be told apart, so
+     that stays as it was.
+
+     Signing in takes over what was typed signed out, and what was kept
+     under the code alone before this existed: the same as the rescue,
+     whoever was typing is the one now signing in. Not the "-slug": that is
+     a draft somebody saved, and it is theirs. Without it, Save finds this
+     student's own draft. */
+  var ANON_KEY = "flaskide-live-" + L.code;
+  var DRAFT_KEY = L.me ? ANON_KEY + "-u" + L.me : ANON_KEY;
+  if (DRAFT_KEY !== ANON_KEY) {
+    try {
+      var ls = window.localStorage;
+      if (ls.getItem(DRAFT_KEY) === null && ls.getItem(ANON_KEY) !== null) {
+        ["", "-files", "-base"].forEach(function (end) {
+          var v = ls.getItem(ANON_KEY + end);
+          if (v !== null) ls.setItem(DRAFT_KEY + end, v);
+          ls.removeItem(ANON_KEY + end);
+        });
+      }
+    } catch (e) { /* storage blocked: nothing kept to take over */ }
+  }
 
   /* Questions in the teacher's notes answer into the lesson's assignment.
      A lesson with none has nowhere to record them, and notes.js says so on
