@@ -65,10 +65,11 @@
     <form id="new-item" class="grade-line">
       <input id="new-title" class="field" type="text" maxlength="200"
              placeholder="Name of the new assignment or material" aria-label="New item's name">
-      <select id="new-kind" class="field" aria-label="Kind">
-        <option value="code">Assignment (code)</option>
-        <option value="lesson">Lesson (slides and questions)</option>
-        <option value="material">Material (text, links, pictures — no editor)</option>
+      <select id="new-kind" class="field" aria-label="Kind"
+              title="Code: a project students write in the editor. Lesson: slides and questions. Material: text, links and pictures, nothing to open.">
+        <option value="code">Code</option>
+        <option value="lesson">Lesson</option>
+        <option value="material">Material</option>
       </select>
       <button class="btn btn-primary" type="submit">Add to class</button>
     </form>
@@ -123,7 +124,14 @@
               <td class="order">{{ arrows() }}</td>
               <td>
                 <a href="{{ url_for('teacher_assignment', slug=r.slug) }}">{{ r.title }}</a>
-                {% if r.kind == 'lesson' %}<span class="kind-tag">lesson</span>{% endif %}
+                {#  What it is — the three kinds the Add form makes — and whether
+                    it was posted to Google Classroom (and to which, on hover). #}
+                <span class="kind-tag">{{ "lesson" if r.kind == 'lesson' else "code" }}</span>
+                {% if r.posted %}
+                  <span class="kind-tag tag-classroom" title="Posted to {{ r.posted | join(', ') }}">✓ Classroom</span>
+                {% else %}
+                  <span class="kind-tag tag-not-posted" title="Not posted to Google Classroom — post it from its page">not in Classroom</span>
+                {% endif %}
                 {% if r.hidden %}<span class="kind-tag">hidden</span>{% endif %}
                 {% if r.closed %}<span class="dim small"> · closed</span>{% endif %}
                 {% if r.on_air %}<span class="live-pill">● Live now</span>{% endif %}

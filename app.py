@@ -3785,6 +3785,16 @@ def _class_rows(db, course, user=None, student=False):
         subs = {s.assignment_id: s for s in db.query(accounts.Submission)
                 .filter(accounts.Submission.student_id == user.id,
                         accounts.Submission.assignment_id.in_(ids))}
+    # Where each was posted in Google Classroom, for the teacher's tag. From
+    # the posts PyIDE made (ClassroomPost), not asked of Google: the page
+    # should not wait on it, and a post deleted there is found and forgotten
+    # by the assignment's own page and by Sync.
+    posted = {}
+    if not student and ids:
+        for p in (db.query(accounts.ClassroomPost)
+                    .filter(accounts.ClassroomPost.assignment_id.in_(ids))
+                    .order_by(accounts.ClassroomPost.id)):
+            posted.setdefault(p.assignment_id, []).append(p.course_name or "a class")
     counts = {}
     if not student and ids:
         for aid, n in (db.query(accounts.Submission.assignment_id, func.count())
@@ -3818,7 +3828,11 @@ def _class_rows(db, course, user=None, student=False):
                "kind": a.kind, "hidden": bool(r.hidden), "closed": bool(a.closed),
                "live_code": live.code if live else "",
                "on_air": bool(live and not live.ended),
-               "out_of": a.out_of or "", "count": counts.get(a.id, 0)}
+               "out_of": a.out_of or "", "count": counts.get(a.id, 0),
+               # A post from the first version still in the assignment's own
+               # columns counts too; its page moves it into ClassroomPost.
+               "posted": posted.get(a.id) or ([a.classroom_course_name or "a class"]
+                                             if a.classroom_work_id else [])}
         if student:
             sub = subs.get(a.id)
             earned = _quiz_earned(db, a.id).get(user.id) if user else None

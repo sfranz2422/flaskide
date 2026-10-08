@@ -242,6 +242,50 @@ check("  with Describe on an assignment's row and a heading's",
       'js-describe">Describe' in _row_html(hello_row)
       and 'js-describe">Describe' in _row_html(group_row))
 
+# What each is, and whether it is in Google Classroom.
+check("the Add form's kinds are Code, Lesson and Material",
+      re.search(r'<option value="code">Code</option>\s*<option value="lesson">Lesson</option>'
+                r'\s*<option value="material">Material</option>', page) is not None)
+_quiz_row = [int(i) for i, s_, _ in order() if s_ == QUIZ][0]
+check("a code assignment is tagged code, a lesson lesson",
+      '<span class="kind-tag">code</span>' in _row_html(hello_row)
+      and '<span class="kind-tag">lesson</span>' in _row_html(_quiz_row)
+      and '<span class="kind-tag">code</span>' not in _row_html(_quiz_row))
+check("  and one not posted to Classroom says so",
+      "tag-not-posted" in _row_html(hello_row) and "✓ Classroom" not in _row_html(hello_row))
+db = P.SessionLocal()
+db.add(accounts.ClassroomPost(assignment_id=a.id, course_id=P4,
+                              course_name="Intro to Programming — Period 4", work_id="w1"))
+db.commit()
+db.close()
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+check("posted to Classroom: tagged, naming the class on hover",
+      'title="Posted to Intro to Programming — Period 4">✓ Classroom' in _row_html(hello_row)
+      and "tag-not-posted" not in _row_html(hello_row)
+      and "tag-not-posted" in _row_html(_quiz_row))
+check("  and students never see it", "Classroom" not in kid1.get("/class/%d" % C4).get_data(as_text=True))
+# A post the first version made lives on the assignment itself until its
+# page is opened; it counts too.
+db = P.SessionLocal()
+db.query(accounts.Assignment).filter_by(id=a.id).update(
+    {"classroom_work_id": "w-old", "classroom_course_name": "Old period"})
+db.commit()
+db.query(accounts.ClassroomPost).filter_by(assignment_id=a.id).delete()
+db.commit()
+db.close()
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+check("  a post from the first version counts too",
+      'title="Posted to Old period">✓ Classroom' in _row_html(hello_row))
+db = P.SessionLocal()
+db.query(accounts.Assignment).filter_by(id=a.id).update(
+    {"classroom_work_id": "", "classroom_course_name": ""})
+db.commit()
+db.close()
+db = P.SessionLocal()
+db.query(accounts.ClassroomPost).filter_by(assignment_id=a.id).delete()
+db.commit()
+db.close()
+
 # ------------------------------------------------------- the student's side
 print("\nThe class as its students see it")
 page = kid1.get("/class/%d" % C4).get_data(as_text=True)
