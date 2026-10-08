@@ -28,7 +28,7 @@ from flask import (
     session,
     url_for,
 )
-from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine
+from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 import accounts
@@ -1343,6 +1343,7 @@ def update_assignment(slug):
 
         item.title = clean(data.get("title"), 200) or item.title
         item.files = json.dumps(files)
+        item.updated_at = accounts.now()
         db.commit()
         _store_quiz_keys(db, item.id, files.values())
         # Not the author's own draft, if one is lying about from before the
@@ -1814,6 +1815,7 @@ def save_lesson(slug):
             return jsonify(error="Those notes are too long to save."), 413
         item.title = clean(data.get("title"), 200) or item.title
         item.files = json.dumps({LESSON_FILE: notes})
+        item.updated_at = accounts.now()
         db.commit()
         _store_quiz_keys(db, item.id, [notes])
         return jsonify(ok=True, title=item.title)
@@ -1903,7 +1905,10 @@ def teacher_home():
         show_archived = request.args.get("archived") == "1"
         items = (db.query(accounts.Assignment)
                    .filter_by(teacher_id=user.id, app=APP_NAME)
-                   .order_by(accounts.Assignment.created_at.desc()).all())
+                   .all())
+        # Most recently changed first (Assignment.changed): what the teacher
+        # is working on now is at the top, not whatever was made last.
+        items.sort(key=lambda a: a.changed, reverse=True)
         live = [a for a in items if not a.archived]
         filed = [a for a in items if a.archived]
         counts = {}
@@ -1976,6 +1981,7 @@ def set_out_of(slug):
                 return jsonify(error="It's posted to Google Classroom, so it "
                                      "needs points."), 400
             item.out_of = None
+            item.updated_at = accounts.now()
             db.commit()
             return jsonify(ok=True, out_of="")
         try:
@@ -2006,6 +2012,7 @@ def set_out_of(slug):
             note = ("Saved here, but Google Classroom still says %s points in %s. "
                     "Change it there too." % (item.out_of, ", ".join(stuck)))
         item.out_of = value
+        item.updated_at = accounts.now()
         db.commit()
         return jsonify(ok=True, out_of=value, note=note)
     finally:
@@ -2762,6 +2769,7 @@ def classroom_post(slug):
             work_id=str(work["id"])[:32],
             url=(work.get("alternateLink") or "")[:300])
         db.add(post)
+        item.updated_at = accounts.now()
         db.commit()
         return jsonify(ok=True, course=post.course_name, url=post.url,
                        draft=asked.get("draft") is True,
@@ -2783,6 +2791,7 @@ def _forget_post(db, item, post):
     db.delete(post)
     (db.query(accounts.Submission).filter_by(assignment_id=item.id)
        .update({"score_synced": None}, synchronize_session=False))
+    item.updated_at = accounts.now()        # a change in Classroom standing
     db.commit()
 
 
@@ -2964,6 +2973,8 @@ def classroom_publish(slug):
         if status != 200:
             return jsonify(error=_google_message(work, "Google wouldn't assign "
                                                  "it.")), 502
+        item.updated_at = accounts.now()
+        db.commit()
         return jsonify(ok=True, course=name, already=False)
     finally:
         db.close()
@@ -3264,7 +3275,8 @@ def live_assignments():
                   .filter_by(teacher_id=user.id, app=APP_NAME,
                              archived=0, closed=0)
                   .filter(accounts.Assignment.kind != "lesson")
-                  .order_by(accounts.Assignment.created_at.desc())
+                  .order_by(func.coalesce(accounts.Assignment.updated_at,
+                                          accounts.Assignment.created_at).desc())
                   .limit(40).all())
         return jsonify(assignments=[{"slug": a.slug, "title": a.title}
                                     for a in rows])

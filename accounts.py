@@ -138,6 +138,16 @@ class Assignment(Base):
     classroom_course_name = Column(String(200), nullable=False, default="")
     classroom_work_id = Column(String(32), nullable=False, default="")
     classroom_url = Column(String(300), nullable=False, default="")
+    #: When the teacher last changed it — its code, notes, title or points,
+    #: or where it stands in Google Classroom (posted, assigned, unlinked).
+    #: The dashboard lists the most recently changed first. NULL means not
+    #: changed since it was made, which is true of every assignment from
+    #: before the column existed; `changed` falls back to created_at.
+    updated_at = Column(DateTime, nullable=True)
+
+    @property
+    def changed(self):
+        return self.updated_at or self.created_at
 
     def file_map(self) -> dict:
         return _as_map(self.files)
@@ -510,6 +520,10 @@ def _as_map(raw) -> dict:
 # from an earlier deploy needs these. Every default has to leave existing rows
 # correct: an assignment that existed before archiving did is not archived.
 LATER_COLUMNS = [
+    # NULL, not now(): an assignment from before this was last changed when
+    # it was made, as far as anything knows, and Assignment.changed says so.
+    ("assignments", "updated_at",
+     "ALTER TABLE assignments ADD COLUMN updated_at TIMESTAMP"),
     ("assignments", "archived",
      "ALTER TABLE assignments ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"),
     # Everything that existed before two editors shared these tables was

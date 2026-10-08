@@ -843,6 +843,98 @@ check("the states list forgets a deleted one too, and names it",
       d.get("gone") == ["Programming 1 — Period 4"] and posts() == [], d)
 
 
+# ----------------------------------------------- the dashboard's order
+print("\nThe dashboard: most recently changed first")
+
+from datetime import datetime, timedelta                     # noqa: E402
+made = {}
+for name in ("Oldest", "Middle", "Newest"):
+    made[name] = teacher.post("/api/assignment", json={
+        "files": {"app.py": "# %s\n" % name}, "title": name}).get_json()["slug"]
+day = datetime(2026, 9, 1)
+
+
+def backdate():
+    """Made a day apart, none changed since: Newest, Middle, Oldest."""
+    db = P.SessionLocal()
+    try:
+        for n, name in enumerate(("Oldest", "Middle", "Newest")):
+            a = db.query(accounts.Assignment).filter_by(slug=made[name]).first()
+            a.created_at, a.updated_at = day + timedelta(days=n), None
+        db.commit()
+    finally:
+        db.close()
+
+
+def order():
+    page = teacher.get("/teacher").get_data(as_text=True)
+    found = sorted((page.find('data-title="%s"' % n), n) for n in made)
+    return [n for at, n in found if at >= 0]
+
+
+def picker():
+    rows = teacher.get("/api/live/assignments").get_json()["assignments"]
+    return [r["title"] for r in rows if r["title"] in made]
+
+
+backdate()
+check("with nothing changed, newest made first, as before",
+      order() == ["Newest", "Middle", "Oldest"], order())
+check("  showing when it was made", "Sep 03, 2026</td>" in
+      teacher.get("/teacher").get_data(as_text=True))
+teacher.post("/api/assignment/%s" % made["Oldest"], json={
+    "files": {"app.py": "# changed\n"}, "title": "Oldest"})
+check("editing the code puts it at the top",
+      order() == ["Oldest", "Newest", "Middle"], order())
+check("  of the Go live list too", picker() == ["Oldest", "Newest", "Middle"], picker())
+today = datetime.now().strftime("%b %d, %Y")
+check("  showing today as when it changed",
+      ('title="Set Sep 01, 2026">%s</td>' % today) in
+      teacher.get("/teacher").get_data(as_text=True))
+backdate()
+teacher.post("/api/assignment/%s/out-of" % made["Middle"], json={"out_of": 10})
+check("changing its points does too", order()[0] == "Middle", order())
+backdate()
+teacher.post("/api/assignment/%s/out-of" % made["Oldest"], json={"out_of": ""})
+check("  and so does taking its points away", order()[0] == "Oldest", order())
+backdate()
+room[P7]["gone"] = False
+teacher.post("/api/assignment/%s/classroom/post" % made["Middle"],
+             json={"course": P7, "draft": True})
+check("posting it to Classroom does", order()[0] == "Middle", order())
+db = P.SessionLocal()
+try:
+    _mid = db.query(accounts.Assignment).filter_by(slug=made["Middle"]).first()
+    mid_post = db.query(accounts.ClassroomPost).filter_by(assignment_id=_mid.id).first().id
+finally:
+    db.close()
+backdate()
+teacher.post("/api/assignment/%s/classroom/publish" % made["Middle"], json={"post": mid_post})
+check("assigning it with Post now does", room[P7]["work"]["state"] == "PUBLISHED"
+      and order()[0] == "Middle", order())
+backdate()
+teacher.post("/api/assignment/%s/classroom/unlink" % made["Middle"], json={"post": mid_post})
+check("unlinking a class does", order()[0] == "Middle", order())
+# A lesson saves its notes through its own route.
+made["Lesson"] = teacher.post("/api/lesson", json={"title": "Lesson"}).get_json()["slug"]
+db = P.SessionLocal()
+try:
+    db.query(accounts.Assignment).filter_by(slug=made["Lesson"]).first().created_at = day - timedelta(days=1)
+    db.commit()
+finally:
+    db.close()
+backdate()
+check("a lesson made long ago is at the bottom", order()[-1] == "Lesson", order())
+teacher.post("/api/lesson/%s" % made["Lesson"], json={"title": "Lesson", "notes": "# Hi\n"})
+check("  and saving its notes puts it at the top", order()[0] == "Lesson", order())
+del made["Lesson"]
+backdate()
+teacher.post("/api/assignment/%s/archive" % made["Oldest"])
+teacher.post("/api/assignment/%s/archive" % made["Oldest"])
+check("archiving and restoring does not: that is tidying, not changing it",
+      order() == ["Newest", "Middle", "Oldest"], order())
+
+
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"
       % ("SOME FAILED" if bad else "ALL PASSED", len(results), bad))

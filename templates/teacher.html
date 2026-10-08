@@ -40,7 +40,7 @@
   {% macro rows(list, archived) %}
     <table class="listing">
       <thead>
-        <tr><th>Assignment</th><th>Set</th><th>Turned in</th><th></th></tr>
+        <tr><th>Assignment</th><th>Changed</th><th>Turned in</th><th></th></tr>
       </thead>
       <tbody>
         {% for a in list %}
@@ -48,7 +48,7 @@
               data-title="{{ a.title }}">
             <td><a href="{{ url_for('teacher_assignment', slug=a.slug) }}">{{ a.title }}</a>{%
               if a.kind == 'lesson' %} <span class="kind-tag">lesson</span>{% endif %}</td>
-            <td class="dim">{{ a.created_at.strftime('%b %d, %Y') }}</td>
+            <td class="dim" title="Set {{ a.created_at.strftime('%b %d, %Y') }}">{{ a.changed.strftime('%b %d, %Y') }}</td>
             <td><strong>{{ counts.get(a.id, 0) }}</strong></td>
             <td class="right rowactions">
               <a class="linkbtn" href="{{ url_for('teach_assignment_live', slug=a.slug) }}"

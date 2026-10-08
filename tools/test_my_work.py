@@ -439,6 +439,11 @@ acols = {c["name"] for c in sqlalchemy.inspect(eng).get_columns("assignments")}
 check("an old assignments table gets the points and Classroom columns",
       {"out_of", "classroom_course_id", "classroom_course_name",
        "classroom_work_id", "classroom_url"} <= acols, sorted(acols))
+with eng.connect() as c:
+    _upd = c.execute(sqlalchemy.text(
+        "SELECT updated_at FROM assignments WHERE slug = 'old'")).fetchall()
+check("  and updated_at, empty on an old one so it sorts by when it was made",
+      "updated_at" in acols and _upd == [(None,)], _upd)
 with eng.begin() as c:
     arow = c.execute(sqlalchemy.text(
         "SELECT out_of, classroom_work_id, classroom_url FROM assignments")).fetchone()
