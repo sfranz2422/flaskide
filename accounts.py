@@ -372,6 +372,82 @@ class ClassroomPost(Base):
 
 
 # --------------------------------------------------------------------------
+# Classes
+# --------------------------------------------------------------------------
+
+class Course(Base):
+    """A class the teacher teaches: one period, so P4 Intro and P7 Intro are
+    two. Called Course here because `class` is a Python word; the table and
+    every page say class.
+
+    Linked to the period's Google Classroom course, which is where its
+    students come from (Enrollment) and where its assignments are posted.
+    Optional: a class with no Classroom course has a page and no students,
+    which is still somewhere to arrange the assignments.
+    """
+    __tablename__ = "classes"
+
+    id = Column(Integer, primary_key=True)
+    app = Column(String(16), nullable=False, default="pyide", index=True)
+    teacher_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    name = Column(String(200), nullable=False, default="Untitled class")
+    course_id = Column(String(32), nullable=False, default="")
+    course_name = Column(String(200), nullable=False, default="")
+    #: When the roster was last fetched from Classroom; NULL is never.
+    roster_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=now)
+
+
+class ClassItem(Base):
+    """One line on a class's page: an assignment, or a group heading.
+
+    A group is only a heading — the assignments under it on the page are
+    simply the ones placed after it, until the next heading. It means
+    nothing to grading or to anything else, which is what the teacher asked
+    for: a way to lay the page out, not a structure.
+
+    An assignment is in one class at most (the unique constraint): a second
+    period doing the same work gets a copy, with its own links, its own
+    live lesson and its own results.
+    """
+    __tablename__ = "class_items"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", name="uq_assignment_one_class"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    class_id = Column(Integer, ForeignKey("classes.id"), index=True, nullable=False)
+    #: NULL for a group heading.
+    assignment_id = Column(Integer, ForeignKey("assignments.id"), nullable=True)
+    #: A group's heading. Unused for an assignment, whose title is its own.
+    title = Column(String(200), nullable=False, default="")
+    #: Hidden from the class's students; the teacher still sees it, marked.
+    hidden = Column(Integer, nullable=False, default=0)
+    #: Smallest first, so a new item goes on top with one less than the least.
+    position = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=now)
+
+
+class Enrollment(Base):
+    """A student in a class, as the class's Classroom roster says.
+
+    By email, not by user: most of a roster has never signed in here, and
+    must still find the class in their menu the first time they do. Kept
+    rather than asked of Google on every page, because a student's menu is
+    on every page; refreshed when the teacher presses Sync roster.
+    """
+    __tablename__ = "enrollments"
+    __table_args__ = (
+        UniqueConstraint("class_id", "email", name="uq_enrolled_once"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    class_id = Column(Integer, ForeignKey("classes.id"), index=True, nullable=False)
+    email = Column(String(320), nullable=False, index=True)
+    name = Column(String(200), nullable=False, default="")
+
+
+# --------------------------------------------------------------------------
 # Teaching live
 # --------------------------------------------------------------------------
 
