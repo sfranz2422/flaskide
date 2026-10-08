@@ -161,6 +161,8 @@ def fake_classroom_get(url, params):
                 data["nextPageToken"] = str(page + 1)
             return 200, data
         if c["work"] and url == base + "/courseWork/w-%s" % cid:
+            if c.get("broken"):
+                return 500, {"error": {"message": "Internal error encountered."}}
             if c["gone"]:
                 return 404, {"error": {"message": "Requested entity was not found."}}
             return 200, {"id": "w-" + cid, "state": c["work"].get("state"),
@@ -757,6 +759,15 @@ check("the page is told Period 4 is a draft and Period 7 is scheduled",
       sorted((s["id"], s["state"]) for s in d["states"])
       == sorted([(ids[P4], "draft"), (ids[P7], "scheduled")]), d)
 check("a student cannot ask", student.get(STATES).status_code == 403)
+room[P7]["broken"] = True
+d = teacher.get(STATES).get_json()
+check("a class Google won't answer for is listed as unknown, with Google's reason",
+      {"id": ids[P7], "state": "unknown", "why": "Internal error encountered."}
+      in d["states"] and len(d["states"]) == 2, d)
+room[P7]["broken"] = False
+check("  and the page has a word for every state, assigned included",
+      all(w in page for w in ('draft: "· draft"', 'scheduled: "· scheduled"',
+                              'posted: "· assigned"', "unknown: \"· couldn't check\"")))
 
 check("a student cannot assign it",
       student.post(PUBLISH, json={"post": ids[P4]}).status_code == 403

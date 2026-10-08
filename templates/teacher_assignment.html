@@ -524,13 +524,18 @@
   if (postedTo.length && document.querySelector(".gc-publish")) {
     fetch(base + "/classroom/states").then(function (r) { return r.json(); })
       .then(function (d) {
+        // Every class gets a word, assigned included: a class showing
+        // nothing can't be told apart from one Google wouldn't answer for.
+        var WORDS = { draft: "· draft", scheduled: "· scheduled",
+                      posted: "· assigned", unknown: "· couldn't check" };
         (d.states || []).forEach(function (s) {
-          if (s.state === "posted") return;
           var tag = document.querySelector('.gc-tag[data-post="' + s.id + '"]');
           var btn = document.querySelector('.gc-publish[data-post="' + s.id + '"]');
           if (!tag || !btn) return;
-          tag.textContent = s.state === "scheduled" ? "· scheduled" : "· draft";
+          tag.textContent = WORDS[s.state] || "";
+          tag.title = s.why || "";
           tag.hidden = false;
+          if (s.state !== "draft" && s.state !== "scheduled") return;
           btn.dataset.state = s.state;
           btn.hidden = false;
         });

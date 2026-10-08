@@ -2901,8 +2901,11 @@ def classroom_states(slug):
                 _forget_post(db, item, post)
                 continue
             if status != 200:
-                # Unknown, not "posted": a button missing for one class is
-                # better than a wrong word about it.
+                # Said, not skipped: a class showing nothing at all reads as
+                # "assigned" to the teacher, and that is exactly what we
+                # don't know. Google's reason goes with it.
+                states.append({"id": post.id, "state": "unknown",
+                               "why": _google_message(work, "Google didn't answer.")})
                 continue
             states.append({"id": post.id, "state": _post_state(work)})
         return jsonify(states=states, gone=gone)
