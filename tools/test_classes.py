@@ -347,6 +347,102 @@ check("an empty heading is left off the students' page",
       "Coming soon" not in kid1.get("/class/%d" % C4).get_data(as_text=True)
       and "Coming soon" in teacher.get("/teacher/class/%d" % C4).get_data(as_text=True))
 
+# ---------------------------------------------------------------- materials
+print("\nMaterials: a card that is only its description")
+MAT = "/api/class/%d/material" % C4
+check("a student cannot add one", kid1.post(MAT, json={"title": "x"}).status_code == 403)
+check("  nor a material with no name", teacher.post(MAT, json={"title": " "}).status_code == 400)
+r = teacher.post(MAT, json={"title": "Reading: lists",
+                            "description": "Read [this](https://example.com/lists) first.\n\n![a diagram](/img/abc)"})
+mat_row = (r.get_json() or {}).get("id")
+m = q(accounts.ClassItem, id=mat_row)[0] if mat_row else None
+check("the teacher adds a material, on top",
+      r.status_code == 200 and m is not None and m.kind == "material"
+      and m.assignment_id is None and [int(i) for i, _, _ in order()][0] == mat_row, r.get_json())
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+_mrow = re.search(r'data-item="%d"[\s\S]*?</tr>' % mat_row, page)
+_mrow = _mrow.group(0) if _mrow else ""
+check("  its row on the teacher's page: Describe, Rename, Hide and Delete",
+      all(x in _mrow for x in ('js-describe">Describe', 'js-rename">Rename',
+                                'js-hide">Hide', 'js-remove danger">Delete', ">material<")))
+page = kid1.get("/class/%d" % C4).get_data(as_text=True)
+_card = re.search(r'<article class="card card-material">[\s\S]*?</article>', page)
+_card = _card.group(0) if _card else ""
+check("students see it as a card with its description",
+      "Reading: lists" in _card and 'class="md card-desc" data-md="Read [this](https://example.com/lists)' in _card)
+check("  and nothing to open: the description is all of it",
+      _card and "btn" not in _card and "/a/" not in _card)
+teacher.post("/api/class/%d/item/%d" % (C4, mat_row), json={"title": "Reading: lists, part 1"})
+check("it can be renamed", q(accounts.ClassItem, id=mat_row)[0].title == "Reading: lists, part 1")
+teacher.post("/api/class/%d/item/%d" % (C4, mat_row), json={"hidden": True})
+check("  and hidden from students",
+      "Reading: lists" not in kid1.get("/class/%d" % C4).get_data(as_text=True)
+      and "Reading: lists" in teacher.get("/teacher/class/%d" % C4).get_data(as_text=True))
+teacher.post("/api/class/%d/item/%d" % (C4, mat_row), json={"hidden": False})
+# A heading with only a material under it is not empty.
+teacher.post("/api/class/%d/group" % C4, json={"title": "Readings"})
+_ids = [int(i) for i, _, _ in order()]
+_g = _ids[0]
+teacher.post("/api/class/%d/order" % C4, json={"items": [_g, mat_row] + [i for i in _ids if i not in (_g, mat_row)]})
+check("a heading with only a material under it still shows",
+      ">Readings</h2>" in kid1.get("/class/%d" % C4).get_data(as_text=True))
+r = teacher.delete("/api/class/%d/item/%d" % (C4, mat_row))
+check("a material can be deleted",
+      r.status_code == 200 and q(accounts.ClassItem, id=mat_row) == [])
+teacher.delete("/api/class/%d/item/%d" % (C4, _g))
+
+# ------------------------------------------------------------------ pictures
+print("\nPictures in descriptions")
+import io                                                    # noqa: E402
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+KINDS = {"png": PNG, "jpeg": b"\xff\xd8\xff\xe0" + b"\x00" * 64,
+         "gif": b"GIF89a" + b"\x00" * 64,
+         "webp": b"RIFF\x40\x00\x00\x00WEBPVP8 " + b"\x00" * 64}
+
+
+def upload(c, data, name="pic.png"):
+    return c.post("/api/image", data={"image": (io.BytesIO(data), name)},
+                  content_type="multipart/form-data")
+
+
+r = upload(teacher, PNG)
+url = (r.get_json() or {}).get("url", "")
+check("a teacher uploads a picture and is given its address",
+      r.status_code == 200 and re.fullmatch(r"/img/\w+", url) is not None, r.get_json())
+got = stranger.get(url)
+check("  which serves it back, as it was", got.status_code == 200 and got.data == PNG
+      and got.headers["Content-Type"] == "image/png")
+check("  kept by browsers, never sniffed into anything else, never run",
+      "immutable" in got.headers.get("Cache-Control", "")
+      and got.headers.get("X-Content-Type-Options") == "nosniff"
+      and "sandbox" in got.headers.get("Content-Security-Policy", ""))
+for kind, data in KINDS.items():
+    r = upload(teacher, data, "x.bin")
+    check("  a %s is known by its bytes, whatever its name" % kind.upper(),
+          r.status_code == 200 and stranger.get(r.get_json()["url"]).headers["Content-Type"]
+          == "image/" + kind)
+check("a student cannot upload one", upload(kid1, PNG).status_code == 403)
+check("  nor anyone signed out", upload(stranger, PNG).status_code == 403)
+check("a page dressed up as a picture is refused",
+      upload(teacher, b"<html><script>alert(1)</script>", "evil.png").status_code == 400)
+check("  and so is an SVG, which can carry script",
+      upload(teacher, b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+             "x.svg").status_code == 400)
+check("one over 4 MB is refused", upload(teacher, PNG + b"\x00" * 4_000_000).status_code == 413)
+check("an address that isn't one is a 404", stranger.get("/img/nope").status_code == 404)
+
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+check("the description box has the toolbar, as quickpulsepro's does",
+      "easymde@2.18.0/dist/easymde.min.js" in page and "easymde@2.18.0/dist/easymde.min.css" in page
+      and re.search(r'"link", "upload-image"', page) is not None and '"bold", "italic"' in page)
+check("  its picture button and drag-and-drop upload to /api/image",
+      "uploadImage: true" in page and "imageUploadFunction: uploadImage" in page
+      and 'fetch("/api/image", { method: "POST", body: form })' in page)
+check("  with Add picture for when the toolbar can't load",
+      'class="js-pic" type="file"' in page)
+check("  and the preview is rendered the way students see it",
+      "previewRender: function (text, preview) {\n        window.FlaskIDENotes.render(preview, text);" in page)
+
 # ---------------------------------------------------------- tidying away
 print("\nTidying never loses a student's work")
 teacher.post("/api/assignment/%s/archive" % HELLO)
@@ -439,6 +535,9 @@ accounts.create_all(_old)
 with _old.connect() as _c:
     _d = _c.execute(sqlalchemy.text("SELECT description FROM class_items")).fetchall()
 check("an older class_items table gets descriptions, empty", _d == [("",)], _d)
+with _old.connect() as _c:
+    _k = _c.execute(sqlalchemy.text("SELECT kind FROM class_items")).fetchall()
+check("  and a kind, empty: still the heading it was", _k == [("",)], _k)
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

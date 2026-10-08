@@ -32,7 +32,8 @@ import secrets
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, Text,
+    BigInteger, Column, DateTime, Float, ForeignKey, Integer, LargeBinary, String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base
@@ -417,8 +418,13 @@ class ClassItem(Base):
 
     id = Column(Integer, primary_key=True)
     class_id = Column(Integer, ForeignKey("classes.id"), index=True, nullable=False)
-    #: NULL for a group heading.
+    #: NULL for a group heading or a material.
     assignment_id = Column(Integer, ForeignKey("assignments.id"), nullable=True)
+    #: "material" for a card that is only a title and its description — a
+    #: link, a reading, a picture — with no editor or assignment behind it.
+    #: "" for everything else, which is what every row made before materials
+    #: was: an assignment when assignment_id is set, a group heading when not.
+    kind = Column(String(16), nullable=False, default="")
     #: A group's heading. Unused for an assignment, whose title is its own.
     title = Column(String(200), nullable=False, default="")
     #: Hidden from the class's students; the teacher still sees it, marked.
@@ -449,6 +455,26 @@ class Enrollment(Base):
     class_id = Column(Integer, ForeignKey("classes.id"), index=True, nullable=False)
     email = Column(String(320), nullable=False, index=True)
     name = Column(String(200), nullable=False, default="")
+
+
+class Image(Base):
+    """A picture a teacher uploaded for a description, served at /img/<slug>.
+
+    In the database rather than on disk because Render's disk is wiped on
+    every deploy. Teachers only, a few MB at most (the editor shrinks big
+    photos first), and only real PNG, JPEG, GIF or WebP — checked by their
+    first bytes, not by the name or the type the browser claimed.
+    """
+    __tablename__ = "images"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(16), unique=True, index=True, nullable=False)
+    app = Column(String(16), nullable=False, default="pyide")
+    owner_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    content_type = Column(String(40), nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    size = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=now)
 
 
 # --------------------------------------------------------------------------
@@ -600,6 +626,10 @@ def _as_map(raw) -> dict:
 # from an earlier deploy needs these. Every default has to leave existing rows
 # correct: an assignment that existed before archiving did is not archived.
 LATER_COLUMNS = [
+    # "" is true of every row made before materials: each is the assignment
+    # or group heading its assignment_id already says.
+    ("class_items", "kind",
+     "ALTER TABLE class_items ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT ''"),
     # Empty is true of every item made before descriptions existed.
     ("class_items", "description",
      "ALTER TABLE class_items ADD COLUMN description TEXT NOT NULL DEFAULT ''"),

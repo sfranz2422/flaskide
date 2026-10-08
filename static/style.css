@@ -1668,3 +1668,26 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .desc-edit { margin-top: 8px; }
 .desc-edit .desc-box { width: 100%; max-width: 560px; font-family: inherit; }
 .desc-edit .grade-line { margin-top: 6px; }
+/* A material: no buttons, so it is the description that matters. */
+.card.card-material { border-left-color: #b07cd8; }
+.card-material .card-title:hover { color: var(--text); text-decoration: none; }
+.class-list tr.material-row td { background: color-mix(in srgb, var(--bg-panel) 50%, transparent); }
+
+/* EasyMDE (the description box's toolbar), in this app's colours. Its own
+   stylesheet is light; these follow the theme like everything else. */
+.desc-edit .EasyMDEContainer { max-width: 680px; }
+.desc-edit .editor-toolbar { background: var(--bg-panel); border-color: var(--line); opacity: 1; }
+.desc-edit .editor-toolbar button { color: var(--text) !important; }
+.desc-edit .editor-toolbar button:hover,
+.desc-edit .editor-toolbar button.active { background: var(--line); border-color: var(--line); }
+.desc-edit .editor-toolbar i.separator { border-left-color: var(--line); border-right-color: transparent; }
+.desc-edit .EasyMDEContainer .CodeMirror { background: var(--bg); color: var(--text);
+  border-color: var(--line); font-size: 14px; min-height: 140px; }
+.desc-edit .EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--text); }
+.desc-edit .EasyMDEContainer .CodeMirror-selected,
+.desc-edit .EasyMDEContainer .CodeMirror-focused .CodeMirror-selected { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.desc-edit .editor-preview, .desc-edit .editor-preview-side { background: var(--bg-panel); color: var(--text); }
+.desc-edit .editor-preview img, .md img { max-width: 100%; height: auto; border-radius: 6px; }
+.desc-edit .cm-s-easymde .cm-link, .desc-edit .cm-s-easymde .cm-url { color: var(--accent); }
+.desc-edit .cm-s-easymde .cm-header { color: var(--text); }
+.js-pic-label { cursor: pointer; }

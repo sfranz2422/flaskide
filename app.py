@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import (
     Flask,
+    Response,
     abort,
     jsonify,
     redirect,
@@ -3557,6 +3558,32 @@ def class_new_assignment(class_id):
         db.close()
 
 
+@app.post("/api/class/<int:class_id>/material")
+def class_new_material(class_id):
+    """A material, on top: a card that is only a title and its description
+    (markdown — links, pictures, a reading), with no editor behind it."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        data = request.get_json(silent=True) or {}
+        title = clean(data.get("title"), 200)
+        if not title:
+            return jsonify(error="Give it a name."), 400
+        text = data.get("description") or ""
+        if not isinstance(text, str) or len(text) > MAX_DESCRIPTION:
+            return jsonify(error="That description is too long."), 413
+        row = accounts.ClassItem(class_id=course.id, title=title, kind="material",
+                                 description=text.strip(),
+                                 position=_top_position(db, course.id))
+        db.add(row)
+        db.commit()
+        return jsonify(ok=True, id=row.id)
+    finally:
+        db.close()
+
+
 @app.post("/api/class/<int:class_id>/group")
 def class_new_group(class_id):
     """A group heading, on top; moved into place with the arrows."""
@@ -3626,9 +3653,9 @@ def class_item_update(class_id, item_id):
 
 @app.delete("/api/class/<int:class_id>/item/<int:item_id>")
 def class_item_delete(class_id, item_id):
-    """Take away a group heading. Only a heading: an assignment leaves a
-    class by being archived, deleted or moved, each of which says what it
-    does to students' work."""
+    """Take away a group heading or a material — neither holds anyone's
+    work. Not an assignment: that leaves a class by being archived, deleted
+    or moved, each of which says what it does to students' work."""
     db = SessionLocal()
     try:
         user, course, bounce = _own_class(db, class_id)
@@ -3767,6 +3794,13 @@ def _class_rows(db, course, user=None, student=False):
 
     out, archived = [], []
     for r in rows:
+        if r.kind == "material":
+            if student and r.hidden:
+                continue
+            out.append({"group": False, "material": True, "id": r.id,
+                        "title": r.title, "description": r.description or "",
+                        "hidden": bool(r.hidden)})
+            continue
         if r.assignment_id is None:
             out.append({"group": True, "id": r.id, "title": r.title,
                         "description": r.description or ""})
@@ -3778,7 +3812,8 @@ def _class_rows(db, course, user=None, student=False):
         if student and r.hidden:
             continue
         live = lessons.get(a.id)
-        row = {"group": False, "id": r.id, "slug": a.slug, "title": a.title,
+        row = {"group": False, "material": False, "id": r.id, "slug": a.slug,
+               "title": a.title,
                "description": r.description or "",
                "kind": a.kind, "hidden": bool(r.hidden), "closed": bool(a.closed),
                "live_code": live.code if live else "",
@@ -3856,6 +3891,82 @@ def student_class(class_id):
         ctx = user_context(db)
         ctx.update(course=course, rows=rows, preview=teacher)
         return render_template("class_student.html", **ctx)
+    finally:
+        db.close()
+
+
+# --------------------------------------------------------------------------
+# Pictures in descriptions
+# --------------------------------------------------------------------------
+
+#: After the editor has shrunk a big photo (class_teacher.html); a GIF, which
+#: it leaves alone so it still moves, is the usual reason to get near it.
+IMAGE_MAX_BYTES = 4_000_000
+
+# What a file IS, from its first bytes. The name and the type the browser
+# sent are both whatever the sender chose. No SVG: it can carry script.
+_IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _image_type(data):
+    for magic, kind in _IMAGE_MAGIC:
+        if data.startswith(magic):
+            return kind
+    if len(data) > 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@app.post("/api/image")
+def upload_image():
+    """A picture for a description, from a teacher. Answers its address,
+    which the editor writes into the markdown as ![](...)."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only a teacher can add pictures."), 403
+        f = request.files.get("image")
+        if f is None:
+            return jsonify(error="No picture was sent."), 400
+        data = f.read(IMAGE_MAX_BYTES + 1)
+        if len(data) > IMAGE_MAX_BYTES:
+            return jsonify(error="That picture is too big (4 MB at most)."), 413
+        kind = _image_type(data)
+        if kind is None:
+            return jsonify(error="That isn't a PNG, JPEG, GIF or WebP picture."), 400
+        img = accounts.Image(slug=accounts.new_id(db, accounts.Image), app=APP_NAME,
+                             owner_id=user.id, content_type=kind, data=data,
+                             size=len(data))
+        db.add(img)
+        db.commit()
+        return jsonify(ok=True, url=url_for("serve_image", slug=img.slug))
+    finally:
+        db.close()
+
+
+@app.get("/img/<slug>")
+def serve_image(slug):
+    """A description's picture. No sign-in: a class page's pictures are only
+    reachable from the page, and the address is not guessable. Never
+    changes once made, so browsers keep it."""
+    db = SessionLocal()
+    try:
+        img = db.query(accounts.Image).filter_by(slug=clean(slug, 16)).first()
+        if img is None:
+            abort(404)
+        resp = Response(img.data, mimetype=img.content_type)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        # The type is the one its bytes were checked to be; never let a
+        # browser second-guess it into something that runs.
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+        return resp
     finally:
         db.close()
 

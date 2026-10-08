@@ -51,7 +51,17 @@
   {% if rows %}
     <div class="stream">
       {% for r in rows %}
-        {% if r.group %}
+        {% if r.material %}
+          {#  A material: its title and its description, and nothing to open —
+              the description is the whole of it (links, pictures, words). #}
+          <article class="card card-material">
+            <div class="card-head">
+              <span class="card-icon" aria-hidden="true">📎</span>
+              <span class="card-title">{{ r.title }}</span>
+            </div>
+            {% if r.description %}<div class="md card-desc" data-md="{{ r.description }}">{{ r.description }}</div>{% endif %}
+          </article>
+        {% elif r.group %}
           <section class="stream-group">
             <h2 class="stream-heading">{{ r.title }}</h2>
             {% if r.description %}<div class="md stream-intro" data-md="{{ r.description }}">{{ r.description }}</div>{% endif %}

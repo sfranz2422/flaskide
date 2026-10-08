@@ -9,6 +9,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{#  The description box's toolbar: EasyMDE, as quickpulsepro uses. If the CDN
+    can't be reached the box stays a plain textarea, which still works. #}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css">
 <script>
   try {
     var saved = localStorage.getItem("flaskide-theme");
@@ -43,7 +46,9 @@
       <div class="grade-line">
         <button class="btn btn-primary js-desc-save" type="button">Save</button>
         <button class="btn js-desc-cancel" type="button">Cancel</button>
-        <span class="dim small">Links open in a new tab for students.</span>
+        <label class="btn js-pic-label" title="Upload a picture into the description">Add picture
+          <input class="js-pic" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+        <span class="dim small">Markdown works too. Links open in a new tab for students.</span>
       </div>
     </div>
   {%- endmacro %}
@@ -59,12 +64,13 @@
   <section class="class-tools">
     <form id="new-item" class="grade-line">
       <input id="new-title" class="field" type="text" maxlength="200"
-             placeholder="New assignment's name" aria-label="New assignment's name">
+             placeholder="Name of the new assignment or material" aria-label="New item's name">
       <select id="new-kind" class="field" aria-label="Kind">
         <option value="code">Assignment (code)</option>
         <option value="lesson">Lesson (slides and questions)</option>
+        <option value="material">Material (text, links, pictures — no editor)</option>
       </select>
-      <button class="btn btn-primary" type="submit">New assignment</button>
+      <button class="btn btn-primary" type="submit">Add to class</button>
     </form>
     <form id="new-group" class="grade-line">
       <input id="group-title" class="field" type="text" maxlength="200"
@@ -84,7 +90,24 @@
       </thead>
       <tbody>
         {% for r in rows %}
-          {% if r.group %}
+          {% if r.material %}
+            <tr class="material-row {{ 'is-hidden' if r.hidden }}" data-item="{{ r.id }}" data-title="{{ r.title }}"
+                data-hidden="{{ 1 if r.hidden else 0 }}">
+              <td class="order">{{ arrows() }}</td>
+              <td colspan="2">
+                <span aria-hidden="true">📎</span> <strong>{{ r.title }}</strong>
+                <span class="kind-tag">material</span>
+                {% if r.hidden %}<span class="kind-tag">hidden</span>{% endif %}
+                {{ describe(r) }}
+              </td>
+              <td class="right rowactions">
+                <button class="linkbtn js-describe">Describe</button>
+                <button class="linkbtn js-rename">Rename</button>
+                <button class="linkbtn js-hide">{{ "Show" if r.hidden else "Hide" }}</button>
+                <button class="linkbtn js-remove danger">Delete</button>
+              </td>
+            </tr>
+          {% elif r.group %}
             <tr class="group-row" data-item="{{ r.id }}" data-title="{{ r.title }}">
               <td class="order">{{ arrows() }}</td>
               <td colspan="2"><strong class="group-title">{{ r.title }}</strong>{{ describe(r) }}</td>
@@ -187,6 +210,7 @@
 </main>
 
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
 <script>
   var CLASS = {{ course.id }};
   var api = "/api/class/" + CLASS;
@@ -203,7 +227,16 @@
     e.preventDefault();
     var title = document.getElementById("new-title").value.trim();
     if (!title) { document.getElementById("new-title").focus(); return; }
-    send(api + "/new", { title: title, kind: document.getElementById("new-kind").value })
+    var kind = document.getElementById("new-kind").value;
+    if (kind === "material") {
+      // On top, with its description box open to write in.
+      send(api + "/material", { title: title }).then(function (out) {
+        if (!out.ok) { alert(out.d.error || "Not made"); return; }
+        location.href = location.pathname + "?describe=" + out.d.id;
+      });
+      return;
+    }
+    send(api + "/new", { title: title, kind: kind })
       .then(function (out) {
         if (!out.ok) { alert(out.d.error || "Not made"); return; }
         location.href = out.d.url;            // write its starter
@@ -247,11 +280,19 @@
     if (t.contains("js-describe") || t.contains("js-desc-cancel")) {
       var box = row.querySelector(".desc-edit");
       box.hidden = !box.hidden;
-      if (!box.hidden) row.querySelector(".desc-box").focus();
+      if (!box.hidden) openEditor(row);
+      return;
+    }
+    if (t.contains("js-remove")) {
+      if (!confirm("Delete the material “" + row.dataset.title + "”? Its description goes with it.")) return;
+      send(api + "/item/" + row.dataset.item, undefined, "DELETE").then(function (out) {
+        if (!out.ok) { alert(out.d.error || "Not deleted"); return; }
+        location.reload();
+      });
       return;
     }
     if (t.contains("js-desc-save")) {
-      var text = row.querySelector(".desc-box").value;
+      var text = descText(row);
       send(api + "/item/" + row.dataset.item, { description: text }).then(function (out) {
         if (!out.ok) { alert(out.d.error || "Not saved"); return; }
         var view = row.querySelector(".desc-preview");
@@ -350,6 +391,113 @@
         location.href = "{{ url_for('teacher_home') }}";
       });
     });
+  })();
+
+  /* THE DESCRIPTION BOX. EasyMDE on top of the textarea — a toolbar for
+     bold, headings, lists, links and pictures, and markdown typed by hand
+     still works. Made when the box is first opened: CodeMirror under it
+     measures itself, and a hidden box measures as nothing. Without EasyMDE
+     (the CDN unreachable) the textarea is the box, and Add picture still
+     works on it. */
+  var editors = {};
+
+  function openEditor(row) {
+    var id = row.dataset.item, area = row.querySelector(".desc-box");
+    if (editors[id] || typeof EasyMDE === "undefined") { area.focus(); return; }
+    editors[id] = new EasyMDE({
+      element: area,
+      spellChecker: false,
+      status: false,
+      autoDownloadFontAwesome: true,
+      uploadImage: true,
+      imageAccept: "image/png, image/jpeg, image/gif, image/webp",
+      imageUploadFunction: uploadImage,
+      toolbar: [
+        "bold", "italic", "heading", "|",
+        "code", "quote", "unordered-list", "ordered-list", "|",
+        "link", "upload-image", "|",
+        "preview", "guide"
+      ],
+      // The preview is what students will see: the same renderer, sanitised,
+      // links to a new tab. It is filled in a moment after EasyMDE asks.
+      previewRender: function (text, preview) {
+        window.FlaskIDENotes.render(preview, text);
+        return preview.innerHTML;
+      }
+    });
+    editors[id].codemirror.focus();
+  }
+
+  function descText(row) {
+    var ed = editors[row.dataset.item];
+    return ed ? ed.value() : row.querySelector(".desc-box").value;
+  }
+
+  function insertText(row, text) {
+    var ed = editors[row.dataset.item];
+    if (ed) { ed.codemirror.replaceSelection(text); ed.codemirror.focus(); return; }
+    var area = row.querySelector(".desc-box");
+    var at = area.selectionStart || area.value.length;
+    area.value = area.value.slice(0, at) + text + area.value.slice(area.selectionEnd || at);
+  }
+
+  /* A big photo is shrunk here, before it is sent: a phone's 4000-pixel
+     picture is several MB to show at the width of a card. 1600 across is
+     plenty, and a JPEG of that is a few hundred KB. A GIF is left alone, or
+     it would stop moving; the server refuses anything over 4 MB. */
+  var SHRINK_OVER = 1500000, MAX_SIDE = 1600;
+
+  function shrink(file) {
+    if (file.type === "image/gif" || file.size <= SHRINK_OVER || !window.createImageBitmap) {
+      return Promise.resolve(file);
+    }
+    return createImageBitmap(file).then(function (bmp) {
+      var scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.round(bmp.width * scale);
+      canvas.height = Math.round(bmp.height * scale);
+      canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      var type = file.type === "image/png" ? "image/png" : "image/jpeg";
+      return new Promise(function (resolve) {
+        canvas.toBlob(function (blob) { resolve(blob || file); }, type, 0.85);
+      });
+    }).catch(function () { return file; });
+  }
+
+  // EasyMDE's upload hook, and the Add picture button's: the picture goes
+  // to /api/image, and its address comes back to go in as ![](...).
+  function uploadImage(file, onSuccess, onError) {
+    shrink(file).then(function (blob) {
+      var form = new FormData();
+      form.append("image", blob, file.name || "picture");
+      return fetch("/api/image", { method: "POST", body: form });
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (out) {
+      if (!out.ok) { onError(out.d.error || "That picture didn't upload."); return; }
+      onSuccess(out.d.url);
+    }).catch(function () { onError("That picture didn't upload — check your connection."); });
+  }
+
+  document.addEventListener("change", function (e) {
+    if (!e.target.classList.contains("js-pic")) return;
+    var row = e.target.closest("tr[data-item]"), file = e.target.files[0];
+    e.target.value = "";
+    if (!row || !file) return;
+    uploadImage(file, function (url) {
+      insertText(row, "![" + (file.name || "").replace(/\.[^.]+$/, "") + "](" + url + ")");
+    }, function (msg) { alert(msg); });
+  });
+
+  // Opened by a link: a material just made, to write its description.
+  (function () {
+    var want = new URLSearchParams(location.search).get("describe");
+    var row = want && document.querySelector('tr[data-item="' + want + '"]');
+    if (!row) return;
+    history.replaceState(null, "", location.pathname);
+    row.querySelector(".desc-edit").hidden = false;
+    openEditor(row);
+    row.scrollIntoView({ block: "center" });
   })();
 
   // Every description, rendered as the class will see it.
