@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ item.title }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{#  The description box's toolbar: EasyMDE, as quickpulsepro uses. If the CDN
+    can't be reached the box stays a plain textarea, which still works. #}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css">
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+
+<body class="class-page class-teacher">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">{{ item.title }}</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('teacher_class', class_id=course.id) }}">← {{ course.name }}</a>
+    <a class="btn" href="{{ url_for('student_class', class_id=course.id) }}">Student view</a>
+    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+  </div>
+</header>
+
+{#  A material's own page: everything it is — a name and a description —
+    and what can be done with it. No Classroom: a material has no grade. #}
+<main class="sheet" data-item="{{ item.id }}">
+  <section class="class-line">
+    <p>📎 Material in <a href="{{ url_for('teacher_class', class_id=course.id) }}"><strong>{{ course.name }}</strong></a>
+      {% if item.hidden %}<span class="kind-tag">hidden from students</span>{% endif %}</p>
+  </section>
+
+  <section class="handout">
+    <h2>Name</h2>
+    <form id="mat-name" class="linkrow">
+      <input id="mat-title" class="field" type="text" maxlength="200" value="{{ item.title }}" aria-label="Name">
+      <button class="btn" type="submit">Save name</button>
+    </form>
+  </section>
+
+  <section class="handout">
+    <h2>What students see</h2>
+    <div class="desc-edit">
+      <textarea class="field desc-box" rows="10" maxlength="20000"
+                placeholder="Text, links, pictures, a video. Markdown: **bold**, - lists, [a link](https://example.com)">{{ item.description }}</textarea>
+      <div class="grade-line">
+        <button class="btn btn-primary js-desc-save" type="button">Save</button>
+        <label class="btn js-pic-label" title="Upload a picture into the description">Add picture
+          <input class="js-pic" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+        <span id="mat-state" class="dim small"></span>
+      </div>
+    </div>
+    <h2 class="mat-preview-head">As students see it</h2>
+    <article class="card card-material">
+      <div class="card-head">
+        <span class="card-icon" aria-hidden="true">📎</span>
+        <span class="card-title">{{ item.title }}</span>
+      </div>
+      <div class="md card-desc mat-preview" data-md="{{ item.description }}">{{ item.description }}</div>
+    </article>
+  </section>
+
+  <section class="handout">
+    <h2>Where it goes</h2>
+    <div class="grade-line">
+      <button id="mat-hide" class="btn" data-hidden="{{ 1 if item.hidden else 0 }}">{{ "Show to students" if item.hidden else "Hide from students" }}</button>
+      {% if others %}
+        <select id="mat-copy" class="field" aria-label="Copy to class">
+          <option value="">Copy to another class…</option>
+          {% for c in others %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      {% endif %}
+      <button id="mat-delete" class="linkbtn danger" type="button">Delete material</button>
+    </div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='embeds.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
+{% include "_describe.html" %}
+<script>
+  var item = document.querySelector("main[data-item]");
+  var api = "/api/class/{{ course.id }}/item/{{ item.id }}";
+  var state = document.getElementById("mat-state");
+
+  function send(url, body, method) {
+    return fetch(url, {
+      method: method || "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); });
+  }
+
+  // The box is the page's point, so it is open from the start.
+  openEditor(item);
+  var preview = document.querySelector(".mat-preview");
+  if (preview.dataset.md) showDescription(preview, preview.dataset.md);
+
+  document.querySelector(".js-desc-save").addEventListener("click", function () {
+    state.textContent = "Saving…";
+    send(api, { description: descText(item) }).then(function (out) {
+      if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
+      state.textContent = "Saved";
+      showDescription(preview, out.d.description);
+    }).catch(function () { state.textContent = "Not saved — check your connection"; });
+  });
+
+  document.getElementById("mat-name").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var name = document.getElementById("mat-title").value.trim();
+    if (!name) return;
+    send(api, { title: name }).then(function (out) {
+      if (!out.ok) { alert(out.d.error || "Not saved"); return; }
+      location.reload();
+    });
+  });
+
+  document.getElementById("mat-hide").addEventListener("click", function (e) {
+    send(api, { hidden: e.target.dataset.hidden !== "1" }).then(function () { location.reload(); });
+  });
+
+  var copy = document.getElementById("mat-copy");
+  if (copy) copy.addEventListener("change", function () {
+    if (!copy.value) return;
+    var name = copy.options[copy.selectedIndex].textContent;
+    if (!confirm("Copy this material to " + name + "? It goes on top of that class's page.")) { copy.value = ""; return; }
+    send(api + "/copy", { class: copy.value }).then(function (out) {
+      if (!out.ok) { alert(out.d.error || "Not copied"); copy.value = ""; return; }
+      location.href = out.d.url;
+    });
+  });
+
+  document.getElementById("mat-delete").addEventListener("click", function () {
+    if (!confirm("Delete this material? Its description goes with it.")) return;
+    send(api, undefined, "DELETE").then(function (out) {
+      if (!out.ok) { alert(out.d.error || "Not deleted"); return; }
+      location.href = "{{ url_for('teacher_class', class_id=course.id) }}";
+    });
+  });
+</script>
+</body>
+</html>

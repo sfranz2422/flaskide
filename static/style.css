@@ -1720,3 +1720,10 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 /* An <iframe> pasted into a description (a video, Slides, a form): never
    wider than the card, whatever width its embed code asked for. */
 .md iframe { max-width: 100%; border: 0; border-radius: 8px; }
+/* A material's own page: the box open, and the card it makes under it. */
+.mat-preview-head { margin-top: 22px !important; }
+.desc-edit .desc-box[rows="10"] + .EasyMDEContainer .CodeMirror { min-height: 260px; }
+/* On the class page a description is a reminder, not the page: its
+   pictures and videos as thumbnails, so a row stays a row. */
+.desc-preview img, .desc-preview .video-embed, .desc-preview iframe { max-height: 110px; width: auto; }
+.desc-preview .video-embed { aspect-ratio: auto; max-width: 196px; height: 110px; }

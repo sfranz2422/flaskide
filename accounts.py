@@ -425,6 +425,11 @@ class ClassItem(Base):
     #: "" for everything else, which is what every row made before materials
     #: was: an assignment when assignment_id is set, a group heading when not.
     kind = Column(String(16), nullable=False, default="")
+    #: Whether the class's students see the assignment's live link. It is
+    #: always made (_place); this only decides if the page offers it. While
+    #: the lesson is on the air it is offered regardless — a teacher who has
+    #: gone live means the class to find it.
+    show_live = Column(Integer, nullable=False, default=1)
     #: A group's heading. Unused for an assignment, whose title is its own.
     title = Column(String(200), nullable=False, default="")
     #: Hidden from the class's students; the teacher still sees it, marked.
@@ -626,6 +631,9 @@ def _as_map(raw) -> dict:
 # from an earlier deploy needs these. Every default has to leave existing rows
 # correct: an assignment that existed before archiving did is not archived.
 LATER_COLUMNS = [
+    # 1: every item from before showed its live link, and still should.
+    ("class_items", "show_live",
+     "ALTER TABLE class_items ADD COLUMN show_live INTEGER NOT NULL DEFAULT 1"),
     # "" is true of every row made before materials: each is the assignment
     # or group heading its assignment_id already says.
     ("class_items", "kind",

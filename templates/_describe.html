@@ -1,0 +1,109 @@
+{#  The description box, shared by the class page and a material's own page:
+    EasyMDE with its toolbar, pictures uploaded to /api/image, and the
+    description shown as students will see it. Anything holding a description
+    is an element with data-item (its class item's id) around a .desc-box. #}
+<script>
+  /* THE DESCRIPTION BOX. EasyMDE on top of the textarea — a toolbar for
+     bold, headings, lists, links and pictures, and markdown typed by hand
+     still works. Made when the box is first opened: CodeMirror under it
+     measures itself, and a hidden box measures as nothing. Without EasyMDE
+     (the CDN unreachable) the textarea is the box, and Add picture still
+     works on it. */
+  var editors = {};
+
+  function openEditor(row) {
+    var id = row.dataset.item, area = row.querySelector(".desc-box");
+    if (editors[id] || typeof EasyMDE === "undefined") { area.focus(); return; }
+    editors[id] = new EasyMDE({
+      element: area,
+      spellChecker: false,
+      status: false,
+      autoDownloadFontAwesome: true,
+      uploadImage: true,
+      imageAccept: "image/png, image/jpeg, image/gif, image/webp",
+      imageUploadFunction: uploadImage,
+      toolbar: [
+        "bold", "italic", "heading", "|",
+        "code", "quote", "unordered-list", "ordered-list", "|",
+        "link", "upload-image", "|",
+        "preview", "guide"
+      ],
+      // The preview is what students will see: the same renderer, sanitised,
+      // links to a new tab. It is filled in a moment after EasyMDE asks.
+      previewRender: function (text, preview) {
+        showDescription(preview, text);
+        return preview.innerHTML;
+      }
+    });
+    editors[id].codemirror.focus();
+  }
+
+  function descText(row) {
+    var ed = editors[row.dataset.item];
+    return ed ? ed.value() : row.querySelector(".desc-box").value;
+  }
+
+  function insertText(row, text) {
+    var ed = editors[row.dataset.item];
+    if (ed) { ed.codemirror.replaceSelection(text); ed.codemirror.focus(); return; }
+    var area = row.querySelector(".desc-box");
+    var at = area.selectionStart || area.value.length;
+    area.value = area.value.slice(0, at) + text + area.value.slice(area.selectionEnd || at);
+  }
+
+  /* A big photo is shrunk here, before it is sent: a phone's 4000-pixel
+     picture is several MB to show at the width of a card. 1600 across is
+     plenty, and a JPEG of that is a few hundred KB. A GIF is left alone, or
+     it would stop moving; the server refuses anything over 4 MB. */
+  var SHRINK_OVER = 1500000, MAX_SIDE = 1600;
+
+  function shrink(file) {
+    if (file.type === "image/gif" || file.size <= SHRINK_OVER || !window.createImageBitmap) {
+      return Promise.resolve(file);
+    }
+    return createImageBitmap(file).then(function (bmp) {
+      var scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+      var canvas = document.createElement("canvas");
+      canvas.width = Math.round(bmp.width * scale);
+      canvas.height = Math.round(bmp.height * scale);
+      canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      var type = file.type === "image/png" ? "image/png" : "image/jpeg";
+      return new Promise(function (resolve) {
+        canvas.toBlob(function (blob) { resolve(blob || file); }, type, 0.85);
+      });
+    }).catch(function () { return file; });
+  }
+
+  // EasyMDE's upload hook, and the Add picture button's: the picture goes
+  // to /api/image, and its address comes back to go in as ![](...).
+  function uploadImage(file, onSuccess, onError) {
+    shrink(file).then(function (blob) {
+      var form = new FormData();
+      form.append("image", blob, file.name || "picture");
+      return fetch("/api/image", { method: "POST", body: form });
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (out) {
+      if (!out.ok) { onError(out.d.error || "That picture didn't upload."); return; }
+      onSuccess(out.d.url);
+    }).catch(function () { onError("That picture didn't upload — check your connection."); });
+  }
+
+  document.addEventListener("change", function (e) {
+    if (!e.target.classList.contains("js-pic")) return;
+    var row = e.target.closest("[data-item]"), file = e.target.files[0];
+    e.target.value = "";
+    if (!row || !file) return;
+    uploadImage(file, function (url) {
+      insertText(row, "![" + (file.name || "").replace(/\.[^.]+$/, "") + "](" + url + ")");
+    }, function (msg) { alert(msg); });
+  });
+
+  // A description as the class will see it: sanitised markdown, and a
+  // YouTube link on its own line as a player (embeds.js).
+  function showDescription(el, text) {
+    return window.FlaskIDENotes.render(el, text, { trusted: true }).then(function () {
+      window.ClassEmbeds.embedVideos(el);
+    });
+  }
+</script>

@@ -3579,7 +3579,64 @@ def class_new_material(class_id):
                                  position=_top_position(db, course.id))
         db.add(row)
         db.commit()
-        return jsonify(ok=True, id=row.id)
+        return jsonify(ok=True, id=row.id,
+                       url=url_for("teacher_material", class_id=course.id, item_id=row.id))
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>/item/<int:item_id>/copy")
+def class_item_copy(class_id, item_id):
+    """A material, copied to another of the teacher's classes, on top: its
+    title and description. (An assignment is copied from its own page —
+    copy_assignment — because it carries links, a lesson and results.)"""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        row = _class_item(db, course, item_id)
+        if row is None or row.kind != "material":
+            return jsonify(error="No such material."), 404
+        try:
+            target = db.query(accounts.Course).filter_by(
+                id=int((request.get_json(silent=True) or {}).get("class")),
+                app=APP_NAME, teacher_id=user.id).first()
+        except (TypeError, ValueError):
+            target = None
+        if target is None:
+            return jsonify(error="Choose a class to copy it to."), 404
+        copy = accounts.ClassItem(class_id=target.id, kind="material", title=row.title,
+                                  description=row.description,
+                                  position=_top_position(db, target.id))
+        db.add(copy)
+        db.commit()
+        return jsonify(ok=True, id=copy.id, course=target.name,
+                       url=url_for("teacher_material", class_id=target.id, item_id=copy.id))
+    finally:
+        db.close()
+
+
+@app.get("/teacher/class/<int:class_id>/material/<int:item_id>")
+def teacher_material(class_id, item_id):
+    """A material's own page, as an assignment has one: its name, its
+    description with the toolbar, Hide, Copy to another class and Delete.
+    Nothing about Classroom — a material has no grade to send."""
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        course = db.query(accounts.Course).filter_by(id=class_id, app=APP_NAME).first()
+        if course is None or course.teacher_id != user.id:
+            abort(404)
+        row = _class_item(db, course, item_id)
+        if row is None or row.kind != "material":
+            abort(404)
+        ctx = user_context(db)
+        ctx.update(course=course, item=row,
+                   others=[c for c in _my_classes(db, user) if c.id != course.id])
+        return render_template("material_teacher.html", **ctx)
     finally:
         db.close()
 
@@ -3632,6 +3689,8 @@ def class_item_update(class_id, item_id):
         data = request.get_json(silent=True) or {}
         if "hidden" in data:
             row.hidden = 1 if data.get("hidden") else 0
+        if "show_live" in data:
+            row.show_live = 1 if data.get("show_live") else 0
         if "description" in data:
             text = data.get("description")
             if not isinstance(text, str):
@@ -3646,7 +3705,7 @@ def class_item_update(class_id, item_id):
             row.title = title
         db.commit()
         return jsonify(ok=True, hidden=bool(row.hidden), title=row.title,
-                       description=row.description)
+                       description=row.description, show_live=bool(row.show_live))
     finally:
         db.close()
 
@@ -3828,6 +3887,7 @@ def _class_rows(db, course, user=None, student=False):
                "kind": a.kind, "hidden": bool(r.hidden), "closed": bool(a.closed),
                "live_code": live.code if live else "",
                "on_air": bool(live and not live.ended),
+               "show_live": bool(r.show_live),
                "out_of": a.out_of or "", "count": counts.get(a.id, 0),
                # A post from the first version still in the assignment's own
                # columns counts too; its page moves it into ClassroomPost.
@@ -3837,6 +3897,10 @@ def _class_rows(db, course, user=None, student=False):
             sub = subs.get(a.id)
             earned = _quiz_earned(db, a.id).get(user.id) if user else None
             total = _total(sub.score if sub else None, earned)
+            # The live link only if the teacher shows it — or it is on the
+            # air now, when hiding it would hide the lesson from the class.
+            if not (r.show_live or row["on_air"]):
+                row["live_code"] = ""
             row.update(
                 turned_in=bool(sub),
                 grade=_score_text(total),

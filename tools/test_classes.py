@@ -307,7 +307,7 @@ check("  each assignment a card, with its description to render",
 check("  and a heading with its words under it",
       'class="md stream-intro" data-md="Week of Oct 6."' in page)
 check("  rendered by notes.js, which sanitises it and opens links in a new tab",
-      "notes.js" in page and "FlaskIDENotes.render(el, el.dataset.md, { trusted: true })" in page)
+      'src="/static/notes.js"' in page and "FlaskIDENotes.render(el, el.dataset.md, { trusted: true })" in page)
 check("  escaped as written until it is",
       "<strong>list</strong>" not in page and "<script>alert" not in page)
 check("a student not on the roster is turned away",
@@ -384,6 +384,24 @@ check("turned in: the name opens what they turned in",
 check("  and their grade is on the page", 'badge-grade">8 / 10</span>' in page)
 check("  only their own", 'badge-grade">8' not in teacher.get("/class/%d" % C4).get_data(as_text=True))
 
+# The live link: always made, shown to students unless the teacher hides it.
+_live_code = q(accounts.LiveSession, assignment_id=a.id)[0].code
+check("a new assignment's live link is on the students' page",
+      'href="/live/%s"' % _live_code in kid1.get("/class/%d" % C4).get_data(as_text=True))
+r = teacher.post("/api/class/%d/item/%d" % (C4, hello_row), json={"show_live": False})
+check("the teacher hides it",
+      r.status_code == 200 and r.get_json().get("show_live") is False
+      and 'href="/live/%s"' % _live_code not in kid1.get("/class/%d" % C4).get_data(as_text=True))
+check("  while the lesson itself is still there, at its link",
+      len(q(accounts.LiveSession, assignment_id=a.id)) == 1)
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+_hrow = re.search(r'data-item="%d"[\s\S]*?</tr>' % hello_row, page)
+_hrow = _hrow.group(0) if _hrow else ""
+check("  and the teacher's row says so, with the way back",
+      "live link hidden" in _hrow and 'data-show="0"' in _hrow and ">Show live link<" in _hrow)
+check("a student cannot change it",
+      kid1.post("/api/class/%d/item/%d" % (C4, hello_row), json={"show_live": True}).status_code == 403)
+
 db = P.SessionLocal()
 db.query(accounts.LiveSession).filter_by(assignment_id=a.id).update({"ended": 0})
 db.commit()
@@ -391,6 +409,9 @@ db.close()
 check("a lesson on the air says so on the class's page",
       "● Live now" in kid1.get("/class/%d" % C4).get_data(as_text=True)
       and "● Live now" in teacher.get("/teacher/class/%d" % C4).get_data(as_text=True))
+check("  and its link is shown while it's on the air, hidden or not",
+      'href="/live/%s"' % _live_code in kid1.get("/class/%d" % C4).get_data(as_text=True))
+teacher.post("/api/class/%d/item/%d" % (C4, hello_row), json={"show_live": True})
 
 # A heading with nothing of theirs under it says nothing to them.
 teacher.post("/api/class/%d/group" % C4, json={"title": "Coming soon"})
@@ -413,9 +434,14 @@ check("the teacher adds a material, on top",
 page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
 _mrow = re.search(r'data-item="%d"[\s\S]*?</tr>' % mat_row, page)
 _mrow = _mrow.group(0) if _mrow else ""
-check("  its row on the teacher's page: Describe, Rename, Hide and Delete",
-      all(x in _mrow for x in ('js-describe">Describe', 'js-rename">Rename',
-                                'js-hide">Hide', 'js-remove danger">Delete', ">material<")))
+check("  its row on the teacher's page: Edit, Describe, Hide and Delete",
+      all(x in _mrow for x in ('href="/teacher/class/%d/material/%d">Edit' % (C4, mat_row),
+                                'js-describe">Describe', 'js-hide">Hide',
+                                'js-remove danger">Delete', ">material<")))
+check("  and its name opens its own page",
+      '<a href="/teacher/class/%d/material/%d"><strong>Reading: lists</strong>' % (C4, mat_row) in _mrow)
+check("a new material says where its page is, to open it there",
+      r.get_json().get("url") == "/teacher/class/%d/material/%d" % (C4, mat_row))
 page = kid1.get("/class/%d" % C4).get_data(as_text=True)
 _card = re.search(r'<article class="card card-material">[\s\S]*?</article>', page)
 _card = _card.group(0) if _card else ""
@@ -425,6 +451,41 @@ check("  and nothing to open: the description is all of it",
       _card and "btn" not in _card and "/a/" not in _card)
 teacher.post("/api/class/%d/item/%d" % (C4, mat_row), json={"title": "Reading: lists, part 1"})
 check("it can be renamed", q(accounts.ClassItem, id=mat_row)[0].title == "Reading: lists, part 1")
+
+# Its own page, as an assignment has.
+MPAGE = "/teacher/class/%d/material/%d" % (C4, mat_row)
+page = teacher.get(MPAGE).get_data(as_text=True)
+check("a material has its own page",
+      'id="mat-title"' in page and 'value="Reading: lists, part 1"' in page
+      and 'class="field desc-box"' in page and "Read [this](https://example.com/lists) first." in page)
+check("  with the toolbar, open from the start",
+      "easymde.min.js" in page and "function openEditor(row)" in page and "openEditor(item);" in page)
+check("  Hide, Delete and Copy to another class — the others only",
+      'id="mat-hide"' in page and 'id="mat-delete"' in page
+      and '<option value="%d">Intro — P7</option>' % C7 in page
+      and '<option value="%d">' % C4 not in page)
+check("  and nothing about Classroom", "Classroom" not in page)
+check("  for its teacher only",
+      other.get(MPAGE).status_code == 404 and kid1.get(MPAGE).status_code == 404)
+check("  and only for a material",
+      teacher.get("/teacher/class/%d/material/%d" % (C4, hello_row)).status_code == 404)
+
+COPYM = "/api/class/%d/item/%d/copy" % (C4, mat_row)
+r = teacher.post(COPYM, json={"class": C7})
+d = r.get_json() or {}
+cm = q(accounts.ClassItem, id=d.get("id"))[0] if d.get("id") else None
+check("Copy to puts it on top of the other class, name and description",
+      r.status_code == 200 and cm is not None and cm.class_id == C7 and cm.kind == "material"
+      and cm.title == "Reading: lists, part 1" and cm.description == m.description
+      and order(cid=C7)[0][0] == str(cm.id), d)
+check("  and says where its page is", d.get("url") == "/teacher/class/%d/material/%d" % (C7, cm.id))
+check("  only to the teacher's own class",
+      teacher.post(COPYM, json={"class": 99999}).status_code == 404
+      and other.post(COPYM, json={"class": C7}).status_code == 404
+      and kid1.post(COPYM, json={"class": C7}).status_code == 403)
+check("  and only a material this way",
+      teacher.post("/api/class/%d/item/%d/copy" % (C4, hello_row), json={"class": C7}).status_code == 404)
+teacher.delete("/api/class/%d/item/%d" % (C7, cm.id))
 teacher.post("/api/class/%d/item/%d" % (C4, mat_row), json={"hidden": True})
 check("  and hidden from students",
       "Reading: lists" not in kid1.get("/class/%d" % C4).get_data(as_text=True)
@@ -562,7 +623,7 @@ for _dir in ("templates", "static"):
                 and "trusted: true" in open(_p, encoding="utf-8", errors="ignore").read():
             _askers.append(_f)
 check("  only the class pages ask for the teacher's rules",
-      sorted(_askers) == ["class_student.html", "class_teacher.html"], _askers)
+      sorted(_askers) == ["_describe.html", "class_student.html"], _askers)
 check("a description cannot be written by a student, which is what makes it safe",
       kid1.post("/api/class/%d/item/%d" % (C4, hello_row), json={"description": "<iframe>"}).status_code == 403
       and kid1.post("/api/class/%d/material" % C4, json={"title": "x"}).status_code == 403)
@@ -669,6 +730,9 @@ check("an older class_items table gets descriptions, empty", _d == [("",)], _d)
 with _old.connect() as _c:
     _k = _c.execute(sqlalchemy.text("SELECT kind FROM class_items")).fetchall()
 check("  and a kind, empty: still the heading it was", _k == [("",)], _k)
+with _old.connect() as _c:
+    _sl = _c.execute(sqlalchemy.text("SELECT show_live FROM class_items")).fetchall()
+check("  and its live link shown, as it always was", _sl == [(1,)], _sl)
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"
