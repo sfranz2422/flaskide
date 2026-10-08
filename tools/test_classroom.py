@@ -163,7 +163,9 @@ def fake_classroom_get(url, params):
         if c["work"] and url == base + "/courseWork/w-%s" % cid:
             if c["gone"]:
                 return 404, {"error": {"message": "Requested entity was not found."}}
-            return 200, {"id": "w-" + cid, "state": c["work"].get("state")}
+            return 200, {"id": "w-" + cid, "state": c["work"].get("state"),
+                         **({"scheduledTime": c["work"]["scheduledTime"]}
+                            if c["work"].get("scheduledTime") else {})}
         if c["work"] and url == base + "/courseWork/w-%s/studentSubmissions" % cid:
             if c["gone"]:
                 return 404, {"error": {"message": "Requested entity was not found."}}
@@ -190,6 +192,13 @@ def fake_api(method, url, token, body=None, params=None):
                         url.rsplit("/", 1)[1], body, params))
         return 200, {}
     if method == "PATCH" and "/courseWork/w-" in url:
+        cid = url.split("/courses/")[1].split("/")[0]
+        if "state" in (params or {}).get("updateMask", ""):
+            # Google's rule: DRAFT to PUBLISHED, and never back.
+            if room[cid]["work"].get("state") == "PUBLISHED":
+                return 400, {"error": {"message": "@CourseWorkNotModifiable"}}
+            room[cid]["work"]["state"] = body["state"]
+            room[cid]["work"].pop("scheduledTime", None)
         return 200, {}
     return 404, {}
 
@@ -713,6 +722,111 @@ check("  and the old columns emptied, so it is carried over once",
       (a.classroom_course_id, a.classroom_work_id) == ("", ""))
 check("  and the page shows it as posted",
       "Posted to" in page and "<strong>Programming 1 — Period 4</strong>" in page)
+
+
+# ------------------------------------------------- assigning a draft from here
+print("\nPost now: assigning a Classroom draft from PyIDE")
+
+STATES = "/api/assignment/%s/classroom/states" % hw
+PUBLISH = "/api/assignment/%s/classroom/publish" % hw
+db = P.SessionLocal()
+try:
+    for _p in db.query(accounts.ClassroomPost).filter_by(assignment_id=assignment().id):
+        teacher.post(UNLINK, json={"post": _p.id})       # the carried-over one above
+finally:
+    db.close()
+check("with nothing posted, there is nothing to ask Google",
+      teacher.get(STATES).get_json() == {"states": [], "gone": []})
+teacher.post(POST, json={"course": P4, "draft": True})
+teacher.post(POST, json={"course": P7, "draft": True})
+room[P7]["work"]["scheduledTime"] = "2026-10-12T11:00:00Z"
+db = P.SessionLocal()
+try:
+    ids = {p.course_id: p.id for p in db.query(accounts.ClassroomPost)
+           .filter_by(assignment_id=assignment().id)}
+finally:
+    db.close()
+page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("each posted class has a Post now button, hidden until Google answers",
+      all('class="linkbtn gc-publish" data-post="%d"' % ids[c] in page for c in (P4, P7))
+      and 'data-name="Programming 1 — Period 4" hidden' in page)
+check("  and the page asks which are drafts",
+      '"/classroom/states"' in page and '"/classroom/publish"' in page)
+d = teacher.get(STATES).get_json()
+check("the page is told Period 4 is a draft and Period 7 is scheduled",
+      sorted((s["id"], s["state"]) for s in d["states"])
+      == sorted([(ids[P4], "draft"), (ids[P7], "scheduled")]), d)
+check("a student cannot ask", student.get(STATES).status_code == 403)
+
+check("a student cannot assign it",
+      student.post(PUBLISH, json={"post": ids[P4]}).status_code == 403
+      and room[P4]["work"]["state"] == "DRAFT")
+check("  nor can a post id that is not this assignment's",
+      teacher.post(PUBLISH, json={"post": ids[P4] + 999}).status_code == 404
+      and teacher.post(PUBLISH, json={"post": "x"}).status_code == 404)
+# A real post, but another assignment's: Post now on this page must not
+# assign it, whoever owns it.
+other = teacher.post("/api/assignment", json={
+    "files": {"app.py": "# other\n"}, "title": "Other"}).get_json()["slug"]
+teacher.post("/api/assignment/%s/out-of" % other, json={"out_of": 5})
+teacher.post("/api/assignment/%s/classroom/post" % other,
+             json={"course": P4, "draft": True})
+db = P.SessionLocal()
+try:
+    _oa = db.query(accounts.Assignment).filter_by(slug=other).first()
+    other_post = db.query(accounts.ClassroomPost).filter_by(assignment_id=_oa.id).first().id
+finally:
+    db.close()
+room[P4]["work"]["state"] = "DRAFT"          # the other post replaced the fake's P4 work
+check("  nor another assignment's post",
+      teacher.post(PUBLISH, json={"post": other_post}).status_code == 404
+      and room[P4]["work"]["state"] == "DRAFT")
+teacher.post("/api/assignment/%s/classroom/unlink" % other, json={"post": other_post})
+calls.clear()
+r = teacher.post(PUBLISH, json={"post": ids[P4]})
+sent = [c for c in calls if c[0] == "PATCH"]
+check("Post now assigns Period 4 in Classroom",
+      r.status_code == 200 and r.get_json().get("already") is False
+      and room[P4]["work"]["state"] == "PUBLISHED", r.get_data(as_text=True)[:120])
+check("  by changing its state and nothing else",
+      [(c[3], c[4]) for c in sent] == [({"state": "PUBLISHED"}, {"updateMask": "state"})],
+      sent)
+check("  leaving Period 7 a scheduled draft",
+      room[P7]["work"]["state"] == "DRAFT" and room[P7]["work"].get("scheduledTime"))
+d = teacher.get(STATES).get_json()
+check("  and the page is told Period 4 is assigned now",
+      {s["id"]: s["state"] for s in d["states"]}.get(ids[P4]) == "posted", d)
+calls.clear()
+r = teacher.post(PUBLISH, json={"post": ids[P4]})
+check("pressed again (another tab): it is already assigned, and Google is not asked to",
+      r.status_code == 200 and r.get_json().get("already") is True
+      and not [c for c in calls if c[0] == "PATCH"], calls)
+r = teacher.post(PUBLISH, json={"post": ids[P7]})
+check("a scheduled one is assigned now when asked",
+      r.status_code == 200 and room[P7]["work"]["state"] == "PUBLISHED")
+patches.clear()
+r = teacher.post(SYNC)
+check("  and Sync sends grades to both straight after",
+      r.status_code == 200 and r.get_json().get("waiting") == []
+      and sorted(p[0] for p in patches) == sorted([P4, P7]), (r.get_json(), patches))
+
+teacher.post(UNLINK, json={"post": ids[P7]})
+teacher.post(POST, json={"course": P7, "draft": True})
+db = P.SessionLocal()
+try:
+    p7 = db.query(accounts.ClassroomPost).filter_by(
+        assignment_id=assignment().id, course_id=P7).first().id
+finally:
+    db.close()
+room[P7]["gone"] = True
+r = teacher.post(PUBLISH, json={"post": p7})
+check("deleted in Classroom: said so, and forgotten so it can be posted again",
+      r.status_code == 409 and r.get_json().get("gone") is True
+      and [p[0] for p in posts()] == [P4], (r.get_data(as_text=True)[:120], posts()))
+room[P4]["gone"] = True
+d = teacher.get(STATES).get_json()
+check("the states list forgets a deleted one too, and names it",
+      d.get("gone") == ["Programming 1 — Period 4"] and posts() == [], d)
 
 
 bad = results.count(False)

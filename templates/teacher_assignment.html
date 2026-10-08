@@ -102,6 +102,13 @@
           <p>Posted to
             {% for p in posts %}<strong>{{ p.course_name or "a class" }}</strong>{%
               if p.url %} (<a href="{{ p.url }}" target="_blank" rel="noopener">open</a>){% endif %}
+              {#  Filled in after load from /classroom/states: "draft" or
+                  "scheduled" and a Post now button, or nothing once it is
+                  assigned. Google only goes draft → assigned, never back. #}
+              <span class="gc-tag dim small" data-post="{{ p.id }}" hidden></span>
+              <button type="button" class="linkbtn gc-publish" data-post="{{ p.id }}"
+                      data-name="{{ p.course_name or 'that class' }}" hidden
+                      title="Assign it in Classroom now, so the class can see it">Post now</button>
               <button type="button" class="linkbtn gc-unlink" data-post="{{ p.id }}"
                       data-name="{{ p.course_name or 'that class' }}"
                       title="Forget this Classroom post here — for one deleted in Classroom">Unlink</button>{%
@@ -507,6 +514,48 @@
         if (!out.ok) { b.disabled = false; alert(out.d.error || "Not unlinked"); return; }
         location.reload();
       }).catch(function () { b.disabled = false; alert("Not unlinked — check your connection"); });
+    });
+  });
+
+  /* Drafts. Which classes still have it as a Classroom draft, asked of
+     Google after the page loads, with Post now beside each one. One way
+     only: Google never lets an assigned one go back to a draft, so the
+     confirm says so before it is too late. */
+  if (postedTo.length && document.querySelector(".gc-publish")) {
+    fetch(base + "/classroom/states").then(function (r) { return r.json(); })
+      .then(function (d) {
+        (d.states || []).forEach(function (s) {
+          if (s.state === "posted") return;
+          var tag = document.querySelector('.gc-tag[data-post="' + s.id + '"]');
+          var btn = document.querySelector('.gc-publish[data-post="' + s.id + '"]');
+          if (!tag || !btn) return;
+          tag.textContent = s.state === "scheduled" ? "· scheduled" : "· draft";
+          tag.hidden = false;
+          btn.dataset.state = s.state;
+          btn.hidden = false;
+        });
+        if (d.gone && d.gone.length) location.reload();
+      }).catch(function () { /* no buttons; Classroom can still assign it */ });
+  }
+  document.querySelectorAll(".gc-publish").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var when = b.dataset.state === "scheduled"
+        ? " now instead of at its scheduled time" : "";
+      if (!confirm("Assign this in " + b.dataset.name + when + "? The class will "
+                   + "see it right away. Google Classroom can't turn it back "
+                   + "into a draft afterwards.")) return;
+      b.disabled = true;
+      post(base + "/classroom/publish", { post: b.dataset.post }).then(function (out) {
+        if (!out.ok) {
+          b.disabled = false;
+          alert(out.d.error || "Not assigned");
+          if (out.d.gone) location.reload();
+          return;
+        }
+        b.hidden = true;
+        var tag = document.querySelector('.gc-tag[data-post="' + b.dataset.post + '"]');
+        if (tag) tag.textContent = "· assigned";
+      }).catch(function () { b.disabled = false; alert("Not assigned — check your connection"); });
     });
   });
 

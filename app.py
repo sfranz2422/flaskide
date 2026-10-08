@@ -2867,6 +2867,105 @@ def classroom_unlink(slug):
         db.close()
 
 
+def _post_state(work):
+    """"draft", "scheduled" or "posted", from Google's courseWork. A scheduled
+    post is a DRAFT with a scheduledTime: Google assigns it at that time."""
+    if work.get("state") != "DRAFT":
+        return "posted"
+    return "scheduled" if work.get("scheduledTime") else "draft"
+
+
+@app.get("/api/assignment/<slug>/classroom/states")
+def classroom_states(slug):
+    """Whether each class's Classroom assignment is still a draft, so the
+    page can offer Post now beside it. Asked of Google every time, like
+    _class_lists, because the teacher may assign it in Classroom and
+    nothing tells us. Fetched after the page loads, for the same reason
+    as classroom_periods: Google is slow."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        if not _posts(db, item):
+            return jsonify(states=[], gone=[])
+        access, why = _classroom_token(db, user)
+        if access is None:
+            return jsonify(error=why), 409
+        states, gone = [], []
+        for post in _posts(db, item):
+            status, work = _google_get("%s/courses/%s/courseWork/%s" % (
+                CLASSROOM_API, post.course_id, post.work_id), access)
+            if status == 404:
+                gone.append(post.course_name or "a class")
+                _forget_post(db, item, post)
+                continue
+            if status != 200:
+                # Unknown, not "posted": a button missing for one class is
+                # better than a wrong word about it.
+                continue
+            states.append({"id": post.id, "state": _post_state(work)})
+        return jsonify(states=states, gone=gone)
+    finally:
+        db.close()
+
+
+@app.post("/api/assignment/<slug>/classroom/publish")
+def classroom_publish(slug):
+    """Assign a class's Classroom draft now: Post now on the assignment page.
+
+    ONE WAY ONLY. Google lets an app move its own coursework from DRAFT to
+    PUBLISHED and refuses the reverse to everyone, so there is no "back to
+    draft" here to offer. It works at all only because PyIDE created the
+    coursework (classroom_post) — Google refuses any app's edits to
+    coursework another made, which is the same rule Sync lives by.
+
+    A scheduled post is a DRAFT with a time on it; this assigns it now
+    rather than at that time, and the page says so before asking.
+    """
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        try:
+            post_id = int((request.get_json(silent=True) or {}).get("post"))
+        except (TypeError, ValueError):
+            return jsonify(error="No such class."), 404
+        post = db.query(accounts.ClassroomPost).filter_by(
+            id=post_id, assignment_id=item.id).first()
+        if post is None:
+            return jsonify(error="No such class."), 404
+        name = post.course_name or "that class"
+        access, why = _classroom_token(db, user)
+        if access is None:
+            return jsonify(error=why), 409
+        url = "%s/courses/%s/courseWork/%s" % (CLASSROOM_API, post.course_id,
+                                              post.work_id)
+        status, work = _google_get(url, access)
+        if status == 404:
+            _forget_post(db, item, post)
+            return jsonify(error="It was deleted in Google Classroom, so PyIDE "
+                                 "has forgotten %s. Post it again if you want it "
+                                 "there." % name, gone=True), 409
+        if status != 200:
+            return jsonify(error=_google_message(work, "Google wouldn't say how "
+                                                 "the assignment stands.")), 502
+        # Already assigned — in Classroom, or by another tab. Nothing to do,
+        # and saying it worked is the truth.
+        if work.get("state") != "DRAFT":
+            return jsonify(ok=True, course=name, already=True)
+        status, work = _google_api("PATCH", url, access,
+                                   body={"state": "PUBLISHED"},
+                                   params={"updateMask": "state"})
+        if status != 200:
+            return jsonify(error=_google_message(work, "Google wouldn't assign "
+                                                 "it.")), 502
+        return jsonify(ok=True, course=name, already=False)
+    finally:
+        db.close()
+
+
 @app.get("/api/assignment/<slug>/classroom/periods")
 def classroom_periods(slug):
     """Which posted class each student is in, so the results page can show
