@@ -218,6 +218,7 @@
 </main>
 
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='embeds.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
 <script>
   var CLASS = {{ course.id }};
@@ -306,7 +307,7 @@
         var view = row.querySelector(".desc-preview");
         view.dataset.md = out.d.description;
         view.classList.toggle("is-empty", !out.d.description);
-        window.FlaskIDENotes.render(view, out.d.description);
+        showDescription(view, out.d.description);
         row.querySelector(".desc-edit").hidden = true;
       });
       return;
@@ -429,7 +430,7 @@
       // The preview is what students will see: the same renderer, sanitised,
       // links to a new tab. It is filled in a moment after EasyMDE asks.
       previewRender: function (text, preview) {
-        window.FlaskIDENotes.render(preview, text);
+        showDescription(preview, text);
         return preview.innerHTML;
       }
     });
@@ -508,9 +509,16 @@
     row.scrollIntoView({ block: "center" });
   })();
 
-  // Every description, rendered as the class will see it.
+  // A description as the class will see it: sanitised markdown, and a
+  // YouTube link on its own line as a player (embeds.js).
+  function showDescription(el, text) {
+    return window.FlaskIDENotes.render(el, text, { trusted: true }).then(function () {
+      window.ClassEmbeds.embedVideos(el);
+    });
+  }
+
   document.querySelectorAll(".desc-preview[data-md]").forEach(function (el) {
-    if (el.dataset.md) window.FlaskIDENotes.render(el, el.dataset.md);
+    if (el.dataset.md) showDescription(el, el.dataset.md);
   });
 </script>
 </body>

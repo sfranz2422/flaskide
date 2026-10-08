@@ -70,10 +70,25 @@ window.FlaskIDENotes = (function () {
     FORBID_ATTR: ["style"]
   };
 
-  function render(target, source) {
+  /* A TEACHER'S OWN WORDS on a class page — descriptions, which only the
+     class's teacher can write (the server refuses anyone else) — are let
+     have <iframe> (a YouTube player, Google Slides, a form) and inline
+     style (a table coloured the way they want). Never for notes: students
+     write those too, and the reasons above are about them. Scripts and
+     event handlers are still taken out here; DOMPurify never lets them by. */
+  var TRUSTED = {
+    USE_PROFILES: { html: true },
+    ADD_TAGS: ["iframe"],
+    ADD_ATTR: ["allow", "allowfullscreen", "frameborder", "referrerpolicy",
+               "loading", "scrolling"],
+    FORBID_TAGS: SANITIZE.FORBID_TAGS
+  };
+
+  function render(target, source, options) {
+    var rules = options && options.trusted ? TRUSTED : SANITIZE;
     return ensureRenderer().then(function () {
       var dirty = window.marked.parse(source || "", { breaks: true });
-      var clean = window.DOMPurify.sanitize(dirty, SANITIZE);
+      var clean = window.DOMPurify.sanitize(dirty, rules);
       target.innerHTML = clean;
       hardenLinks(target);
       enhanceQuizzes(target);

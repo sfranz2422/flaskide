@@ -1701,3 +1701,22 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .class-teacher .class-list td.rowactions { white-space: nowrap; }
 .class-teacher .desc-preview { max-width: 720px; }
 .kind-tag { white-space: nowrap; display: inline-block; }
+/* The students' class page, as wide as the teacher's: room for a video, a
+   table and a picture side by side with the words. */
+.class-student .sheet { max-width: 1240px; }
+
+/* A YouTube link on its own line, as a player (embeds.js): 16:9, as wide as
+   the description, never wider than is comfortable to watch. */
+.video-embed { position: relative; width: 100%; max-width: 720px; aspect-ratio: 16 / 9;
+  margin: 10px 0; border-radius: 8px; overflow: hidden; background: #000; }
+.video-embed iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* Tables in descriptions — markdown's | a | b | or a plain <table> — with
+   the lines and spacing they need to read as one. */
+.md table { border-collapse: collapse; margin: 10px 0; display: block; overflow-x: auto; max-width: 100%; }
+.md th, .md td { border: 1px solid var(--line); padding: 6px 12px; text-align: left; vertical-align: top; }
+.md th { background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 600; }
+.md tr:nth-child(even) td { background: color-mix(in srgb, var(--line) 35%, transparent); }
+/* An <iframe> pasted into a description (a video, Slides, a form): never
+   wider than the card, whatever width its embed code asked for. */
+.md iframe { max-width: 100%; border: 0; border-radius: 8px; }

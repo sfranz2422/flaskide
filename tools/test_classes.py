@@ -307,7 +307,7 @@ check("  each assignment a card, with its description to render",
 check("  and a heading with its words under it",
       'class="md stream-intro" data-md="Week of Oct 6."' in page)
 check("  rendered by notes.js, which sanitises it and opens links in a new tab",
-      "notes.js" in page and "FlaskIDENotes.render(el, el.dataset.md)" in page)
+      "notes.js" in page and "FlaskIDENotes.render(el, el.dataset.md, { trusted: true })" in page)
 check("  escaped as written until it is",
       "<strong>list</strong>" not in page and "<script>alert" not in page)
 check("a student not on the roster is turned away",
@@ -492,7 +492,87 @@ check("  its picture button and drag-and-drop upload to /api/image",
 check("  with Add picture for when the toolbar can't load",
       'class="js-pic" type="file"' in page)
 check("  and the preview is rendered the way students see it",
-      "previewRender: function (text, preview) {\n        window.FlaskIDENotes.render(preview, text);" in page)
+      "previewRender: function (text, preview) {\n        showDescription(preview, text);" in page
+      and re.search(r"function showDescription\(el, text\) \{\s*return window\.FlaskIDENotes\.render\(el, text, \{ trusted: true \}\)"
+                    r"\.then\(function \(\) \{\s*window\.ClassEmbeds\.embedVideos\(el\);", page) is not None)
+
+# ------------------------------------------------------- videos and tables
+print("\nVideos and tables in descriptions")
+check("both class pages turn a video link into a player after sanitising",
+      "embeds.js" in page and "embeds.js" in kid1.get("/class/%d" % C4).get_data(as_text=True)
+      and re.search(r"FlaskIDENotes\.render\(el, el\.dataset\.md, \{ trusted: true \}\)\.then\(function \(\) \{\s*"
+                    r"window\.ClassEmbeds\.embedVideos\(el\);",
+                    kid1.get("/class/%d" % C4).get_data(as_text=True)) is not None)
+import json as _json, shutil, subprocess                     # noqa: E402
+_emb = os.path.join(PYIDE, "static", "embeds.js")
+if shutil.which("node"):
+    _cases = {
+        "watch": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "watch_more": "https://youtube.com/watch?feature=share&v=dQw4w9WgXcQ&t=90",
+        "short": "https://youtu.be/dQw4w9WgXcQ?t=1m30s",
+        "shorts": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        "mobile": "https://m.youtube.com/watch?v=dQw4w9WgXcQ",
+        "lookalike": "https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ",
+        "inside": "https://evilyoutube.com/watch?v=dQw4w9WgXcQ",
+        "path": "https://example.com/?u=https://youtu.be/dQw4w9WgXcQ",
+        "long_id": "https://youtu.be/dQw4w9WgXcQextra",
+        "script": "javascript:alert(1)//youtu.be/dQw4w9WgXcQ",
+    }
+    _h = ("var window = {}; var document = {};\n" + open(_emb).read() +
+          "\nvar c = %s, out = {};\nfor (var k in c) out[k] = [window.ClassEmbeds.videoId(c[k]),"
+          " window.ClassEmbeds.startAt(c[k])];\nconsole.log(JSON.stringify(out));" % _json.dumps(_cases))
+    _r = subprocess.run(["node", "-e", _h], capture_output=True, text=True)
+    _v = _json.loads(_r.stdout or "{}")
+    _ID = "dQw4w9WgXcQ"
+    check("YouTube links are known in every usual shape",
+          all(_v.get(k, [None])[0] == _ID for k in ("watch", "watch_more", "short", "shorts", "mobile")),
+          _v or _r.stderr[-200:])
+    check("  starting where the link says",
+          _v.get("watch_more", [0, 0])[1] == 90 and _v.get("short", [0, 0])[1] == 90
+          and _v.get("watch", [0, 1])[1] == 0, _v)
+    check("  and nothing that only looks like one becomes a player",
+          all(_v.get(k, ["x"])[0] is None for k in ("lookalike", "inside", "path", "long_id", "script")), _v)
+else:
+    check("node is available to run embeds.js", False, "brew install node")
+_js = open(_emb).read()
+check("the player is built from the id alone, at youtube-nocookie.com",
+      '"https://www.youtube-nocookie.com/embed/" + id' in _js and "innerHTML" not in _js)
+check("  and only for a link alone in its paragraph",
+      'parts.length !== 1 || parts[0].nodeName !== "A"' in _js)
+# Pasted embed code: <iframe> and inline style in a description, which only
+# the class's teacher can write — and never in notes, which students write.
+_notes = open(os.path.join(PYIDE, "static", "notes.js")).read()
+_trusted = re.search(r"var TRUSTED = \{[\s\S]*?\n  \};", _notes)
+_strict = re.search(r"var SANITIZE = \{[\s\S]*?\n  \};", _notes)
+check("a description may hold an <iframe> and inline style",
+      _trusted is not None and 'ADD_TAGS: ["iframe"]' in _trusted.group(0)
+      and "allowfullscreen" in _trusted.group(0) and "FORBID_ATTR" not in _trusted.group(0))
+check("  but forms stay out even there",
+      _trusted is not None and "FORBID_TAGS: SANITIZE.FORBID_TAGS" in _trusted.group(0))
+check("  and notes keep the strict rules: no iframe, no style",
+      _strict is not None and "iframe" not in _strict.group(0)
+      and 'FORBID_ATTR: ["style"]' in _strict.group(0)
+      and "var rules = options && options.trusted ? TRUSTED : SANITIZE;" in _notes
+      and "window.DOMPurify.sanitize(dirty, rules)" in _notes)
+_askers = []
+for _dir in ("templates", "static"):
+    for _f in os.listdir(os.path.join(PYIDE, _dir)):
+        _p = os.path.join(PYIDE, _dir, _f)
+        if os.path.isfile(_p) and _f.endswith((".html", ".js")) \
+                and "trusted: true" in open(_p, encoding="utf-8", errors="ignore").read():
+            _askers.append(_f)
+check("  only the class pages ask for the teacher's rules",
+      sorted(_askers) == ["class_student.html", "class_teacher.html"], _askers)
+check("a description cannot be written by a student, which is what makes it safe",
+      kid1.post("/api/class/%d/item/%d" % (C4, hello_row), json={"description": "<iframe>"}).status_code == 403
+      and kid1.post("/api/class/%d/material" % C4, json={"title": "x"}).status_code == 403)
+
+_css = open(os.path.join(PYIDE, "static", "style.css")).read()
+check("the students' class page is as wide as the teacher's",
+      'class="class-page class-student"' in kid1.get("/class/%d" % C4).get_data(as_text=True)
+      and ".class-student .sheet { max-width: 1240px; }" in _css)
+check("tables in descriptions have lines to read by",
+      re.search(r"\.md th, \.md td \{[^}]*border: 1px solid", _css) is not None)
 
 # ---------------------------------------------------------- tidying away
 print("\nTidying never loses a student's work")
