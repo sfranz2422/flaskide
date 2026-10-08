@@ -32,6 +32,22 @@
 </header>
 
 <main class="sheet">
+  {#  A row's description: its preview (rendered below by notes.js, as the
+      class sees it) and the box to write it in, both inside the title's cell
+      so a row stays one <tr> for the arrows to move. #}
+  {% macro describe(r) -%}
+    <div class="md desc-preview {{ 'is-empty' if not r.description }}" data-md="{{ r.description }}">{{ r.description }}</div>
+    <div class="desc-edit" hidden>
+      <textarea class="field desc-box" rows="5" maxlength="20000"
+                placeholder="What students see under it. Markdown: **bold**, - lists, [a link](https://example.com)">{{ r.description }}</textarea>
+      <div class="grade-line">
+        <button class="btn btn-primary js-desc-save" type="button">Save</button>
+        <button class="btn js-desc-cancel" type="button">Cancel</button>
+        <span class="dim small">Links open in a new tab for students.</span>
+      </div>
+    </div>
+  {%- endmacro %}
+
   {% macro arrows() -%}
     <button class="arrow js-up" title="Move up" aria-label="Move up">▲</button><button
       class="arrow js-down" title="Move down" aria-label="Move down">▼</button>
@@ -71,8 +87,9 @@
           {% if r.group %}
             <tr class="group-row" data-item="{{ r.id }}" data-title="{{ r.title }}">
               <td class="order">{{ arrows() }}</td>
-              <td colspan="2"><strong class="group-title">{{ r.title }}</strong></td>
+              <td colspan="2"><strong class="group-title">{{ r.title }}</strong>{{ describe(r) }}</td>
               <td class="right rowactions">
+                <button class="linkbtn js-describe">Describe</button>
                 <button class="linkbtn js-rename">Rename</button>
                 <button class="linkbtn js-ungroup danger">Remove heading</button>
               </td>
@@ -87,11 +104,13 @@
                 {% if r.hidden %}<span class="kind-tag">hidden</span>{% endif %}
                 {% if r.closed %}<span class="dim small"> · closed</span>{% endif %}
                 {% if r.on_air %}<span class="live-pill">● Live now</span>{% endif %}
+                {{ describe(r) }}
               </td>
               <td><strong>{{ r.count }}</strong></td>
               <td class="right rowactions">
                 <a class="linkbtn" href="{{ url_for('teach_assignment_live', slug=r.slug) }}">{{ "Back to the lesson" if r.on_air else "Go live" }}</a>
                 <a class="linkbtn" href="{{ url_for('edit_lesson' if r.kind == 'lesson' else 'edit_assignment', slug=r.slug) }}">Edit</a>
+                <button class="linkbtn js-describe">Describe</button>
                 <button class="linkbtn js-hide">{{ "Show" if r.hidden else "Hide" }}</button>
                 <button class="linkbtn js-archive">Archive</button>
                 {% if r.count == 0 %}<button class="linkbtn js-delete danger">Delete</button>{% endif %}
@@ -167,6 +186,7 @@
   </section>
 </main>
 
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script>
   var CLASS = {{ course.id }};
   var api = "/api/class/" + CLASS;
@@ -222,6 +242,24 @@
       if (t.contains("js-up")) row.parentNode.insertBefore(row, sib);
       else row.parentNode.insertBefore(sib, row);
       saveOrder();
+      return;
+    }
+    if (t.contains("js-describe") || t.contains("js-desc-cancel")) {
+      var box = row.querySelector(".desc-edit");
+      box.hidden = !box.hidden;
+      if (!box.hidden) row.querySelector(".desc-box").focus();
+      return;
+    }
+    if (t.contains("js-desc-save")) {
+      var text = row.querySelector(".desc-box").value;
+      send(api + "/item/" + row.dataset.item, { description: text }).then(function (out) {
+        if (!out.ok) { alert(out.d.error || "Not saved"); return; }
+        var view = row.querySelector(".desc-preview");
+        view.dataset.md = out.d.description;
+        view.classList.toggle("is-empty", !out.d.description);
+        window.FlaskIDENotes.render(view, out.d.description);
+        row.querySelector(".desc-edit").hidden = true;
+      });
       return;
     }
     if (t.contains("js-hide")) {
@@ -313,6 +351,11 @@
       });
     });
   })();
+
+  // Every description, rendered as the class will see it.
+  document.querySelectorAll(".desc-preview[data-md]").forEach(function (el) {
+    if (el.dataset.md) window.FlaskIDENotes.render(el, el.dataset.md);
+  });
 </script>
 </body>
 </html>

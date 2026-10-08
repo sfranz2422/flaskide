@@ -3585,10 +3585,15 @@ def _class_item(db, course, item_id):
     return db.query(accounts.ClassItem).filter_by(id=item_id, class_id=course.id).first()
 
 
+#: A description is a paragraph or a few, with links — not a page of notes,
+#: which is what an assignment's own notes file is for.
+MAX_DESCRIPTION = 20000
+
+
 @app.post("/api/class/<int:class_id>/item/<int:item_id>")
 def class_item_update(class_id, item_id):
-    """Hide or show an assignment from the class's students, or rename a
-    group heading."""
+    """Hide or show an assignment from the class's students, rename a group
+    heading, or set either one's description (markdown)."""
     db = SessionLocal()
     try:
         user, course, bounce = _own_class(db, class_id)
@@ -3600,13 +3605,21 @@ def class_item_update(class_id, item_id):
         data = request.get_json(silent=True) or {}
         if "hidden" in data:
             row.hidden = 1 if data.get("hidden") else 0
+        if "description" in data:
+            text = data.get("description")
+            if not isinstance(text, str):
+                return jsonify(error="That isn't a description."), 400
+            if len(text) > MAX_DESCRIPTION:
+                return jsonify(error="That description is too long."), 413
+            row.description = text.strip()
         if "title" in data and row.assignment_id is None:
             title = clean(data.get("title"), 200)
             if not title:
                 return jsonify(error="Give the group a name."), 400
             row.title = title
         db.commit()
-        return jsonify(ok=True, hidden=bool(row.hidden), title=row.title)
+        return jsonify(ok=True, hidden=bool(row.hidden), title=row.title,
+                       description=row.description)
     finally:
         db.close()
 
@@ -3708,7 +3721,12 @@ def copy_assignment(slug):
         db.add(copy)
         db.commit()
         _store_quiz_keys(db, copy.id, copy.file_map().values())
-        _place(db, course, copy)
+        placed = _place(db, course, copy)
+        # Its description comes too: it is what the class is told about it.
+        was = db.query(accounts.ClassItem).filter_by(assignment_id=item.id).first()
+        if was is not None and was.description:
+            placed.description = was.description
+            db.commit()
         return jsonify(ok=True, slug=copy.slug, course=course.name,
                        url=url_for("teacher_assignment", slug=copy.slug))
     finally:
@@ -3750,7 +3768,8 @@ def _class_rows(db, course, user=None, student=False):
     out, archived = [], []
     for r in rows:
         if r.assignment_id is None:
-            out.append({"group": True, "id": r.id, "title": r.title})
+            out.append({"group": True, "id": r.id, "title": r.title,
+                        "description": r.description or ""})
             continue
         a = items.get(r.assignment_id)
         if a is None:
@@ -3760,6 +3779,7 @@ def _class_rows(db, course, user=None, student=False):
             continue
         live = lessons.get(a.id)
         row = {"group": False, "id": r.id, "slug": a.slug, "title": a.title,
+               "description": r.description or "",
                "kind": a.kind, "hidden": bool(r.hidden), "closed": bool(a.closed),
                "live_code": live.code if live else "",
                "on_air": bool(live and not live.ended),

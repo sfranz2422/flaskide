@@ -1624,3 +1624,47 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .front-card h1 { margin: 10px 0 6px; font-size: 32px; }
 .front-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 22px 0 14px; }
 .btn-big { font-size: 16px; padding: 12px 22px; }
+
+/* ------------------------------------------- a class, as students see it
+   A stream of cards, as a classroom page is: a group is a heading with its
+   words under it, an assignment a card with its description and buttons. */
+.stream { display: flex; flex-direction: column; gap: 14px; }
+.stream-group { margin-top: 18px; }
+.stream-group:first-child { margin-top: 0; }
+.stream-heading { font-size: 20px !important; text-transform: none !important;
+  letter-spacing: 0 !important; color: var(--text) !important; margin: 0 0 6px;
+  padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+.stream-intro { color: var(--muted); }
+.card { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-panel);
+  padding: 16px 18px; border-left: 4px solid var(--accent); }
+.card.card-done { border-left-color: #2f9e6b; }
+.card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.card-icon { font-size: 20px; }
+.card-title { font-size: 17px; font-weight: 600; color: var(--text); text-decoration: none; }
+.card-title:hover { color: var(--accent); text-decoration: underline; }
+.card-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.badge { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); }
+.badge-done { color: #2f9e6b; border-color: #2f9e6b; }
+.badge-grade { color: var(--text); border-color: var(--accent); }
+.card .live-pill { margin-left: 0; }
+.md { line-height: 1.55; white-space: pre-wrap; }
+.md:has(> *) { white-space: normal; }          /* rendered: no longer raw text */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md a { color: var(--accent); }
+.md img { max-width: 100%; }
+.card-desc { margin: 10px 0 0 30px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0 30px; }
+.btn-live { background: #d64541; border-color: #d64541; color: #fff; }
+@media (max-width: 640px) {
+  .card-desc, .card-actions { margin-left: 0; }
+  .card-badges { margin-left: 0; }
+}
+/* The teacher's class page: a description's preview under its title, and
+   the box to write it in. */
+.desc-preview { font-size: 13px; color: var(--muted); margin-top: 4px; max-width: 560px; }
+.desc-preview.is-empty { display: none; }
+.desc-edit { margin-top: 8px; }
+.desc-edit .desc-box { width: 100%; max-width: 560px; font-family: inherit; }
+.desc-edit .grade-line { margin-top: 6px; }

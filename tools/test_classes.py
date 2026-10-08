@@ -210,6 +210,38 @@ check("a heading can be renamed",
 check("  but an assignment's row is not a heading to delete",
       teacher.delete("/api/class/%d/item/%d" % (C4, hello_row)).status_code == 404)
 
+# Descriptions: markdown under an assignment or a heading.
+DESC = "Make a **list** of five things.\n\nSee [the docs](https://docs.python.org/3/tutorial/datastructures.html)."
+r = teacher.post("/api/class/%d/item/%d" % (C4, hello_row), json={"description": "  " + DESC + "\n"})
+check("a description is saved for an assignment, trimmed",
+      r.status_code == 200 and r.get_json().get("description") == DESC
+      and q(accounts.ClassItem, id=hello_row)[0].description == DESC, r.get_json())
+teacher.post("/api/class/%d/item/%d" % (C4, group_row), json={"description": "Week of Oct 6."})
+check("  and for a group heading",
+      q(accounts.ClassItem, id=group_row)[0].description == "Week of Oct 6.")
+check("  not one that isn't text",
+      teacher.post("/api/class/%d/item/%d" % (C4, hello_row),
+                   json={"description": ["x"]}).status_code == 400)
+check("  nor one too long to be a description",
+      teacher.post("/api/class/%d/item/%d" % (C4, hello_row),
+                   json={"description": "x" * 20001}).status_code == 413
+      and q(accounts.ClassItem, id=hello_row)[0].description == DESC)
+check("  and only by the class's teacher",
+      kid1.post("/api/class/%d/item/%d" % (C4, hello_row), json={"description": "hi"}).status_code == 403
+      and other.post("/api/class/%d/item/%d" % (C4, hello_row), json={"description": "hi"}).status_code == 404)
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+def _row_html(item_id):
+    m = re.search(r'data-item="%d"[\s\S]*?</tr>' % item_id, page)
+    return m.group(0) if m else ""
+
+
+check("the teacher's page previews it, and has the box to write it",
+      'data-md="Make a **list** of five things.' in _row_html(hello_row)
+      and 'class="field desc-box"' in _row_html(hello_row) and "notes.js" in page)
+check("  with Describe on an assignment's row and a heading's",
+      'js-describe">Describe' in _row_html(hello_row)
+      and 'js-describe">Describe' in _row_html(group_row))
+
 # ------------------------------------------------------- the student's side
 print("\nThe class as its students see it")
 page = kid1.get("/class/%d" % C4).get_data(as_text=True)
@@ -218,6 +250,15 @@ check("  but not what is hidden", ">Lists<" not in page)
 check("  the assignment's name opens their copy until they turn it in",
       'href="/a/%s"' % HELLO in page)
 check("  with its live link", re.search(r'href="/live/\w+"', page) is not None)
+check("  each assignment a card, with its description to render",
+      page.count('<article class="card') == 2
+      and 'class="md card-desc" data-md="Make a **list** of five things.' in page)
+check("  and a heading with its words under it",
+      'class="md stream-intro" data-md="Week of Oct 6."' in page)
+check("  rendered by notes.js, which sanitises it and opens links in a new tab",
+      "notes.js" in page and "FlaskIDENotes.render(el, el.dataset.md)" in page)
+check("  escaped as written until it is",
+      "<strong>list</strong>" not in page and "<script>alert" not in page)
 check("a student not on the roster is turned away",
       kid2.get("/class/%d" % C4).status_code == 404)
 check("  as is anyone signed out, to sign in",
@@ -288,9 +329,9 @@ teacher.post("/api/assignment/%s/feedback" % HELLO,
              json={"submission": sub.id, "feedback": "", "score": "8"})
 page = kid1.get("/class/%d" % C4).get_data(as_text=True)
 check("turned in: the name opens what they turned in",
-      'href="/s/%s"' % sub.snippet_slug in page and "✓ turned in" in page)
-check("  and their grade is on the page", "<strong>8</strong> / 10" in page)
-check("  only their own", "<strong>8</strong>" not in teacher.get("/class/%d" % C4).get_data(as_text=True))
+      'href="/s/%s"' % sub.snippet_slug in page and "✓ Turned in</span>" in page)
+check("  and their grade is on the page", 'badge-grade">8 / 10</span>' in page)
+check("  only their own", 'badge-grade">8' not in teacher.get("/class/%d" % C4).get_data(as_text=True))
 
 db = P.SessionLocal()
 db.query(accounts.LiveSession).filter_by(assignment_id=a.id).update({"ended": 0})
@@ -330,6 +371,8 @@ check("  with its own live lesson",
       len(q(accounts.LiveSession, assignment_id=c.id)) == 1
       and q(accounts.LiveSession, assignment_id=c.id)[0].code
       != q(accounts.LiveSession, assignment_id=a.id)[0].code)
+check("  with its description",
+      q(accounts.ClassItem, assignment_id=c.id)[0].description == DESC)
 check("  and nothing students did comes with it",
       q(accounts.Submission, assignment_id=c.id) == [])
 check("  while the original stays in P4", [s for _, s, _ in order()].count(HELLO) == 1)
@@ -380,6 +423,22 @@ check("  with every student's work and score",
       q(accounts.Submission, student_id=KID1)[0].score == 8)
 check("  and the class is gone from the student's menu",
       "Intro — P4" not in kid1.get("/new").get_data(as_text=True))
+
+# A class_items table from before descriptions: the column must be added,
+# or every class page fails on the first request after the deploy.
+import sqlalchemy                                            # noqa: E402
+_old = sqlalchemy.create_engine("sqlite:///" + os.path.join(tempfile.mkdtemp(), "old.db"))
+with _old.begin() as _c:
+    _c.execute(sqlalchemy.text(
+        "CREATE TABLE class_items (id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, "
+        "assignment_id INTEGER, title VARCHAR(200) NOT NULL, hidden INTEGER NOT NULL, "
+        "position INTEGER NOT NULL, created_at DATETIME NOT NULL)"))
+    _c.execute(sqlalchemy.text(
+        "INSERT INTO class_items VALUES (1, 1, NULL, 'Topic', 0, 0, '2026-10-08 10:00:00')"))
+accounts.create_all(_old)
+with _old.connect() as _c:
+    _d = _c.execute(sqlalchemy.text("SELECT description FROM class_items")).fetchall()
+check("an older class_items table gets descriptions, empty", _d == [("",)], _d)
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

@@ -423,6 +423,10 @@ class ClassItem(Base):
     title = Column(String(200), nullable=False, default="")
     #: Hidden from the class's students; the teacher still sees it, marked.
     hidden = Column(Integer, nullable=False, default=0)
+    #: Markdown under the item on the class's page: what the assignment is,
+    #: links to other pages, or a group's introduction. Shown to students
+    #: rendered and sanitised (notes.js), links opening in a new tab.
+    description = Column(Text, nullable=False, default="")
     #: Smallest first, so a new item goes on top with one less than the least.
     position = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, nullable=False, default=now)
@@ -596,6 +600,9 @@ def _as_map(raw) -> dict:
 # from an earlier deploy needs these. Every default has to leave existing rows
 # correct: an assignment that existed before archiving did is not archived.
 LATER_COLUMNS = [
+    # Empty is true of every item made before descriptions existed.
+    ("class_items", "description",
+     "ALTER TABLE class_items ADD COLUMN description TEXT NOT NULL DEFAULT ''"),
     # NULL, not now(): an assignment from before this was last changed when
     # it was made, as far as anything knows, and Assignment.changed says so.
     ("assignments", "updated_at",
