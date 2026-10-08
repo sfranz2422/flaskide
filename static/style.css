@@ -809,6 +809,9 @@ li.CodeMirror-hint-active { background: var(--accent); color: var(--on-accent); 
 .out-of, .fb-score { width: 76px; }
 .gc { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .gc p { margin: 6px 0; }
+/* one posted class per line */
+.gc-posts { list-style: none; margin: 0 0 8px; padding: 0 0 0 12px; }
+.gc-posts li { margin: 2px 0; }
 .fb-sync { color: var(--muted); }
 
 /* One tab per Classroom class the assignment was posted to. */

@@ -532,6 +532,9 @@ page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
 check("the page names both classes, and offers Sync",
       "<strong>Programming 1 — Period 4</strong>" in page
       and "<strong>Programming 1 — Period 7</strong>" in page and 'id="gc-sync"' in page)
+check("  each on its own line",
+      page.count("<li><strong>Programming 1 — Period ") == 2
+      and '<ul class="gc-posts">' in page)
 check("  and the picker leaves out the classes it is already in",
       '"%s", "%s"' % (P4, P7) in page)
 

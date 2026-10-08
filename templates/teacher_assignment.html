@@ -99,20 +99,22 @@
         {% if posts %}
           {#  Unlink forgets one class here and nothing else: for a Classroom
               assignment deleted there. The code, notes and students' work stay. #}
-          <p>Posted to
-            {% for p in posts %}<strong>{{ p.course_name or "a class" }}</strong>{%
+          <p>Posted to:</p>
+          <ul class="gc-posts">
+            {% for p in posts %}<li><strong>{{ p.course_name or "a class" }}</strong>{%
               if p.url %} (<a href="{{ p.url }}" target="_blank" rel="noopener">open</a>){% endif %}
               {#  Filled in after load from /classroom/states: "draft" or
-                  "scheduled" and a Post now button, or nothing once it is
-                  assigned. Google only goes draft → assigned, never back. #}
+                  "scheduled" with a Post now button, "assigned", or
+                  "couldn't check". Google only goes draft → assigned, never back. #}
               <span class="gc-tag dim small" data-post="{{ p.id }}" hidden></span>
               <button type="button" class="linkbtn gc-publish" data-post="{{ p.id }}"
                       data-name="{{ p.course_name or 'that class' }}" hidden
                       title="Assign it in Classroom now, so the class can see it">Post now</button>
               <button type="button" class="linkbtn gc-unlink" data-post="{{ p.id }}"
                       data-name="{{ p.course_name or 'that class' }}"
-                      title="Forget this Classroom post here — for one deleted in Classroom">Unlink</button>{%
-              if not loop.last %}, {% endif %}{% endfor %}</p>
+                      title="Forget this Classroom post here — for one deleted in Classroom">Unlink</button></li>
+            {% endfor %}
+          </ul>
           <div class="grade-line">
             <button id="gc-sync" class="btn btn-primary">Sync grades to Classroom</button>
             <span id="gc-state" class="dim small"></span>
