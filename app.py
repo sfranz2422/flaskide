@@ -461,7 +461,47 @@ def new_sql():
     )
 
 
+# The front door. Signed out: open the editor, or sign in. Signed in, it
+# goes on by itself — a teacher to their dashboard (classes on top), a
+# student to their classes — so it is never a page anyone stops at twice.
 @app.get("/")
+def home():
+    # "/" was the editor for most of this app's life, and links were made
+    # to it with something after the "?" — Teach this lesson again's
+    # /?teach=, shared bookmarks. Those were always meant for the editor.
+    if request.query_string:
+        return redirect(url_for("index") + "?" + request.query_string.decode("latin-1"))
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is not None:
+            if accounts.is_teacher(user.email):
+                return redirect(url_for("teacher_home"))
+            return redirect(url_for("my_classes"))
+        return render_template("home.html", **user_context(db))
+    finally:
+        db.close()
+
+
+@app.get("/classes")
+def my_classes():
+    """A student's classes, where signing in lands them. A teacher's are on
+    their dashboard. None yet is said plainly, with the way round it."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return redirect(url_for("login", next=request.path))
+        if accounts.is_teacher(user.email):
+            return redirect(url_for("teacher_home"))
+        return render_template("classes.html", **user_context(db))
+    finally:
+        db.close()
+
+
+# The editor. It was "/" until the front door took that (home), and every
+# link to it is url_for("index"), so they all moved with it.
+@app.get("/new")
 def index():
     return render_template(
         "index.html",
@@ -652,6 +692,11 @@ def user_context(db):
         "user_name": user.display_name() if user else "",
         "user_email": user.email if user else "",
         "is_teacher": bool(user and accounts.is_teacher(user.email)),
+        # The name menu's classes: a teacher's own, a student's from the
+        # rosters (see Classes). One query, on every page that has a menu.
+        "my_classes": [{"id": c.id, "name": c.name, "url": url_for(
+            "teacher_class" if user and c.teacher_id == user.id else "student_class",
+            class_id=c.id)} for c in _my_classes(db, user)],
     }
 
 
@@ -751,7 +796,8 @@ def auth_callback():
     finally:
         db.close()
 
-    return redirect(session.pop("after_login", "") or url_for("index"))
+    # Nowhere asked for: the front door, which sends each on to their page.
+    return redirect(session.pop("after_login", "") or url_for("home"))
 
 
 @app.get("/logout")
@@ -779,7 +825,7 @@ def logout():
         finally:
             db.close()
     session.clear()
-    return redirect(request.args.get("next") or url_for("index"))
+    return redirect(request.args.get("next") or url_for("home"))
 
 
 def _require_teacher(db):
@@ -1422,6 +1468,18 @@ def delete_assignment(slug):
         # assignment, which Postgres refuses outright — the delete would fail.
         (db.query(accounts.QuizQuestion).filter_by(assignment_id=item.id)
            .delete(synchronize_session=False))
+        # Off its class's page too, for the same reason — and the same for
+        # its live lesson and its Classroom posts. Every assignment whose
+        # page has been opened has a lesson (_lesson_for makes it), so
+        # without this Delete failed on Postgres for nearly all of them.
+        # The lesson is let go rather than deleted: its link is out there,
+        # and an ended lesson with no assignment is simply over.
+        (db.query(accounts.ClassItem).filter_by(assignment_id=item.id)
+           .delete(synchronize_session=False))
+        (db.query(accounts.LiveSession).filter_by(assignment_id=item.id)
+           .update({"assignment_id": None, "ended": 1}, synchronize_session=False))
+        (db.query(accounts.ClassroomPost).filter_by(assignment_id=item.id)
+           .delete(synchronize_session=False))
         db.delete(item)
         db.commit()
         return jsonify(ok=True, kept_projects=len(detached))
@@ -1717,6 +1775,7 @@ def quiz_mine(slug):
 
 LESSON_FILE = "lesson.md"
 
+
 LESSON_STARTER = """# {title}
 
 Write your notes here. A line with only `---` on it starts a new slide.
@@ -1909,6 +1968,10 @@ def teacher_home():
         # Most recently changed first (Assignment.changed): what the teacher
         # is working on now is at the top, not whatever was made last.
         items.sort(key=lambda a: a.changed, reverse=True)
+        # An assignment in a class is listed on the class's page, not here.
+        in_class = {r.assignment_id for r in db.query(accounts.ClassItem.assignment_id)
+                    .filter(accounts.ClassItem.assignment_id.isnot(None))}
+        items = [a for a in items if a.id not in in_class]
         live = [a for a in items if not a.archived]
         filed = [a for a in items if a.archived]
         counts = {}
@@ -1917,7 +1980,13 @@ def teacher_home():
                 assignment_id=item.id).count()
         link = _classroom_link(db, user) if classroom_configured() else None
         ctx = user_context(db)
+        classes = _my_classes(db, user)
+        sizes = dict(db.query(accounts.ClassItem.class_id, func.count())
+                       .filter(accounts.ClassItem.assignment_id.isnot(None),
+                               accounts.ClassItem.class_id.in_([c.id for c in classes] or [0]))
+                       .group_by(accounts.ClassItem.class_id).all())
         ctx.update(assignments=live, archived=filed, counts=counts,
+                   classes=classes, class_sizes=sizes,
                    show_archived=show_archived,
                    classroom_on=classroom_configured(),
                    classroom_email=link.google_email if link else "",
@@ -2198,6 +2267,10 @@ def teacher_assignment(slug):
 
         ctx = user_context(db)
         ctx.update(posts=_posts(db, item))
+        # Which class it is in, for the way back, Move and Copy, and so
+        # Post to Classroom can start on that class's Classroom course.
+        _, in_class = _class_of(db, item)
+        ctx.update(in_class=in_class, classes=_my_classes(db, user))
         ctx.update(classroom_on=classroom_configured(),
                    classroom_connected=(classroom_configured()
                                         and _classroom_link(db, user) is not None))
@@ -3223,6 +3296,548 @@ def skyward_file(slug):
 def _safe_filename(title):
     """A title as a file name every OS will save."""
     return re.sub(r'[\\/:*?"<>|]+', "-", title).strip(" .-") or "assignment"
+
+
+# --------------------------------------------------------------------------
+# Classes
+# --------------------------------------------------------------------------
+#
+# A class is one period (accounts.Course): its own page of assignments,
+# newest on top, arranged under group headings, some hidden from students.
+# Its students come from the period's Google Classroom roster, by email, and
+# find the class in their name menu. An assignment is in one class at most;
+# a second period doing the same work gets a copy (Copy to), so each period
+# has its own links, live lesson and results.
+
+def _own_class(db, class_id):
+    """(user, class, None) for the teacher whose class it is, else a JSON
+    error as the third item."""
+    user = current_user(db)
+    if user is None or not accounts.is_teacher(user.email):
+        return None, None, (jsonify(error="Only the teacher can do that."), 403)
+    course = db.query(accounts.Course).filter_by(id=class_id, app=APP_NAME).first()
+    if course is None or course.teacher_id != user.id:
+        return None, None, (jsonify(error="No such class."), 404)
+    return user, course, None
+
+
+def _top_position(db, class_id):
+    """One above everything in the class: where a new item goes."""
+    least = (db.query(func.min(accounts.ClassItem.position))
+               .filter(accounts.ClassItem.class_id == class_id).scalar())
+    return (least if least is not None else 1) - 1
+
+
+def _class_of(db, item):
+    """(ClassItem, Course) for the class an assignment is in, or (None, None)."""
+    row = db.query(accounts.ClassItem).filter_by(assignment_id=item.id).first()
+    if row is None:
+        return None, None
+    return row, db.query(accounts.Course).filter_by(id=row.class_id).first()
+
+
+def _place(db, course, item):
+    """Put an assignment on top of a class, out of any class it was in. Its
+    live lesson is made now if it has none (_lesson_for), so the class page
+    has a Live link for it from the start, as the teacher asked."""
+    row = db.query(accounts.ClassItem).filter_by(assignment_id=item.id).first()
+    top = _top_position(db, course.id)
+    if row is None:
+        row = accounts.ClassItem(class_id=course.id, assignment_id=item.id)
+        db.add(row)
+    row.class_id, row.position, row.hidden = course.id, top, 0
+    db.commit()
+    teacher = db.query(accounts.User).filter_by(id=course.teacher_id).first()
+    _lesson_for(db, teacher, item)
+    return row
+
+
+def _my_classes(db, user):
+    """The classes in a person's name menu: a teacher's own, or the ones a
+    student's email is on the roster of. Here, in this editor, only."""
+    if user is None:
+        return []
+    if accounts.is_teacher(user.email):
+        q = db.query(accounts.Course).filter_by(teacher_id=user.id, app=APP_NAME)
+    else:
+        q = (db.query(accounts.Course)
+               .join(accounts.Enrollment, accounts.Enrollment.class_id == accounts.Course.id)
+               .filter(accounts.Course.app == APP_NAME,
+                       accounts.Enrollment.email == (user.email or "").lower()))
+    return q.order_by(accounts.Course.name, accounts.Course.id).all()
+
+
+def _sync_roster(db, user, course):
+    """Fetch the class's students from its Classroom course. (count, error).
+
+    The roster replaces what was kept: a student who left the class leaves
+    the menu with the next sync. Their work is untouched — it is theirs,
+    on their My work page, and the teacher's, on the assignment's page."""
+    if not course.course_id:
+        return None, "This class isn't linked to a Google Classroom class."
+    access, why = _classroom_token(db, user)
+    if access is None:
+        return None, why
+    roster, status = _google_list(
+        "%s/courses/%s/students" % (CLASSROOM_API, course.course_id),
+        access, "students")
+    if status != 200:
+        return None, "Google wouldn't list the students in that class."
+    found = {}
+    for st in roster:
+        profile = st.get("profile") or {}
+        email = (profile.get("emailAddress") or "").strip().lower()
+        if email:
+            found[email[:320]] = ((profile.get("name") or {}).get("fullName") or "")[:200]
+    kept = {e.email: e for e in db.query(accounts.Enrollment).filter_by(class_id=course.id)}
+    for email, row in kept.items():
+        if email not in found:
+            db.delete(row)
+    for email, name in found.items():
+        if email in kept:
+            kept[email].name = name
+        else:
+            db.add(accounts.Enrollment(class_id=course.id, email=email, name=name))
+    course.roster_at = accounts.now()
+    db.commit()
+    return len(found), ""
+
+
+def _link_course(db, user, course, course_id):
+    """Link a class to a Classroom course, asking Google for its name — which
+    is also the proof this teacher teaches it. "" unlinks. Returns an error
+    or ""."""
+    if not course_id:
+        course.course_id, course.course_name = "", ""
+        return ""
+    if not re.fullmatch(r"[0-9]{1,30}", course_id):
+        return "Choose a Google Classroom class."
+    access, why = _classroom_token(db, user)
+    if access is None:
+        return why
+    status, got = _google_get("%s/courses/%s" % (CLASSROOM_API, course_id), access)
+    if status != 200:
+        return _google_message(got, "Google couldn't find that class.")
+    name = got.get("name") or ""
+    if got.get("section"):
+        name += " — " + got["section"]
+    course.course_id, course.course_name = course_id, name[:200]
+    return ""
+
+
+@app.post("/api/class")
+def create_class():
+    """A new class, from the dashboard. Linked to a Classroom course when
+    one is chosen, and its roster fetched at once, so the students have it
+    in their menu straight away. A roster that fails still leaves the class
+    made, and says why; Sync roster on its page tries again."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only a teacher can make a class."), 403
+        data = request.get_json(silent=True) or {}
+        name = clean(data.get("name"), 200)
+        if not name:
+            return jsonify(error="Give the class a name."), 400
+        course = accounts.Course(app=APP_NAME, teacher_id=user.id, name=name)
+        error = _link_course(db, user, course, str(data.get("course") or ""))
+        if error:
+            return jsonify(error=error), 400
+        db.add(course)
+        db.commit()
+        count, roster_error = (_sync_roster(db, user, course) if course.course_id
+                               else (0, ""))
+        return jsonify(id=course.id, url=url_for("teacher_class", class_id=course.id),
+                       students=count, roster_error=roster_error)
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>")
+def update_class(class_id):
+    """Rename a class, or link it to a different Classroom course (which
+    fetches that course's roster)."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        data = request.get_json(silent=True) or {}
+        if "name" in data:
+            name = clean(data.get("name"), 200)
+            if not name:
+                return jsonify(error="Give the class a name."), 400
+            course.name = name
+        roster_error = ""
+        if "course" in data:
+            error = _link_course(db, user, course, str(data.get("course") or ""))
+            if error:
+                return jsonify(error=error), 400
+            db.commit()
+            if course.course_id:
+                _, roster_error = _sync_roster(db, user, course)
+            else:
+                db.query(accounts.Enrollment).filter_by(class_id=course.id).delete()
+        db.commit()
+        return jsonify(ok=True, name=course.name, course_name=course.course_name,
+                       roster_error=roster_error)
+    finally:
+        db.close()
+
+
+@app.delete("/api/class/<int:class_id>")
+def delete_class(class_id):
+    """Delete a class: its page, its groups and its roster. Never its
+    assignments — they go back to the dashboard's list, with every student's
+    work and score, and can be put in another class."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        db.query(accounts.ClassItem).filter_by(class_id=course.id).delete()
+        db.query(accounts.Enrollment).filter_by(class_id=course.id).delete()
+        db.delete(course)
+        db.commit()
+        return jsonify(ok=True)
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>/roster")
+def class_roster(class_id):
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        count, error = _sync_roster(db, user, course)
+        if error:
+            return jsonify(error=error), 409 if not course.course_id else 502
+        return jsonify(ok=True, students=count)
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>/new")
+def class_new_assignment(class_id):
+    """New assignment (or lesson) straight into a class: on top, with its
+    assignment link and its live link made now, then opened to write.
+
+    An assignment starts as the editor's own starter project (STARTER) —
+    the editor is where the teacher makes it theirs, the same as editing
+    any assignment."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        data = request.get_json(silent=True) or {}
+        lesson = data.get("kind") == "lesson"
+        title = clean(data.get("title"), 200) or ("Untitled lesson" if lesson
+                                                  else "Untitled assignment")
+        if lesson:
+            item = accounts.Assignment(
+                slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
+                teacher_id=user.id, title=title, kind="lesson", code="",
+                files=json.dumps({LESSON_FILE: LESSON_STARTER.format(title=title)}))
+        else:
+            item = accounts.Assignment(
+                slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
+                teacher_id=user.id, title=title, code="",
+                files=json.dumps(STARTER))
+        db.add(item)
+        db.commit()
+        _store_quiz_keys(db, item.id, item.file_map().values())
+        _place(db, course, item)
+        return jsonify(slug=item.slug, url=url_for(
+            "edit_lesson" if lesson else "edit_assignment", slug=item.slug))
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>/group")
+def class_new_group(class_id):
+    """A group heading, on top; moved into place with the arrows."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        title = clean((request.get_json(silent=True) or {}).get("title"), 200)
+        if not title:
+            return jsonify(error="Give the group a name."), 400
+        row = accounts.ClassItem(class_id=course.id, title=title,
+                                 position=_top_position(db, course.id))
+        db.add(row)
+        db.commit()
+        return jsonify(ok=True, id=row.id)
+    finally:
+        db.close()
+
+
+def _class_item(db, course, item_id):
+    try:
+        item_id = int(item_id)
+    except (TypeError, ValueError):
+        return None
+    return db.query(accounts.ClassItem).filter_by(id=item_id, class_id=course.id).first()
+
+
+@app.post("/api/class/<int:class_id>/item/<int:item_id>")
+def class_item_update(class_id, item_id):
+    """Hide or show an assignment from the class's students, or rename a
+    group heading."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        row = _class_item(db, course, item_id)
+        if row is None:
+            return jsonify(error="No such item."), 404
+        data = request.get_json(silent=True) or {}
+        if "hidden" in data:
+            row.hidden = 1 if data.get("hidden") else 0
+        if "title" in data and row.assignment_id is None:
+            title = clean(data.get("title"), 200)
+            if not title:
+                return jsonify(error="Give the group a name."), 400
+            row.title = title
+        db.commit()
+        return jsonify(ok=True, hidden=bool(row.hidden), title=row.title)
+    finally:
+        db.close()
+
+
+@app.delete("/api/class/<int:class_id>/item/<int:item_id>")
+def class_item_delete(class_id, item_id):
+    """Take away a group heading. Only a heading: an assignment leaves a
+    class by being archived, deleted or moved, each of which says what it
+    does to students' work."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        row = _class_item(db, course, item_id)
+        if row is None or row.assignment_id is not None:
+            return jsonify(error="No such group."), 404
+        db.delete(row)
+        db.commit()
+        return jsonify(ok=True)
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>/order")
+def class_order(class_id):
+    """The page's order, top to bottom, as item ids: every item of the class,
+    each once. Anything else is refused rather than half applied — a page
+    out of date (another tab added something) would otherwise drop the new
+    item to the bottom or lose its place."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        ids = (request.get_json(silent=True) or {}).get("items")
+        rows = {r.id: r for r in db.query(accounts.ClassItem).filter_by(class_id=course.id)}
+        if (not isinstance(ids, list) or len(ids) != len(rows)
+                or not all(isinstance(i, int) for i in ids) or set(ids) != set(rows)):
+            return jsonify(error="The page is out of date. Reload it and try again."), 409
+        for at, i in enumerate(ids):
+            rows[i].position = at
+        db.commit()
+        return jsonify(ok=True)
+    finally:
+        db.close()
+
+
+@app.post("/api/assignment/<slug>/class")
+def assignment_class(slug):
+    """Put an assignment in a class (on top), move it to another, or take it
+    out of classes (`class` empty) — back to the dashboard's list."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        wanted = (request.get_json(silent=True) or {}).get("class")
+        if not wanted:
+            db.query(accounts.ClassItem).filter_by(assignment_id=item.id).delete()
+            db.commit()
+            return jsonify(ok=True, url=url_for("teacher_home"))
+        try:
+            course = db.query(accounts.Course).filter_by(
+                id=int(wanted), app=APP_NAME, teacher_id=user.id).first()
+        except (TypeError, ValueError):
+            course = None
+        if course is None:
+            return jsonify(error="No such class."), 404
+        _place(db, course, item)
+        return jsonify(ok=True, url=url_for("teacher_class", class_id=course.id))
+    finally:
+        db.close()
+
+
+@app.post("/api/assignment/<slug>/copy")
+def copy_assignment(slug):
+    """A copy for another class — another period doing the same work. Its
+    own assignment link, live link and results; its points, starter, notes
+    and questions as this one has them now. Nothing students did is copied,
+    and nothing is posted to Classroom: that is per class, from its page."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        try:
+            course = db.query(accounts.Course).filter_by(
+                id=int((request.get_json(silent=True) or {}).get("class")),
+                app=APP_NAME, teacher_id=user.id).first()
+        except (TypeError, ValueError):
+            course = None
+        if course is None:
+            return jsonify(error="Choose a class to copy it to."), 404
+        copy = accounts.Assignment(
+            slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
+            teacher_id=user.id, title=item.title, kind=item.kind,
+            code=item.code, files=item.files, out_of=item.out_of)
+        db.add(copy)
+        db.commit()
+        _store_quiz_keys(db, copy.id, copy.file_map().values())
+        _place(db, course, copy)
+        return jsonify(ok=True, slug=copy.slug, course=course.name,
+                       url=url_for("teacher_assignment", slug=copy.slug))
+    finally:
+        db.close()
+
+
+def _class_rows(db, course, user=None, student=False):
+    """A class's page, top to bottom: groups and assignments.
+
+    For a student (`user`), hidden and archived assignments are left out —
+    and so is a heading with nothing of theirs under it — and each row
+    carries where they stand on it: turned in, and the grade. For the
+    teacher, everything, hidden ones marked, archived ones apart."""
+    rows = (db.query(accounts.ClassItem).filter_by(class_id=course.id)
+              .order_by(accounts.ClassItem.position, accounts.ClassItem.id).all())
+    ids = [r.assignment_id for r in rows if r.assignment_id]
+    items = ({a.id: a for a in db.query(accounts.Assignment)
+              .filter(accounts.Assignment.id.in_(ids))} if ids else {})
+    lessons = {}
+    for live in (db.query(accounts.LiveSession)
+                   .filter(accounts.LiveSession.assignment_id.in_(ids),
+                           accounts.LiveSession.host_id == course.teacher_id,
+                           accounts.LiveSession.app == APP_NAME)
+                   .order_by(accounts.LiveSession.started_at,
+                             accounts.LiveSession.id) if ids else []):
+        lessons[live.assignment_id] = live          # the newest wins
+    subs = {}
+    if student and user is not None and ids:
+        subs = {s.assignment_id: s for s in db.query(accounts.Submission)
+                .filter(accounts.Submission.student_id == user.id,
+                        accounts.Submission.assignment_id.in_(ids))}
+    counts = {}
+    if not student and ids:
+        for aid, n in (db.query(accounts.Submission.assignment_id, func.count())
+                         .filter(accounts.Submission.assignment_id.in_(ids))
+                         .group_by(accounts.Submission.assignment_id)):
+            counts[aid] = n
+
+    out, archived = [], []
+    for r in rows:
+        if r.assignment_id is None:
+            out.append({"group": True, "id": r.id, "title": r.title})
+            continue
+        a = items.get(r.assignment_id)
+        if a is None:
+            continue
+        # Archived ones go to `archived` below, which a student never gets.
+        if student and r.hidden:
+            continue
+        live = lessons.get(a.id)
+        row = {"group": False, "id": r.id, "slug": a.slug, "title": a.title,
+               "kind": a.kind, "hidden": bool(r.hidden), "closed": bool(a.closed),
+               "live_code": live.code if live else "",
+               "on_air": bool(live and not live.ended),
+               "out_of": a.out_of or "", "count": counts.get(a.id, 0)}
+        if student:
+            sub = subs.get(a.id)
+            earned = _quiz_earned(db, a.id).get(user.id) if user else None
+            total = _total(sub.score if sub else None, earned)
+            row.update(
+                turned_in=bool(sub),
+                grade=_score_text(total),
+                # What they turned in, frozen — the teacher asked for this
+                # to be what the title opens. A lesson's turn-in has no
+                # snapshot; its link is the lesson.
+                open_url=(url_for("view_shared", slug=sub.snippet_slug)
+                          if sub and sub.snippet_slug
+                          else url_for("open_assignment", slug=a.slug)))
+        (archived if a.archived else out).append(row)
+    if student:
+        # A heading with nothing of theirs under it says nothing to them.
+        kept = []
+        for i, row in enumerate(out):
+            if row["group"] and (i + 1 >= len(out) or out[i + 1]["group"]):
+                continue
+            kept.append(row)
+        out = kept
+    return out, archived
+
+
+@app.get("/teacher/class/<int:class_id>")
+def teacher_class(class_id):
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        course = db.query(accounts.Course).filter_by(id=class_id, app=APP_NAME).first()
+        if course is None or course.teacher_id != user.id:
+            abort(404)
+        rows, archived = _class_rows(db, course)
+        others = [c for c in _my_classes(db, user) if c.id != course.id]
+        roster = (db.query(accounts.Enrollment).filter_by(class_id=course.id)
+                    .order_by(accounts.Enrollment.name, accounts.Enrollment.email).all())
+        link = _classroom_link(db, user) if classroom_configured() else None
+        ctx = user_context(db)
+        ctx.update(course=course, rows=rows, archived=archived, others=others,
+                   roster=roster, classroom_connected=link is not None,
+                   classroom_on=classroom_configured())
+        return render_template("class_teacher.html", **ctx)
+    finally:
+        db.close()
+
+
+@app.get("/class/<int:class_id>")
+def student_class(class_id):
+    """A class's page as its students see it — and as its teacher sees it
+    from here, to check what the class sees.
+
+    Only to a student on the roster (by email) or the teacher. Anyone else
+    is told it is not one of their classes, which says nothing about what
+    is in it."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return redirect(url_for("login", next=request.path))
+        course = db.query(accounts.Course).filter_by(id=class_id, app=APP_NAME).first()
+        teacher = course is not None and course.teacher_id == user.id
+        enrolled = course is not None and db.query(accounts.Enrollment).filter_by(
+            class_id=course.id, email=(user.email or "").lower()).first() is not None
+        if not (teacher or enrolled):
+            return render_template("404.html", message="That isn't one of your classes."), 404
+        rows, _ = _class_rows(db, course, user=user, student=True)
+        ctx = user_context(db)
+        ctx.update(course=course, rows=rows, preview=teacher)
+        return render_template("class_student.html", **ctx)
+    finally:
+        db.close()
 
 
 # --------------------------------------------------------------------------

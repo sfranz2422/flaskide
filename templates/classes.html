@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My classes — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  // The editor's light/dark choice, so this page does not flash the other one.
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">My classes</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('index') }}">Open the editor</a>
+    <a class="btn" href="{{ url_for('my_work') }}">My work</a>
+    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+  </div>
+</header>
+
+{#  Where a student lands after signing in. The classes are the ones whose
+    Classroom roster has their email on it (Enrollment). #}
+<main class="sheet">
+  {% if my_classes %}
+    <ul class="class-cards">
+      {% for c in my_classes %}
+        <li><a class="class-card" href="{{ c.url }}"><strong>{{ c.name }}</strong></a></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">
+      <h2>You're not in any classes yet</h2>
+      <p>You're signed in as <strong>{{ user_email }}</strong>. If that's your
+         school account, your teacher needs to sync the class's roster —
+         then it shows up here.</p>
+      <p><a class="btn btn-primary" href="{{ url_for('index') }}">Open the editor</a></p>
+    </div>
+  {% endif %}
+</main>
+</body>
+</html>

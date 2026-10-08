@@ -26,12 +26,35 @@
   <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
   <div class="meta"><span class="pagetitle">{{ assignment.title }}</span></div>
   <div class="actions">
+    {% if in_class %}
+      <a class="btn" href="{{ url_for('teacher_class', class_id=in_class.id) }}">← {{ in_class.name }}</a>
+    {% endif %}
     <a class="btn" href="{{ url_for('teacher_home') }}">All assignments</a>
     <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
   </div>
 </header>
 
 <main class="sheet">
+
+  {#  Its class. Move takes it (on top) to another class's page; Copy makes
+      another period its own copy — own links, own live lesson, own results. #}
+  {% if classes %}
+    <section class="class-line">
+      <p>
+        {% if in_class %}In class <a href="{{ url_for('teacher_class', class_id=in_class.id) }}"><strong>{{ in_class.name }}</strong></a>
+        {% else %}Not in a class.{% endif %}
+        <select id="class-move" class="field" aria-label="Move to class">
+          <option value="">{% if in_class %}Move to…{% else %}Put in a class…{% endif %}</option>
+          {% for c in classes if not in_class or c.id != in_class.id %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          {% if in_class %}<option value="none">Take it out of classes</option>{% endif %}
+        </select>
+        <select id="class-copy" class="field" aria-label="Copy to class">
+          <option value="">Copy to another class…</option>
+          {% for c in classes if not in_class or c.id != in_class.id %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </p>
+    </section>
+  {% endif %}
 
   <section class="handout">
     <h2>The link to hand out</h2>
@@ -416,8 +439,40 @@
     });
   })();
 
+  // Its class: move it, or copy it for another period.
+  (function () {
+    var move = document.getElementById("class-move");
+    var copy = document.getElementById("class-copy");
+    if (move) move.addEventListener("change", function () {
+      if (!move.value) return;
+      var out = move.value === "none";
+      var name = move.options[move.selectedIndex].textContent;
+      if (!confirm(out ? "Take this out of classes? It goes back to your All assignments list. Students' work and scores stay."
+                       : "Move this to " + name + "? It goes on top of that class's page. Students' work and scores stay with it.")) {
+        move.value = ""; return;
+      }
+      post(base + "/class", { class: out ? "" : move.value }).then(function (r) {
+        if (!r.ok) { alert(r.d.error || "Not moved"); move.value = ""; return; }
+        location.reload();
+      });
+    });
+    if (copy) copy.addEventListener("change", function () {
+      if (!copy.value) return;
+      var name = copy.options[copy.selectedIndex].textContent;
+      if (!confirm("Make a copy for " + name + "? It gets its own assignment link, live link and results. Nothing students did here is copied.")) {
+        copy.value = ""; return;
+      }
+      post(base + "/copy", { class: copy.value }).then(function (r) {
+        if (!r.ok) { alert(r.d.error || "Not copied"); copy.value = ""; return; }
+        location.href = r.d.url;
+      });
+    });
+  })();
+
   // Posting: the teacher's classes, from Google, into the picker.
   var picker = document.getElementById("gc-course");
+  // An assignment in a class starts on that class's Classroom course.
+  var classCourse = {{ (in_class.course_id if in_class else "") | tojson }};
   // Classes it is already in are left out of the picker; the server refuses
   // a second post to one anyway.
   var postedTo = {{ posts | map(attribute='course_id') | list | tojson }};
@@ -437,6 +492,10 @@
         o.textContent = c.name + (c.section ? " — " + c.section : "");
         picker.appendChild(o);
       });
+      if (classCourse && picker.querySelector('option[value="' + classCourse + '"]')) {
+        picker.value = classCourse;
+        picker.dispatchEvent(new Event("change"));      // and its topics
+      }
     });
     /* The class's topics, once a class is chosen — as Classroom itself
        asks. "No topic" first, and chosen, so leaving it alone posts the

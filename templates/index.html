@@ -167,6 +167,10 @@
           <button id="account" class="btn btn-account" aria-expanded="false"
                   title="{{ user_email }}">{{ user_name }}</button>
           <div id="account-menu" class="menu" hidden>
+            {#  Their classes: a teacher's own, a student's from the rosters. #}
+            {% for c in my_classes %}
+              <a class="menu-item" href="{{ c.url }}">{{ c.name }}</a>
+            {% endfor %}
             <a class="menu-item" href="{{ url_for('my_work') }}">My work</a>
             {% if not is_teacher and not readonly and not (draft_slug and assignment_slug) %}
               <button id="share-menu" class="menu-item">Share a link</button>

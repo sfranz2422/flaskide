@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ course.name }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">{{ course.name }}</span></div>
+  <div class="actions">
+    {% if preview %}
+      <a class="btn" href="{{ url_for('teacher_class', class_id=course.id) }}">Back to your class page</a>
+    {% else %}
+      {% for c in my_classes if c.id != course.id %}
+        <a class="btn" href="{{ c.url }}">{{ c.name }}</a>
+      {% endfor %}
+      <a class="btn" href="{{ url_for('my_work') }}">My work</a>
+    {% endif %}
+    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+  </div>
+</header>
+
+<main class="sheet">
+  {% if preview %}
+    <p class="dim">This is what your students see: hidden and archived
+      assignments are left out, and grades are each student's own.</p>
+  {% endif %}
+
+  {#  The class's page as the teacher arranged it. The name opens what they
+      last turned in — or the assignment, if they haven't yet. #}
+  {% if rows %}
+    <table class="listing class-list">
+      <thead>
+        <tr><th>Assignment</th><th>Grade</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          {% if r.group %}
+            <tr class="group-row"><td colspan="3"><strong class="group-title">{{ r.title }}</strong></td></tr>
+          {% else %}
+            <tr>
+              <td>
+                <a href="{{ r.open_url }}"
+                   {% if r.turned_in %}title="What you turned in"{% endif %}>{{ r.title }}</a>
+                {% if r.turned_in %}<span class="turned-in small">✓ turned in</span>{% endif %}
+                {% if r.closed %}<span class="dim small"> · closed</span>{% endif %}
+              </td>
+              <td>{% if r.grade %}<strong>{{ r.grade }}</strong>{% if r.out_of %} / {{ r.out_of }}{% endif %}{% endif %}</td>
+              <td class="right rowactions">
+                {% if r.live_code %}
+                  <a class="linkbtn {{ 'live-pill' if r.on_air }}" href="{{ url_for('live_page', code=r.live_code) }}"
+                     title="{{ 'Your teacher is live now' if r.on_air else 'The live lesson' }}">{{ "● Live now" if r.on_air else "Live" }}</a>
+                {% endif %}
+                <a class="linkbtn" href="{{ url_for('open_assignment', slug=r.slug) }}"
+                   title="Your own copy, to work in">Assignment</a>
+              </td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">
+      <h2>Nothing here yet</h2>
+      <p>Your teacher hasn't put anything in this class yet.</p>
+    </div>
+  {% endif %}
+</main>
+</body>
+</html>

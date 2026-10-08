@@ -1581,3 +1581,46 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 }
 .play-main .preview-frame { flex: 1 1 0; min-height: 0; }
 .play-main #output { flex: 0 0 110px; min-height: 0; }
+
+/* ---------------------------------------------------------------- classes */
+.class-cards { list-style: none; margin: 0 0 14px; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.class-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg-panel);
+  color: var(--text); text-decoration: none; }
+.class-card:hover { border-color: var(--accent); }
+.class-card strong { font-size: 16px; }
+.class-tools { margin-bottom: 18px; }
+.class-tools .grade-line { margin-bottom: 8px; }
+.class-line p { margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* a group is only a heading: a band across the list */
+.class-list tr.group-row td { background: var(--bg-panel); padding-top: 14px; padding-bottom: 8px; }
+.class-list .group-title { font-size: 15px; }
+.class-list tr.is-hidden td { opacity: .6; }
+.class-list th.order, .class-list td.order { width: 44px; padding-right: 0; white-space: nowrap; }
+.arrow { border: 0; background: none; color: var(--muted, #888); cursor: pointer;
+  font-size: 11px; padding: 2px 3px; line-height: 1; }
+.arrow:hover { color: var(--accent); }
+.live-pill { color: #fff !important; background: #d64541; border-radius: 999px;
+  padding: 1px 9px; font-size: 12px; font-weight: 600; margin-left: 6px; text-decoration: none !important; }
+/* A phone: each row wraps, its buttons under its name, rather than the
+   table running off the right of the screen. */
+@media (max-width: 640px) {
+  .class-list thead { display: none; }
+  .class-list tr { display: flex; flex-wrap: wrap; align-items: center;
+    border-bottom: 1px solid var(--line); }
+  .class-list td { border-bottom: 0; }
+  .class-list td.rowactions { white-space: normal; margin-left: auto; }
+  .class-list tr.group-row td { flex: 1 1 100%; }
+  /* The header scrolls inside itself rather than widening the page under it. */
+  .class-page .bar { overflow-x: auto; }
+  .class-page .bar .pagetitle { white-space: nowrap; }
+}
+
+/* The front door (home.html): one card, two ways in. */
+.front { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.front-card { text-align: center; max-width: 440px; }
+.front-logo { font-size: 56px; line-height: 1; }
+.front-card h1 { margin: 10px 0 6px; font-size: 32px; }
+.front-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 22px 0 14px; }
+.btn-big { font-size: 16px; padding: 12px 22px; }

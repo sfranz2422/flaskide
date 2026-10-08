@@ -26,6 +26,9 @@
   <div class="meta"><span class="pagetitle">My work</span></div>
   <div class="actions">
     <a class="btn" href="{{ url_for('index') }}">New project</a>
+    {% for c in my_classes %}
+      <a class="btn" href="{{ c.url }}">{{ c.name }}</a>
+    {% endfor %}
     {% if is_teacher %}
       <a class="btn" href="{{ url_for('teacher_home') }}">Assignments</a>
     {% endif %}

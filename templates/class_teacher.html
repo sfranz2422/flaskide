@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ course.name }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">{{ course.name }}</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('student_class', class_id=course.id) }}"
+       title="This page as the class sees it: hidden ones left out">Student view</a>
+    <a class="btn" href="{{ url_for('teacher_home') }}">All classes</a>
+    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+  </div>
+</header>
+
+<main class="sheet">
+  {% macro arrows() -%}
+    <button class="arrow js-up" title="Move up" aria-label="Move up">▲</button><button
+      class="arrow js-down" title="Move down" aria-label="Move down">▼</button>
+  {%- endmacro %}
+
+
+  {#  Made here, an assignment goes on top with its assignment link and its
+      live link already made, and opens in the editor to write its starter. #}
+  <section class="class-tools">
+    <form id="new-item" class="grade-line">
+      <input id="new-title" class="field" type="text" maxlength="200"
+             placeholder="New assignment's name" aria-label="New assignment's name">
+      <select id="new-kind" class="field" aria-label="Kind">
+        <option value="code">Assignment (code)</option>
+        <option value="lesson">Lesson (slides and questions)</option>
+      </select>
+      <button class="btn btn-primary" type="submit">New assignment</button>
+    </form>
+    <form id="new-group" class="grade-line">
+      <input id="group-title" class="field" type="text" maxlength="200"
+             placeholder="New group, e.g. Topic 2: Lists" aria-label="New group's name">
+      <button class="btn" type="submit">Add group</button>
+      <span class="dim small">Groups are only headings on this page — move things under them with the arrows.</span>
+    </form>
+  </section>
+
+  {#  The page, top to bottom. Every row carries its item id; the arrows move
+      a row and send the whole order. A group is a heading row; what is under
+      it, until the next heading, is "in" it, and nothing else means so. #}
+  {% if rows %}
+    <table class="listing class-list">
+      <thead>
+        <tr><th class="order"></th><th>Assignment</th><th>Turned in</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          {% if r.group %}
+            <tr class="group-row" data-item="{{ r.id }}" data-title="{{ r.title }}">
+              <td class="order">{{ arrows() }}</td>
+              <td colspan="2"><strong class="group-title">{{ r.title }}</strong></td>
+              <td class="right rowactions">
+                <button class="linkbtn js-rename">Rename</button>
+                <button class="linkbtn js-ungroup danger">Remove heading</button>
+              </td>
+            </tr>
+          {% else %}
+            <tr class="{{ 'is-hidden' if r.hidden }}" data-item="{{ r.id }}" data-slug="{{ r.slug }}"
+                data-title="{{ r.title }}" data-hidden="{{ 1 if r.hidden else 0 }}">
+              <td class="order">{{ arrows() }}</td>
+              <td>
+                <a href="{{ url_for('teacher_assignment', slug=r.slug) }}">{{ r.title }}</a>
+                {% if r.kind == 'lesson' %}<span class="kind-tag">lesson</span>{% endif %}
+                {% if r.hidden %}<span class="kind-tag">hidden</span>{% endif %}
+                {% if r.closed %}<span class="dim small"> · closed</span>{% endif %}
+                {% if r.on_air %}<span class="live-pill">● Live now</span>{% endif %}
+              </td>
+              <td><strong>{{ r.count }}</strong></td>
+              <td class="right rowactions">
+                <a class="linkbtn" href="{{ url_for('teach_assignment_live', slug=r.slug) }}">{{ "Back to the lesson" if r.on_air else "Go live" }}</a>
+                <a class="linkbtn" href="{{ url_for('edit_lesson' if r.kind == 'lesson' else 'edit_assignment', slug=r.slug) }}">Edit</a>
+                <button class="linkbtn js-hide">{{ "Show" if r.hidden else "Hide" }}</button>
+                <button class="linkbtn js-archive">Archive</button>
+                {% if r.count == 0 %}<button class="linkbtn js-delete danger">Delete</button>{% endif %}
+              </td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">
+      <h2>Nothing in this class yet</h2>
+      <p>Make an assignment above, or open one of your assignments and put it
+         in this class.</p>
+    </div>
+  {% endif %}
+
+  {#  Archived: off the class's page for students, and kept here, with every
+      student's work, to bring back. Their My work page still has what they
+      turned in. #}
+  {% if archived %}
+    <section>
+      <h2>Archived <span class="count">{{ archived|length }}</span></h2>
+      <table class="listing">
+        <tbody>
+          {% for r in archived %}
+            <tr data-item="{{ r.id }}" data-slug="{{ r.slug }}" data-title="{{ r.title }}">
+              <td><a href="{{ url_for('teacher_assignment', slug=r.slug) }}">{{ r.title }}</a></td>
+              <td><strong>{{ r.count }}</strong> turned in</td>
+              <td class="right rowactions"><button class="linkbtn js-archive">Restore</button></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  {#  Who is in it: the Classroom roster, by email. A student finds the
+      class under their name once they are on it here. #}
+  <section class="classroom">
+    <h2>Students <span class="count">{{ roster|length }}</span></h2>
+    {% if course.course_id %}
+      <p>From Google Classroom: <strong>{{ course.course_name or "its class" }}</strong>{%
+        if course.roster_at %} <span class="dim small">· synced {{ course.roster_at.strftime('%b %d at %I:%M %p') }}</span>{% endif %}</p>
+      <div class="grade-line">
+        <button id="roster-sync" class="btn">Sync roster</button>
+        <span id="roster-state" class="dim small"></span>
+      </div>
+      {% if roster %}
+        <details><summary class="dim">Who's on it</summary>
+          <ul class="names">{% for e in roster %}<li>{{ e.name or e.email }} <span class="dim small">{{ e.email }}</span></li>{% endfor %}</ul>
+        </details>
+      {% endif %}
+    {% else %}
+      <p class="dim">Not linked to a Google Classroom class, so no students
+        can see it yet. Link it below.</p>
+    {% endif %}
+  </section>
+
+  <section class="classroom">
+    <h2>This class</h2>
+    <form id="class-settings" class="grade-line">
+      <input id="class-name" class="field" type="text" maxlength="200" value="{{ course.name }}" aria-label="Class name">
+      {% if classroom_connected %}
+        <select id="class-course" class="field" aria-label="Google Classroom class">
+          <option value="{{ course.course_id }}">{{ course.course_name or "Not linked to Classroom" }}</option>
+        </select>
+      {% endif %}
+      <button class="btn" type="submit">Save</button>
+      <button id="class-delete" class="linkbtn danger" type="button">Delete class</button>
+      <span id="class-state" class="dim small"></span>
+    </form>
+  </section>
+</main>
+
+<script>
+  var CLASS = {{ course.id }};
+  var api = "/api/class/" + CLASS;
+
+  function send(url, body, method) {
+    return fetch(url, {
+      method: method || "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); });
+  }
+
+  document.getElementById("new-item").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var title = document.getElementById("new-title").value.trim();
+    if (!title) { document.getElementById("new-title").focus(); return; }
+    send(api + "/new", { title: title, kind: document.getElementById("new-kind").value })
+      .then(function (out) {
+        if (!out.ok) { alert(out.d.error || "Not made"); return; }
+        location.href = out.d.url;            // write its starter
+      });
+  });
+
+  document.getElementById("new-group").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var title = document.getElementById("group-title").value.trim();
+    if (!title) { document.getElementById("group-title").focus(); return; }
+    send(api + "/group", { title: title }).then(function (out) {
+      if (!out.ok) { alert(out.d.error || "Not added"); return; }
+      location.reload();
+    });
+  });
+
+  /* Order: every row with an item id, top to bottom, archived ones last.
+     The server takes the whole order or none of it, so a page out of date
+     is told to reload rather than shuffling something it never showed. */
+  function saveOrder() {
+    var ids = Array.prototype.map.call(document.querySelectorAll("[data-item]"),
+                                       function (el) { return Number(el.dataset.item); });
+    send(api + "/order", { items: ids }).then(function (out) {
+      if (!out.ok) { alert(out.d.error || "Order not saved"); location.reload(); }
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    var row = e.target.closest("tr[data-item]");
+    if (!row) return;
+    var t = e.target.classList;
+
+    if (t.contains("js-up") || t.contains("js-down")) {
+      var sib = t.contains("js-up") ? row.previousElementSibling : row.nextElementSibling;
+      if (!sib) return;
+      if (t.contains("js-up")) row.parentNode.insertBefore(row, sib);
+      else row.parentNode.insertBefore(sib, row);
+      saveOrder();
+      return;
+    }
+    if (t.contains("js-hide")) {
+      var hide = row.dataset.hidden !== "1";
+      send(api + "/item/" + row.dataset.item, { hidden: hide }).then(function (out) {
+        if (!out.ok) { alert(out.d.error || "Not changed"); return; }
+        location.reload();
+      });
+      return;
+    }
+    if (t.contains("js-rename")) {
+      var name = prompt("Group name:", row.dataset.title);
+      if (!name || !name.trim()) return;
+      send(api + "/item/" + row.dataset.item, { title: name.trim() }).then(function () { location.reload(); });
+      return;
+    }
+    if (t.contains("js-ungroup")) {
+      if (!confirm("Remove the heading “" + row.dataset.title + "”? The assignments under it stay where they are.")) return;
+      send(api + "/item/" + row.dataset.item, undefined, "DELETE").then(function () { location.reload(); });
+      return;
+    }
+    if (t.contains("js-archive")) {
+      fetch("/api/assignment/" + row.dataset.slug + "/archive", { method: "POST" })
+        .then(function () { location.reload(); });
+      return;
+    }
+    if (t.contains("js-delete")) {
+      if (!confirm("Delete “" + row.dataset.title + "”?\n\nNobody has turned anything in, so nothing is lost. " +
+                   "Any student who started it keeps their copy as an ordinary saved project.")) return;
+      send("/api/assignment/" + row.dataset.slug, undefined, "DELETE").then(function (out) {
+        if (!out.ok) { alert(out.d.error || "Couldn't delete that."); return; }
+        location.reload();
+      });
+    }
+  });
+
+  (function () {
+    var b = document.getElementById("roster-sync");
+    if (!b) return;
+    b.addEventListener("click", function () {
+      var state = document.getElementById("roster-state");
+      b.disabled = true;
+      state.textContent = "Asking Google…";
+      send(api + "/roster").then(function (out) {
+        b.disabled = false;
+        if (!out.ok) { state.textContent = out.d.error || "Not synced"; return; }
+        location.reload();
+      }).catch(function () { b.disabled = false; state.textContent = "Not synced — check your connection"; });
+    });
+  })();
+
+  (function () {
+    var form = document.getElementById("class-settings");
+    var pick = document.getElementById("class-course");
+    var state = document.getElementById("class-state");
+    var linked = pick ? pick.value : "";
+    if (pick) {
+      fetch("/api/classroom/courses").then(function (r) { return r.json(); }).then(function (d) {
+        var none = document.createElement("option");
+        none.value = "";
+        none.textContent = "Not linked to Classroom";
+        if (linked) pick.appendChild(none);
+        (d.courses || []).forEach(function (c) {
+          if (c.id === linked) return;
+          var o = document.createElement("option");
+          o.value = c.id;
+          o.textContent = c.name + (c.section ? " — " + c.section : "");
+          pick.appendChild(o);
+        });
+      }).catch(function () {});
+    }
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var body = { name: document.getElementById("class-name").value.trim() };
+      if (pick && pick.value !== linked) body.course = pick.value;
+      state.textContent = "Saving…";
+      send(api, body).then(function (out) {
+        if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
+        if (out.d.roster_error) alert("Saved, but the roster didn't come: " + out.d.roster_error);
+        location.reload();
+      });
+    });
+    document.getElementById("class-delete").addEventListener("click", function () {
+      if (!confirm("Delete this class? Its page, groups and roster go. Its assignments don't: " +
+                   "they go back to your All assignments list with every student's work and score.")) return;
+      send(api, undefined, "DELETE").then(function (out) {
+        if (!out.ok) { alert(out.d.error || "Not deleted"); return; }
+        location.href = "{{ url_for('teacher_home') }}";
+      });
+    });
+  })();
+</script>
+</body>
+</html>

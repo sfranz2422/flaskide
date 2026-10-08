@@ -21,9 +21,15 @@
 </head>
 <body>
   <div class="center">
+    {% if message %}
+      <h1>{{ message }}</h1>
+      <p>Check you're signed in with your school account. If you should be in
+         this class, ask your teacher to sync the class's roster.</p>
+    {% else %}
     <h1>That share link doesn't exist</h1>
     <p>The link may have been typed incorrectly, or the project was never shared.
        Double-check the address with whoever sent it to you.</p>
+    {% endif %}
     <a class="btn btn-primary" href="{{ url_for('index') }}">Start a new project</a>
   </div>
 </body>

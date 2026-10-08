@@ -1,0 +1,387 @@
+#!/usr/bin/env python3
+"""Classes: a page per period, its students from Classroom, its assignments.
+
+    python3 tools/test_classes.py
+
+WHAT IS BEING GUARDED
+
+  A student sees their own classes and nothing else.
+      The class list is in every page's menu and comes from the roster, by
+      email. A student not on the roster must not reach the page at all,
+      and hidden or archived assignments must not reach the ones who are.
+
+  The page is the teacher's arrangement.
+      New things go on top; the arrows' order is kept exactly, or refused
+      whole when the page is out of date; a group is only a heading.
+
+  Nothing a student did is ever lost by tidying the class.
+      Archiving, moving, deleting a class — none of it touches submissions
+      or what a student's My work page shows.
+
+  A period gets a copy, not a share.
+      Copy to makes a new assignment with its own links and live lesson;
+      the original keeps its own.
+
+Google is never called: the token and the two doors to it are replaced.
+"""
+import os
+import re
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PYIDE = os.path.dirname(HERE)
+
+DB = os.path.join(tempfile.mkdtemp(), "classes.db")
+os.environ["DATABASE_URL"] = "sqlite:///" + DB
+os.environ["TEACHER_EMAILS"] = "teacher@school.org, other@school.org"
+os.environ["SECRET_KEY"] = "k" * 32
+os.environ.pop("ALLOWED_EMAIL_DOMAINS", None)
+
+sys.path.insert(0, PYIDE)
+import app as P                                              # noqa: E402
+import accounts                                              # noqa: E402
+
+results = []
+
+
+def check(label, condition, detail=""):
+    results.append(bool(condition))
+    print("  %-4s %-62s %s" % ("ok" if condition else "FAIL", label, detail))
+
+
+def add_user(sub, email, name):
+    db = P.SessionLocal()
+    try:
+        user = accounts.User(google_sub=sub, email=email, name=name)
+        db.add(user)
+        db.commit()
+        return user.id
+    finally:
+        db.close()
+
+
+def client(uid=None):
+    c = P.app.test_client()
+    if uid is not None:
+        with c.session_transaction() as s:
+            s["uid"] = uid
+    return c
+
+
+def q(model, **by):
+    db = P.SessionLocal()
+    try:
+        return db.query(model).filter_by(**by).all()
+    finally:
+        db.close()
+
+
+# ------------------------------------------------------------ a fake Google
+P4, P7 = "444", "777"
+roster = {
+    P4: [{"profile": {"emailAddress": "Kid1@school.org", "name": {"fullName": "Kid One"}}},
+         {"profile": {"emailAddress": "kid3@school.org", "name": {"fullName": "Kid Three"}}}],
+    P7: [{"profile": {"emailAddress": "kid2@school.org", "name": {"fullName": "Kid Two"}}}],
+}
+names = {P4: ("Intro to Programming", "Period 4"), P7: ("Intro to Programming", "Period 7")}
+
+
+def fake_get(url, token, params=None):
+    for cid in roster:
+        base = P.CLASSROOM_API + "/courses/" + cid
+        if url == base:
+            return 200, {"id": cid, "name": names[cid][0], "section": names[cid][1]}
+        if url == base + "/students":
+            return 200, {"students": roster[cid]}
+    return 404, {"error": {"message": "Requested entity was not found."}}
+
+
+P._google_get = fake_get
+P._classroom_token = lambda db, user: ("AT", "")
+# The name menu is only drawn where Google sign-in is set up.
+accounts.login_configured = lambda: True
+
+TEACHER = add_user("t1", "teacher@school.org", "Mr Franz")
+OTHER = add_user("t2", "other@school.org", "Another Teacher")
+KID1 = add_user("k1", "kid1@school.org", "Kid One")
+KID2 = add_user("k2", "kid2@school.org", "Kid Two")
+teacher, other = client(TEACHER), client(OTHER)
+kid1, kid2, stranger = client(KID1), client(KID2), client()
+
+
+# ----------------------------------------------------------- making a class
+print("Making a class")
+check("the dashboard offers New class",
+      re.search(r'<form id="new-class"[\s\S]*?type="submit">New class</button>',
+                teacher.get("/teacher").get_data(as_text=True)) is not None)
+check("a student cannot make one",
+      kid1.post("/api/class", json={"name": "Mine"}).status_code == 403)
+check("  nor with no name",
+      teacher.post("/api/class", json={"name": " "}).status_code == 400)
+check("  nor linked to a Classroom class id that is not one",
+      teacher.post("/api/class", json={"name": "X", "course": "../1"}).status_code == 400)
+check("  nor to a class Google can't find",
+      teacher.post("/api/class", json={"name": "X", "course": "999"}).status_code == 400
+      and not q(accounts.Course, name="X"))
+
+r = teacher.post("/api/class", json={"name": "Intro — P4", "course": P4})
+d = r.get_json() or {}
+C4 = d.get("id")
+check("the teacher makes Intro — P4, linked to Period 4",
+      r.status_code == 200 and d.get("url") == "/teacher/class/%s" % C4, d)
+c4 = q(accounts.Course, id=C4)[0] if C4 else None
+check("  named by Google, so the page says which Classroom class",
+      c4 is not None and c4.course_name == "Intro to Programming — Period 4", c4 and c4.course_name)
+check("  and its roster is fetched at once, emails lowercased",
+      d.get("students") == 2 and sorted(e.email for e in q(accounts.Enrollment, class_id=C4))
+      == ["kid1@school.org", "kid3@school.org"])
+C7 = teacher.post("/api/class", json={"name": "Intro — P7", "course": P7}).get_json()["id"]
+CX = teacher.post("/api/class", json={"name": "Scratch"}).get_json()["id"]
+check("a class with no Classroom class has no students",
+      q(accounts.Enrollment, class_id=CX) == [])
+page = teacher.get("/teacher").get_data(as_text=True)
+check("the dashboard lists the classes",
+      all('href="/teacher/class/%d"' % c in page for c in (C4, C7, CX)))
+check("another teacher cannot open one",
+      other.get("/teacher/class/%d" % C4).status_code == 404
+      and other.post("/api/class/%d/new" % C4, json={"title": "x"}).status_code == 404)
+
+# ------------------------------------------------------------- its contents
+print("\nIts assignments")
+NEW = "/api/class/%d/new" % C4
+r = teacher.post(NEW, json={"title": "Hello World"})
+d = r.get_json() or {}
+HELLO = d.get("slug")
+check("New assignment makes one and opens it to write the starter",
+      r.status_code == 200 and d.get("url") == "/teacher/%s/edit" % HELLO, d)
+a = q(accounts.Assignment, slug=HELLO)[0]
+check("  starting as the editor's own starter project",
+      a.file_map() == P.STARTER and a.kind == "code", list(a.file_map()))
+check("  with its live link made already",
+      len(q(accounts.LiveSession, assignment_id=a.id)) == 1)
+LISTS = teacher.post(NEW, json={"title": "Lists"}).get_json()["slug"]
+QUIZ = teacher.post(NEW, json={"title": "Lists quiz", "kind": "lesson"}).get_json()
+check("New lesson makes a lesson, opened in the lesson editor",
+      q(accounts.Assignment, slug=QUIZ["slug"])[0].kind == "lesson"
+      and QUIZ["url"] == "/teacher/%s/lesson" % QUIZ["slug"], QUIZ)
+QUIZ = QUIZ["slug"]
+teacher.post("/api/class/%d/group" % C4, json={"title": "Topic 1: Getting started"})
+check("a group needs a name", teacher.post("/api/class/%d/group" % C4,
+                                           json={"title": ""}).status_code == 400)
+
+
+def order(c=teacher, cid=C4):
+    page = c.get("/teacher/class/%d" % cid).get_data(as_text=True)
+    return re.findall(r'<tr class="[^"]*" data-item="(\d+)"(?: data-slug="([^"]*)")?'
+                      r'\s+data-title="([^"]*)"', page)
+
+
+titles = [t for _, _, t in order()]
+check("the page is newest on top", titles == ["Topic 1: Getting started", "Lists quiz",
+                                              "Lists", "Hello World"], titles)
+check("the dashboard's own list leaves out what is in a class",
+      'data-slug="%s"' % HELLO not in teacher.get("/teacher").get_data(as_text=True))
+
+ids = [int(i) for i, _, _ in order()]
+want = [ids[0], ids[3], ids[1], ids[2]]        # heading, Hello World, then the rest
+r = teacher.post("/api/class/%d/order" % C4, json={"items": want})
+check("the arrows' order is kept exactly",
+      r.status_code == 200 and [int(i) for i, _, _ in order()] == want)
+check("an order missing an item is refused whole, not half applied",
+      teacher.post("/api/class/%d/order" % C4, json={"items": want[:-1]}).status_code == 409
+      and [int(i) for i, _, _ in order()] == want)
+check("  and one with another class's item",
+      teacher.post("/api/class/%d/order" % C4,
+                   json={"items": want[:-1] + [want[-1] + 999]}).status_code == 409)
+check("a student cannot reorder it",
+      kid1.post("/api/class/%d/order" % C4, json={"items": want}).status_code == 403)
+
+hello_row = [int(i) for i, s, _ in order() if s == HELLO][0]
+lists_row = [int(i) for i, s, _ in order() if s == LISTS][0]
+group_row = want[0]
+teacher.post("/api/class/%d/item/%d" % (C4, lists_row), json={"hidden": True})
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+check("Hide marks it on the teacher's page and keeps it there",
+      'data-slug="%s"' % LISTS in page and 'data-hidden="1"' in page)
+check("a heading can be renamed",
+      teacher.post("/api/class/%d/item/%d" % (C4, group_row),
+                   json={"title": "Topic 1"}).get_json().get("title") == "Topic 1")
+check("  but an assignment's row is not a heading to delete",
+      teacher.delete("/api/class/%d/item/%d" % (C4, hello_row)).status_code == 404)
+
+# ------------------------------------------------------- the student's side
+print("\nThe class as its students see it")
+page = kid1.get("/class/%d" % C4).get_data(as_text=True)
+check("a student on the roster sees the class", "Hello World" in page and "Lists quiz" in page)
+check("  but not what is hidden", ">Lists<" not in page)
+check("  the assignment's name opens their copy until they turn it in",
+      'href="/a/%s"' % HELLO in page)
+check("  with its live link", re.search(r'href="/live/\w+"', page) is not None)
+check("a student not on the roster is turned away",
+      kid2.get("/class/%d" % C4).status_code == 404)
+check("  as is anyone signed out, to sign in",
+      stranger.get("/class/%d" % C4).status_code == 302)
+check("  and another teacher", other.get("/class/%d" % C4).status_code == 404)
+check("the teacher can look, as the class would",
+      teacher.get("/class/%d" % C4).status_code == 200)
+
+menu = kid1.get("/new").get_data(as_text=True)
+check("the class is in the student's name menu",
+      'href="/class/%d">Intro — P4</a>' % C4 in menu)
+check("  and not in a student's who isn't on its roster",
+      "Intro — P4" not in kid2.get("/new").get_data(as_text=True)
+      and "Intro — P7" in kid2.get("/new").get_data(as_text=True))
+check("the teacher's menu has their classes, to their own pages",
+      'href="/teacher/class/%d">Intro — P4</a>' % C4 in teacher.get("/new").get_data(as_text=True))
+
+# The front door: "/" sends each person to their page.
+print("\nThe front door")
+r = stranger.get("/")
+page = r.get_data(as_text=True)
+check("signed out, / offers the editor and signing in",
+      r.status_code == 200 and 'href="/new"' in page and 'href="/login?next=/"' in page, r.status_code)
+r = stranger.get("/?teach=abc&a=xyz")
+check("  an old /?… link still goes to the editor, as it was made for",
+      r.status_code == 302 and r.headers["Location"].endswith("/new?teach=abc&a=xyz"),
+      r.headers.get("Location"))
+r = teacher.get("/")
+check("a teacher goes on to their dashboard",
+      r.status_code == 302 and r.headers["Location"].endswith("/teacher"))
+page = teacher.get("/teacher").get_data(as_text=True)
+check("  where their classes are at the top",
+      0 <= page.find(">Classes <") < page.find('href="/teacher/class/%d"' % C4)
+      < page.find("Not in a class"))
+r = kid1.get("/")
+check("a student goes on to their classes",
+      r.status_code == 302 and r.headers["Location"].endswith("/classes"))
+check("  which lists the ones they're on the roster of",
+      'href="/class/%d"' % C4 in kid1.get("/classes").get_data(as_text=True)
+      and 'href="/class/%d"' % C4 not in kid2.get("/classes").get_data(as_text=True))
+_ghost = client(add_user("k9", "nobody@school.org", "Nobody"))
+check("  or says they're not in any yet, and how that changes",
+      "not in any classes yet" in _ghost.get("/classes").get_data(as_text=True))
+check("a teacher asking for /classes gets the dashboard",
+      teacher.get("/classes").headers.get("Location", "").endswith("/teacher"))
+check("signed out, /classes asks them to sign in",
+      "/login" in stranger.get("/classes").headers.get("Location", ""))
+from types import SimpleNamespace                            # noqa: E402
+P.oauth = SimpleNamespace(google=SimpleNamespace(authorize_access_token=lambda: {"userinfo": {
+    "sub": "k1", "email": "kid1@school.org", "email_verified": True, "name": "Kid One"}}))
+check("signing in with nowhere asked for lands on the front door, to go on",
+      client().get("/auth/callback").headers.get("Location") == "/")
+_back = client()
+with _back.session_transaction() as _s:
+    _s["after_login"] = "/a/xyz"
+check("  and from an assignment link, back to the assignment",
+      _back.get("/auth/callback").headers.get("Location") == "/a/xyz")
+check("signing out with nowhere to go lands on the front door",
+      client(KID2).get("/logout").headers.get("Location") == "/")
+
+# Turned in, and marked.
+teacher.post("/api/assignment/%s/out-of" % HELLO, json={"out_of": 10})
+kid1.get("/a/%s" % HELLO)
+draft = [d for d in q(accounts.Draft, owner_id=KID1) if d.assignment_id == a.id][0]
+kid1.post("/api/submit", json={"draft": draft.slug, "files": {"app.py": "print(1)\n"}})
+sub = q(accounts.Submission, student_id=KID1)[0]
+teacher.post("/api/assignment/%s/feedback" % HELLO,
+             json={"submission": sub.id, "feedback": "", "score": "8"})
+page = kid1.get("/class/%d" % C4).get_data(as_text=True)
+check("turned in: the name opens what they turned in",
+      'href="/s/%s"' % sub.snippet_slug in page and "✓ turned in" in page)
+check("  and their grade is on the page", "<strong>8</strong> / 10" in page)
+check("  only their own", "<strong>8</strong>" not in teacher.get("/class/%d" % C4).get_data(as_text=True))
+
+db = P.SessionLocal()
+db.query(accounts.LiveSession).filter_by(assignment_id=a.id).update({"ended": 0})
+db.commit()
+db.close()
+check("a lesson on the air says so on the class's page",
+      "● Live now" in kid1.get("/class/%d" % C4).get_data(as_text=True)
+      and "● Live now" in teacher.get("/teacher/class/%d" % C4).get_data(as_text=True))
+
+# A heading with nothing of theirs under it says nothing to them.
+teacher.post("/api/class/%d/group" % C4, json={"title": "Coming soon"})
+check("an empty heading is left off the students' page",
+      "Coming soon" not in kid1.get("/class/%d" % C4).get_data(as_text=True)
+      and "Coming soon" in teacher.get("/teacher/class/%d" % C4).get_data(as_text=True))
+
+# ---------------------------------------------------------- tidying away
+print("\nTidying never loses a student's work")
+teacher.post("/api/assignment/%s/archive" % HELLO)
+check("an archived assignment leaves the students' page",
+      "Hello World" not in kid1.get("/class/%d" % C4).get_data(as_text=True))
+check("  and the teacher's list, for the Archived part of the page",
+      re.search(r"Archived <span class=\"count\">1</span>",
+                teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)) is not None)
+check("  but what they turned in is still on their My work page",
+      "Hello World" in kid1.get("/my").get_data(as_text=True))
+teacher.post("/api/assignment/%s/archive" % HELLO)
+
+r = teacher.post("/api/assignment/%s/copy" % HELLO, json={"class": C7})
+d = r.get_json() or {}
+COPY = d.get("slug")
+c = q(accounts.Assignment, slug=COPY)[0] if COPY else None
+check("Copy to makes P7 its own assignment",
+      r.status_code == 200 and c is not None and COPY != HELLO
+      and (c.title, c.file_map(), c.out_of) == ("Hello World", a.file_map(), 10), d)
+check("  on top of P7's page", order(cid=C7)[0][1] == COPY)
+check("  with its own live lesson",
+      len(q(accounts.LiveSession, assignment_id=c.id)) == 1
+      and q(accounts.LiveSession, assignment_id=c.id)[0].code
+      != q(accounts.LiveSession, assignment_id=a.id)[0].code)
+check("  and nothing students did comes with it",
+      q(accounts.Submission, assignment_id=c.id) == [])
+check("  while the original stays in P4", [s for _, s, _ in order()].count(HELLO) == 1)
+check("P7's student sees the copy, P4's doesn't see P7",
+      'href="/a/%s"' % COPY in kid2.get("/class/%d" % C7).get_data(as_text=True)
+      and kid1.get("/class/%d" % C7).status_code == 404)
+check("only into the teacher's own class",
+      teacher.post("/api/assignment/%s/copy" % HELLO, json={"class": 99999}).status_code == 404)
+
+r = teacher.post("/api/assignment/%s/class" % LISTS, json={"class": CX})
+check("Move puts it on top of the other class",
+      r.status_code == 200 and order(cid=CX)[0][1] == LISTS
+      and LISTS not in [s for _, s, _ in order()])
+r = teacher.post("/api/assignment/%s/class" % LISTS, json={"class": ""})
+check("  and taking it out of classes puts it back on the dashboard",
+      r.status_code == 200 and 'data-slug="%s"' % LISTS in teacher.get("/teacher").get_data(as_text=True))
+page = teacher.get("/teacher/%s" % HELLO).get_data(as_text=True)
+check("the assignment page says its class, and offers Move and Copy",
+      'href="/teacher/class/%d"' % C4 in page and 'id="class-move"' in page
+      and 'id="class-copy"' in page)
+check("  and Post to Classroom starts on the class's Classroom class",
+      'var classCourse = "%s";' % P4 in page)
+
+# Delete: nobody turned the copy in, so it can go — off P7's page with it,
+# and its lesson let go (Postgres refuses a delete that leaves it pointing).
+cid = c.id
+r = teacher.delete("/api/assignment/" + COPY)
+check("deleting an assignment takes it off its class's page",
+      r.status_code == 200 and q(accounts.ClassItem, assignment_id=cid) == [])
+check("  and lets its live lesson go rather than blocking the delete",
+      q(accounts.LiveSession, assignment_id=cid) == [])
+
+# The roster: someone leaves P4.
+roster[P4].pop()
+r = teacher.post("/api/class/%d/roster" % C4)
+check("Sync roster drops a student who left",
+      r.get_json().get("students") == 1
+      and [e.email for e in q(accounts.Enrollment, class_id=C4)] == ["kid1@school.org"])
+check("  only for the teacher", kid1.post("/api/class/%d/roster" % C4).status_code == 403)
+check("a class with no Classroom class can't sync, and says so",
+      teacher.post("/api/class/%d/roster" % CX).status_code == 409)
+
+r = teacher.delete("/api/class/%d" % C4)
+check("deleting a class keeps its assignments, back on the dashboard",
+      r.status_code == 200 and q(accounts.Assignment, slug=HELLO)
+      and 'data-slug="%s"' % HELLO in teacher.get("/teacher").get_data(as_text=True))
+check("  with every student's work and score",
+      q(accounts.Submission, student_id=KID1)[0].score == 8)
+check("  and the class is gone from the student's menu",
+      "Intro — P4" not in kid1.get("/new").get_data(as_text=True))
+
+bad = results.count(False)
+print("\n%s (%d checks, %d failed)"
+      % ("SOME FAILED" if bad else "ALL PASSED", len(results), bad))
+sys.exit(1 if bad else 0)

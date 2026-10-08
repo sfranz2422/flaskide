@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  // The editor's light/dark choice, so this page does not flash the other one.
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page">
+
+{#  The front door, signed out. Signed in, "/" never shows this: it sends a
+    teacher to their dashboard and a student to their classes (app.home). #}
+<main class="front">
+  <div class="front-card">
+    <div class="front-logo">🧪</div>
+    <h1>FlaskIDE</h1>
+    <p class="dim">Build Flask web apps in your browser.</p>
+    <div class="front-actions">
+      {% if login_enabled %}
+        <a class="btn btn-primary btn-big" href="{{ url_for('login', next='/') }}"
+           title="With your school Google account: your classes, your saved work">Sign in</a>
+      {% endif %}
+      <a class="btn btn-big" href="{{ url_for('index') }}">Open the editor</a>
+    </div>
+    {% if login_enabled %}
+      <p class="dim small">Sign in with your school account to see your classes
+        and keep your work. The editor works without signing in.</p>
+    {% endif %}
+  </div>
+</main>
+</body>
+</html>

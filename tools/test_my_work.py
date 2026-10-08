@@ -179,7 +179,7 @@ check("work turned in stays listed after the copy is deleted",
       "Loops homework" in section(page, "Assignments")
       and "What I turned in" in section(page, "Assignments"))
 
-editor = student.get("/").get_data(as_text=True)
+editor = student.get("/new").get_data(as_text=True)
 check("the account menu goes to /my", 'href="/my"' in editor)
 check("  and the old projects window is gone",
       not has_id(editor, "projects-modal") and not has_id(editor, "my-projects"))
@@ -195,7 +195,7 @@ check("  and no Save or Share beside it",
       not has_id(page, "save-project") and not has_id(page, "share")
       and not has_id(page, "share-menu"))
 
-page = student.get("/").get_data(as_text=True)
+page = student.get("/new").get_data(as_text=True)
 check("signed in, a new project: Save", has_id(page, "save-project"))
 check("  and no Share or Turn in on the bar",
       not has_id(page, "share") and not has_id(page, "turn-in"))
@@ -209,7 +209,7 @@ check("signed in, a saved project: just the Saved state",
       has_id(page, "save-state") and not has_id(page, "share")
       and not has_id(page, "save-project") and not has_id(page, "turn-in"))
 
-page = stranger.get("/").get_data(as_text=True)
+page = stranger.get("/new").get_data(as_text=True)
 check("signed out: Sign in", "/login" in page and ">Sign in<" in page)
 check("  and Share, since sign-in is optional", has_id(page, "share"))
 check("  and Download is off the bar, in the share dialog",
@@ -218,7 +218,7 @@ page = stranger.get("/a/%s" % hw).get_data(as_text=True)
 check("signed out on an assignment link, Share is still the way in",
       has_id(page, "share") and not has_id(page, "turn-in"))
 
-page = teacher.get("/").get_data(as_text=True)
+page = teacher.get("/new").get_data(as_text=True)
 check("a teacher's bar is untouched: Share and Publish",
       has_id(page, "share") and has_id(page, "publish"))
 

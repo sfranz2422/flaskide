@@ -37,6 +37,40 @@
 </header>
 
 <main class="sheet">
+  {#  Classes: one per period, each its own page of assignments. Linked to
+      the period's Google Classroom class, which is where its students come
+      from. Assignments in a class are on its page, not in the list below. #}
+  <section class="classes">
+    <h2>Classes <span class="count">{{ classes|length }}</span></h2>
+    {% if classes %}
+      <ul class="class-cards">
+        {% for c in classes %}
+          <li><a class="class-card" href="{{ url_for('teacher_class', class_id=c.id) }}">
+            <strong>{{ c.name }}</strong>
+            <span class="dim small">{{ class_sizes.get(c.id, 0) }} assignment{{ '' if class_sizes.get(c.id, 0) == 1 else 's' }}{%
+              if c.course_name %} · {{ c.course_name }}{% endif %}</span>
+          </a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="dim">A class is one period: its own page of assignments, which
+        its students find under their name once its Classroom roster is synced.</p>
+    {% endif %}
+    <form id="new-class" class="grade-line">
+      <input id="new-class-name" class="field" type="text" maxlength="200"
+             placeholder="New class, e.g. Intro to Programming — P4" aria-label="Class name">
+      {% if classroom_connected %}
+        <select id="new-class-course" class="field" aria-label="Google Classroom class">
+          <option value="">Loading your Classroom classes…</option>
+        </select>
+      {% endif %}
+      <button class="btn btn-primary" type="submit">New class</button>
+      <span id="new-class-state" class="dim small"></span>
+    </form>
+  </section>
+
+  {% if classes %}<h2>Not in a class</h2>{% endif %}
+
   {% macro rows(list, archived) %}
     <table class="listing">
       <thead>
@@ -67,6 +101,8 @@
 
   {% if assignments %}
     {{ rows(assignments, false) }}
+  {% elif classes %}
+    <p class="dim">Everything is in a class.</p>
   {% elif not archived %}
     <div class="empty">
       <h2>No assignments yet</h2>
@@ -119,6 +155,45 @@
 </main>
 
 <script>
+  /* New class: a name, and the period's Classroom class to take students
+     from. The Classroom classes are the same list as below, asked once. */
+  (function () {
+    var form = document.getElementById("new-class");
+    var pick = document.getElementById("new-class-course");
+    var state = document.getElementById("new-class-state");
+    if (pick) {
+      fetch("/api/classroom/courses").then(function (r) { return r.json(); }).then(function (d) {
+        pick.textContent = "";
+        var none = document.createElement("option");
+        none.value = "";
+        none.textContent = d.courses ? "Its Classroom class…" : "No Classroom classes";
+        pick.appendChild(none);
+        (d.courses || []).forEach(function (c) {
+          var o = document.createElement("option");
+          o.value = c.id;
+          o.textContent = c.name + (c.section ? " — " + c.section : "");
+          pick.appendChild(o);
+        });
+      }).catch(function () { pick.hidden = true; });
+    }
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var name = document.getElementById("new-class-name").value.trim();
+      if (!name) { state.textContent = "Give the class a name."; return; }
+      state.textContent = "Making it…";
+      fetch("/api/class", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, course: pick ? pick.value : "" })
+      }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (out) {
+          if (!out.ok) { state.textContent = out.d.error || "Not made"; return; }
+          if (out.d.roster_error) alert("Made, but the roster didn't come: " + out.d.roster_error
+                                        + " Press Sync roster on the class's page to try again.");
+          location.href = out.d.url;
+        }).catch(function () { state.textContent = "Not made — check your connection"; });
+    });
+  })();
+
   /* The teacher's classes, fetched after the page is up so a slow Google
      never holds the dashboard. Built with textContent: a class name is
      whatever a teacher typed into Classroom. */
