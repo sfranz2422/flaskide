@@ -1,15 +1,21 @@
 /* Dark is the base palette. Light is defined once, below, and applied either
    by an explicit choice (data-theme) or by the computer's own setting. */
 :root {
-  --bg: #12151c;
-  --bg-panel: #1a1e27;
-  --bg-head: #212734;
-  --line: #2c3341;
-  --text: #dde3ee;
-  --muted: #8a94a8;
-  --accent: #4f8cff;
-  --accent-hover: #3d78e8;
-  --on-accent: #08182f;
+  --bg: #0e0e0e;
+  --bg-panel: #181818;
+  --bg-head: #1f1f1f;
+  --line: #2f2f2f;
+  --text: #ececec;
+  --muted: #9b9b9b;
+  --accent: #ef5a70;
+  --accent-hover: #f47d8e;
+  --on-accent: #ffffff;
+  /* The school's crimson, for fills with white text on them: buttons, the
+     bar's stripe, pills. --accent is the same colour in light, and lighter
+     in dark, where #BA0C30 as text is too dim to read (about 2.9:1). */
+  --brand: #ba0c30;
+  --brand-hover: #960a27;
+  --on-brand: #ffffff;
   --green: #3ecf8e;
   --green-hover: #35b87d;
   --on-green: #0d2b1e;
@@ -19,11 +25,11 @@
   --on-red: #3a0d0d;
   --amber: #f5c451;
 
-  --hover-bg: #232936;
-  --hover-line: #40495b;
-  --banner-bg: #1d2740;
-  --banner-line: #2b3a5e;
-  --banner-text: #c3d3f2;
+  --hover-bg: #222222;
+  --hover-line: #4a4a4a;
+  --banner-bg: #2a1015;
+  --banner-line: #5a1a26;
+  --banner-text: #f3c9d0;
   --shadow: rgba(0, 0, 0, .45);
 
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -39,13 +45,13 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #ffffff;
-    --bg-panel: #f6f8fb;
-    --bg-head: #edf1f7;
-    --line: #ccd4e0;
-    --text: #161c28;
-    --muted: #55607a;
-    --accent: #1d4ed8;
-    --accent-hover: #1e40af;
+    --bg-panel: #f4f4f4;
+    --bg-head: #ebebeb;
+    --line: #d6d6d6;
+    --text: #141414;
+    --muted: #5e5e5e;
+    --accent: #ba0c30;
+    --accent-hover: #960a27;
     --on-accent: #ffffff;
     --green: #15803d;
     --green-hover: #126c34;
@@ -57,11 +63,11 @@
     --amber: #8a5a00;
     --amber: #8a5a00;
 
-    --hover-bg: #e3e9f2;
-    --hover-line: #9fadc4;
-    --banner-bg: #e8eefb;
-    --banner-line: #b9c9ea;
-    --banner-text: #24365e;
+    --hover-bg: #ececec;
+    --hover-line: #a6a6a6;
+    --banner-bg: #fbeaed;
+    --banner-line: #eab4be;
+    --banner-text: #6e0a1e;
     --shadow: rgba(24, 34, 54, .18);
 
     color-scheme: light;
@@ -71,13 +77,13 @@
 :root[data-theme="light"] {
   --amber: #8a5a00;
   --bg: #ffffff;
-  --bg-panel: #f6f8fb;
-  --bg-head: #edf1f7;
-  --line: #ccd4e0;
-  --text: #161c28;
-  --muted: #55607a;
-  --accent: #1d4ed8;
-  --accent-hover: #1e40af;
+  --bg-panel: #f4f4f4;
+  --bg-head: #ebebeb;
+  --line: #d6d6d6;
+  --text: #141414;
+  --muted: #5e5e5e;
+  --accent: #ba0c30;
+  --accent-hover: #960a27;
   --on-accent: #ffffff;
   --green: #15803d;
   --green-hover: #126c34;
@@ -87,11 +93,11 @@
   --amber: #b45309;
   --on-red: #ffffff;
 
-  --hover-bg: #e3e9f2;
-  --hover-line: #9fadc4;
-  --banner-bg: #e8eefb;
-  --banner-line: #b9c9ea;
-  --banner-text: #24365e;
+  --hover-bg: #ececec;
+  --hover-line: #a6a6a6;
+  --banner-bg: #fbeaed;
+  --banner-line: #eab4be;
+  --banner-text: #6e0a1e;
   --shadow: rgba(24, 34, 54, .18);
 
   color-scheme: light;
@@ -281,14 +287,14 @@ html, body {
 .btn-stop[hidden] { display: none; }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
   font-weight: 600;
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
 }
 
 /* ---------------------------------------------------------------- banner */
@@ -344,7 +350,7 @@ html, body {
             cursor: pointer; }
 .view-btn + .view-btn { border-left: 1px solid var(--line); }
 .view-btn:hover { background: var(--hover-bg); color: var(--text); }
-.view-btn.is-on { background: var(--accent); color: var(--on-accent); }
+.view-btn.is-on { background: var(--brand); color: var(--on-brand); }
 
 /* ------------------------------------------------------------ file tabs */
 .pane-head-tabs { padding: 0 12px 0 0; gap: 8px; }
@@ -566,7 +572,7 @@ html, body {
   z-index: 40;
 }
 .CodeMirror-hint { color: var(--text); border-radius: 4px; padding: 3px 9px; }
-li.CodeMirror-hint-active { background: var(--accent); color: var(--on-accent); }
+li.CodeMirror-hint-active { background: var(--brand); color: var(--on-brand); }
 
 /* ---------------------------------------------------------------- notes */
 .notes-body {
@@ -842,7 +848,7 @@ li.CodeMirror-hint-active { background: var(--accent); color: var(--on-accent); 
 .classroom h2 { margin-top: 14px; }
 .classroom-off { margin-top: 8px; }
 .badge-new {
-  background: var(--accent);
+  background: var(--brand);
   color: var(--on-accent, #fff);
   border-radius: 999px;
   padding: 1px 8px;
@@ -937,8 +943,8 @@ body:not(.is-authoring) .notes-body .quiz-blank,
    while the notes are on show, like a tab that is open. */
 .notes-buttons { display: inline-flex; gap: 6px; }
 .notes-buttons:empty { display: none; }
-.notes-btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent);
-                                  border-color: var(--accent); }
+.notes-btn[aria-pressed="true"] { background: var(--brand); color: var(--on-brand);
+                                  border-color: var(--brand); }
 
 /* What goes in the brackets (sighint.js): small, dim, above the line, and
    never in the way — it takes no clicks, so it cannot steal one meant for
@@ -1054,7 +1060,7 @@ body:not(.is-authoring) .notes-body .quiz-blank,
 /* Waiting for the teacher: long responses turned in, not yet given points. */
 .needs-grading { display: inline-block; margin-left: 6px; padding: 1px 8px;
                  border-radius: 999px; font-size: 12px; font-weight: 600;
-                 background: var(--accent); color: #fff; text-decoration: none;
+                 background: var(--brand); color: var(--on-brand); text-decoration: none;
                  white-space: nowrap; vertical-align: middle; }
 .needs-grading[hidden] { display: none; }
 a.needs-grading:hover { filter: brightness(1.1); }
@@ -1824,3 +1830,46 @@ pre .quiz-blank, code .quiz-blank { font-family: inherit; }
 .class-list a.unsent { color: var(--amber); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .class-list a.unsent:hover { text-decoration: underline; }
 .class-list .all-sent { color: var(--green); white-space: nowrap; }
+
+/* ------------------------------------------------------ the school's colours
+   Crimson (#BA0C30), black and grey, everywhere — the palettes at the top
+   of this file. The greys are neutral: the old ones were tinted blue, which
+   next to crimson looks like a mistake.
+
+   THE BAR IS BLACK IN BOTH THEMES, with a crimson stripe under it. Its
+   contents are drawn for a dark background whatever the theme, by giving
+   the bar the dark palette's tokens: in light mode the editor's stepper,
+   chips and buttons would otherwise be light-grey boxes on black. */
+.bar {
+  background: #0a0a0a;
+  color: #f2f2f2;
+  border-bottom: 3px solid var(--brand);
+  --text: #f2f2f2;
+  --muted: #a8a8a8;
+  --bg: #0e0e0e;
+  --bg-panel: #181818;
+  --bg-head: #0a0a0a;
+  --line: #3a3a3a;
+  --hover-bg: #242424;
+  --hover-line: #5a5a5a;
+  --accent: #ef5a70;
+  --accent-hover: #f47d8e;
+  color-scheme: dark;
+}
+.bar .btn:not(.btn-primary):not(.btn-stop):not(.btn-run) { background: transparent; }
+.needs-grading { background: var(--brand); color: var(--on-brand); }
+.class-banner { border-top: 4px solid var(--brand); }
+/* Row actions read as the text colour, crimson on hover. In crimson they
+   looked the same as Delete and Remove heading, and the red that means
+   "this destroys something" has to stay unmistakable. */
+.rowactions .linkbtn:not(.danger),
+.grade-line .linkbtn:not(.danger) { color: var(--text); }
+.rowactions .linkbtn:not(.danger):hover,
+.grade-line .linkbtn:not(.danger):hover { color: var(--accent); }
+/* A material's edge: grey, the third school colour, where it was purple. */
+.card.card-material { border-left-color: var(--muted); }
+/* Bare links — no class of their own — were the browser's blue (and its
+   purple once visited): "new project" on My work, the class's name on an
+   assignment's page. Any link with a class keeps the colour it sets. */
+a:not([class]), a:not([class]):visited { color: var(--accent); }
+a:not([class]):hover { color: var(--accent-hover); }
