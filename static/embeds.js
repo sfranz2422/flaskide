@@ -1,13 +1,14 @@
 /* Videos in class descriptions: a YouTube link on a line of its own becomes
  * a player, on the class pages only (class_student.html, class_teacher.html).
  *
- * WHY NOT LET THE TEACHER PASTE YOUTUBE'S <iframe>. The description goes
- * through the same sanitiser as every student's notes (notes.js), which
- * takes out every iframe — rightly: a student's project shared on to a
- * classmate must not be able to frame any page it likes. So the player is
- * built here instead, after sanitising, from nothing but the video's id
- * (eleven letters, checked), at youtube-nocookie.com. The page never trusts
- * a single character of markup from the description to do it.
+ * A teacher CAN paste YouTube's own <iframe> now: descriptions are the
+ * teacher's words and are rendered with notes.js's TRUSTED rules, which
+ * keep iframes (students' notes never get them). This is the easier way —
+ * a plain link, nothing to copy from YouTube's Share menu — and the player
+ * it builds comes from nothing but the video's id (eleven letters,
+ * checked), at youtube-nocookie.com. It began as the only way, when
+ * descriptions went through the same sanitiser as notes and every iframe
+ * was taken out.
  *
  * Only a link alone in its paragraph: a link in the middle of a sentence is
  * a link, and stays one. Identical in all three editors; it names none.
