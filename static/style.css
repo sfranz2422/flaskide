@@ -14,6 +14,8 @@
   --green-hover: #35b87d;
   --on-green: #0d2b1e;
   --red: #ff6b6b;
+
+  --amber: #f0b429;
   --on-red: #3a0d0d;
   --amber: #f5c451;
 
@@ -49,6 +51,8 @@
     --green-hover: #126c34;
     --on-green: #ffffff;
     --red: #b91c1c;
+
+    --amber: #b45309;
     --on-red: #ffffff;
     --amber: #8a5a00;
     --amber: #8a5a00;
@@ -79,6 +83,8 @@
   --green-hover: #126c34;
   --on-green: #ffffff;
   --red: #b91c1c;
+
+  --amber: #b45309;
   --on-red: #ffffff;
 
   --hover-bg: #e3e9f2;
@@ -883,7 +889,9 @@ body:not(.is-authoring) .notes-body a {
 body:not(.is-authoring) .notes-body .quiz-text,
 .live-mirror .notes-body .quiz-text,
 body:not(.is-authoring) .notes-body .quiz-long-box,
-.live-mirror .notes-body .quiz-long-box {
+.live-mirror .notes-body .quiz-long-box,
+body:not(.is-authoring) .notes-body .quiz-blank,
+.live-mirror .notes-body .quiz-blank {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -917,6 +925,7 @@ body:not(.is-authoring) .notes-body .quiz-long-box,
 .lesson-answers li { margin: 2px 0; }
 .lesson-answers .is-right { color: var(--green); }
 .lesson-answers .is-wrong { color: var(--red); }
+.lesson-answers .is-partial { color: var(--amber); }
 .lesson-answers li span, .lesson-answers li strong { color: var(--text); }
 @media (max-width: 760px) {
   .lesson-write { flex-direction: column; }
@@ -994,6 +1003,8 @@ body:not(.is-authoring) .notes-body .quiz-long-box,
    sees, so a preview is never mistaken for the real thing. */
 .prose .quiz.quiz-preview { border-left-color: var(--muted); }
 .prose .quiz.quiz-wrong { border-left-color: var(--red); }
+.prose .quiz.quiz-partial { border-left-color: var(--amber); }
+.quiz-partial .quiz-result { color: var(--amber); font-weight: 600; }
 .quiz-head { display: flex; justify-content: space-between; gap: 10px;
              font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
              margin-bottom: 6px; }
@@ -1795,3 +1806,16 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
             overflow-wrap: anywhere; font-size: 13px; }
 .help-look { margin-top: 4px; }
 @media (max-width: 720px) { .help-pair { grid-template-columns: 1fr; } }
+
+/* Fill in the blank (notes.js, fillBlanks): a box sitting in the line of
+   text, or of code, where the [[blank]] was. */
+.quiz-blank { display: inline-block; width: 9em; max-width: 100%; padding: 1px 6px;
+              margin: 0 2px; font: inherit; vertical-align: baseline; }
+pre .quiz-blank, code .quiz-blank { font-family: inherit; }
+/* Matching: each left with a list of every right beside it. */
+.quiz-match { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.quiz-match-row { display: grid; grid-template-columns: minmax(8em, 1fr) minmax(10em, 2fr);
+                  gap: 10px; align-items: center; }
+.quiz-match-left { font-weight: 500; }
+.quiz-match-pick { width: 100%; }
+@media (max-width: 520px) { .quiz-match-row { grid-template-columns: 1fr; gap: 2px; } }

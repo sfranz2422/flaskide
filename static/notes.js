@@ -257,12 +257,18 @@ window.FlaskIDENotes = (function () {
   var POINTS = /^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$/i;
   var QID = /^id\s*:\s*([0-9a-f]{12})\s*$/;
   var LONG = /^type\s*:\s*(long|essay)\s*$/i;
+  var TYPE = /^type\s*:\s*(blanks?|fill|match|matching)\s*$/i;
+  var PAIR = /^[-*+]\s+(.+?)\s+->\s+(.+)$/;
+  var MATCHL = /^match\s*:\s*(.+)$/i;
+  var OPTION = /^option\s*:\s*(.+)$/i;
+  var BLANK = /\[\[([^\[\]\n]*)\]\]/g;
 
   function parseQuiz(body) {
     var lines = String(body || "").replace(/\r\n?/g, "\n").split("\n");
     var q = { id: "", prompt: "", choices: [], correct: [], answers: [],
               points: 1 };
-    var prompt = [], inner = null, long = false;
+    var prompt = [], inner = null, long = false, typed = "";
+    var lefts = [], rights = [], options = [];
     lines.forEach(function (ln) {
       var s = ln.trim(), m;
       var f = ln.match(FENCE);
@@ -285,6 +291,15 @@ window.FlaskIDENotes = (function () {
         q.id = m[1];
       } else if (LONG.test(s)) {
         long = true;
+      } else if ((m = s.match(TYPE))) {
+        typed = /^match/i.test(m[1]) ? "match" : "blank";
+      } else if (typed === "match" && (m = s.match(PAIR))) {
+        lefts.push(m[1].trim());
+        rights.push(m[2].trim());
+      } else if (typed === "match" && (m = s.match(MATCHL))) {
+        lefts.push(m[1].trim());
+      } else if (typed === "match" && (m = s.match(OPTION))) {
+        options.push(m[1].trim());
       } else {
         prompt.push(ln);
       }
@@ -292,10 +307,36 @@ window.FlaskIDENotes = (function () {
     while (prompt.length && !prompt[0].trim()) prompt.shift();
     while (prompt.length && !prompt[prompt.length - 1].trim()) prompt.pop();
     q.prompt = prompt.join("\n");
+    q.options = [];
     // A long response is marked by hand: no key, so none is kept (quiz.parse).
-    if (long) { q.choices = []; q.correct = []; q.answers = []; }
-    q.kind = long ? "long" : q.choices.length ? "choice" : "text";
-    q.hasKey = !!(q.correct.length || q.answers.length);
+    if (long) {
+      q.choices = []; q.correct = []; q.answers = [];
+      q.kind = "long";
+    } else if (typed === "blank") {
+      // Each [[...]] is a blank and its key; [[]] is one already redacted.
+      q.choices = []; q.correct = [];
+      q.answers = [];
+      q.prompt.replace(BLANK, function (_, b) {
+        q.answers.push(b.split("|").map(function (a) { return a.trim(); })
+                        .filter(function (a) { return a; }));
+        return _;
+      });
+      q.kind = "blank";
+    } else if (typed === "match") {
+      // As quiz.parse: the right for each left, and every right and option
+      // sorted, so neither order nor place gives a pair away.
+      q.choices = lefts; q.correct = rights; q.answers = [];
+      q.options = rights.concat(options).filter(function (o, i, all) {
+        return all.indexOf(o) === i;
+      }).sort();
+      q.kind = "match";
+    } else {
+      q.kind = q.choices.length ? "choice" : "text";
+    }
+    q.hasKey = q.kind === "blank"
+      ? q.answers.some(function (a) { return a.length; })
+      : q.kind === "match" ? rights.length > 0
+      : !!(q.correct.length || q.answers.length);
     return q;
   }
 
@@ -362,17 +403,51 @@ window.FlaskIDENotes = (function () {
     var box = el("div", "quiz");
     var head = el("div", "quiz-head");
     head.appendChild(el("span", "quiz-label",
-                        q.kind === "long" ? "Long response" : "Question"));
+                        { long: "Long response", blank: "Fill in the blank",
+                          match: "Matching" }[q.kind] || "Question"));
     head.appendChild(el("span", "quiz-points dim", pointsText(q.points)));
     box.appendChild(head);
     var prompt = el("div", "quiz-prompt");
-    md(prompt, q.prompt);
+    var inputs = [];
+    if (q.kind === "blank") {
+      // Each blank becomes a marker the markdown leaves alone, and then a
+      // box in its place — inside a code block too, which is where a blank
+      // in a line of code wants to be.
+      var at = 0;
+      md(prompt, q.prompt.replace(BLANK, function () { return "%%BLANK" + (at++) + "%%"; }));
+      inputs = fillBlanks(prompt);
+    } else {
+      md(prompt, q.prompt);
+    }
     box.appendChild(prompt);
 
     if (q.kind === "long") return buildLong(q, box);
 
-    var inputs = [];
-    if (q.kind === "choice") {
+    if (q.kind === "blank") {
+      // made above, in the prompt
+    } else if (q.kind === "match") {
+      var rows = el("div", "quiz-match");
+      q.choices.forEach(function (left, i) {
+        var row = el("label", "quiz-match-row");
+        var term = el("span", "quiz-match-left");
+        md(term, left, true);
+        var pick = el("select", "field quiz-match-pick");
+        pick.setAttribute("aria-label", "Match for " + left);
+        var none = el("option", "", "Choose…");
+        none.value = "";
+        pick.appendChild(none);
+        q.options.forEach(function (o) {
+          var opt = el("option", "", o);
+          opt.value = o;
+          pick.appendChild(opt);
+        });
+        row.appendChild(term);
+        row.appendChild(pick);
+        rows.appendChild(row);
+        inputs.push(pick);
+      });
+      box.appendChild(rows);
+    } else if (q.kind === "choice") {
       var list = el("div", "quiz-choices");
       q.choices.forEach(function (c) {
         var label = el("label", "quiz-choice");
@@ -411,8 +486,13 @@ window.FlaskIDENotes = (function () {
       key.hidden = true;
       // Through the inline renderer, like the choices, so `3` reads as code
       // and not as a 3 between two backticks.
-      md(key, q.kind === "choice"
-        ? "Answer: " + q.correct.join(" or ")
+      md(key, q.kind === "choice" ? "Answer: " + q.correct.join(" or ")
+        : q.kind === "blank" ? "Answers: " + q.answers.map(function (a) {
+            return a.join(" or ");
+          }).join(" · ")
+        : q.kind === "match" ? q.choices.map(function (l, i) {
+            return l + " → " + (q.correct[i] || "?");
+          }).join("; ")
         : "Accepted: " + q.answers.join(" · "), true);
       show.addEventListener("click", function () {
         key.hidden = !key.hidden;
@@ -426,11 +506,16 @@ window.FlaskIDENotes = (function () {
       foot.appendChild(show);
       foot.appendChild(key);
       // The same test quiz.parse makes before it gives a question an id.
-      var usable = q.prompt.trim() && q.points > 0 && (q.kind === "text"
-        ? q.answers.length : q.choices.length >= 2 && q.correct.length);
+      var usable = q.prompt.trim() && q.points > 0 && (
+        q.kind === "text" ? q.answers.length
+        : q.kind === "blank" ? q.answers.length && q.answers.every(function (a) { return a.length; })
+        : q.kind === "match" ? q.choices.length >= 2 && q.correct.length === q.choices.length
+        : q.choices.length >= 2 && q.correct.length);
       if (!usable) {
         foot.appendChild(el("span", "quiz-warn small",
-          "Not answerable yet: it needs a question, two or more choices with one marked [x], or an answer: line."));
+          q.kind === "blank" ? "Not answerable yet: every [[blank]] needs an answer inside it."
+          : q.kind === "match" ? "Not answerable yet: it needs two or more lines like - left -> right, each with a right."
+          : "Not answerable yet: it needs a question, two or more choices with one marked [x], or an answer: line."));
       }
       return box;
     }
@@ -467,7 +552,9 @@ window.FlaskIDENotes = (function () {
     disable();
     send.disabled = true;
 
+    var many = q.kind === "blank" || q.kind === "match";
     function current() {
+      if (many) return JSON.stringify(inputs.map(function (i) { return i.value.trim(); }));
       if (q.kind === "text") return inputs[0].value;
       var on = inputs.filter(function (i) { return i.checked; })[0];
       return on ? on.value : "";
@@ -475,16 +562,23 @@ window.FlaskIDENotes = (function () {
     // Typing or picking survives the notes being re-rendered under it — the
     // teacher editing the notes mid-question would otherwise wipe it.
     inputs.forEach(function (i) {
-      i.addEventListener(q.kind === "text" ? "input" : "change", function () {
+      var typed = q.kind === "text" || q.kind === "blank";
+      i.addEventListener(typed ? "input" : "change", function () {
         pending[q.id] = current();
       });
-      if (q.kind === "text") {
+      if (typed) {
         i.addEventListener("keydown", function (e) {
           if (e.key === "Enter") { e.preventDefault(); send.click(); }
         });
       }
     });
     function restore(value) {
+      if (many) {
+        var got = [];
+        try { got = JSON.parse(value || "[]"); } catch (e) { got = []; }
+        inputs.forEach(function (i, k) { i.value = (got && got[k]) || ""; });
+        return;
+      }
       if (q.kind === "text") inputs[0].value = value || "";
       else inputs.forEach(function (i) { i.checked = i.value === value; });
     }
@@ -500,17 +594,24 @@ window.FlaskIDENotes = (function () {
       restore(got.response);
       disable();
       send.hidden = true;
+      var partly = !got.correct && got.earned > 0;
       box.classList.toggle("quiz-right", !!got.correct);
-      box.classList.toggle("quiz-wrong", !got.correct);
+      box.classList.toggle("quiz-partial", partly);
+      box.classList.toggle("quiz-wrong", !got.correct && !partly);
       note.className = "quiz-result small";
       note.textContent = (got.correct
         ? "✓ Correct — " + pointsText(got.points)
+        : partly ? "◐ Partly right — " + got.earned + " of " + pointsText(got.points)
         : "✗ Not quite — 0 of " + pointsText(got.points))
         + (got.practice ? " (your own question, so not recorded)" : "");
     };
 
     send.addEventListener("click", function () {
       var value = current();
+      if (many && inputs.some(function (i) { return !i.value.trim(); })) {
+        note.textContent = q.kind === "blank" ? "Fill in every blank first." : "Match every item first.";
+        return;
+      }
       if (!value.trim()) {
         note.textContent = q.kind === "text" ? "Type an answer first." : "Pick an answer first.";
         return;
@@ -541,6 +642,35 @@ window.FlaskIDENotes = (function () {
 
     loadMine().then(function () { box.paint(); });
     return box;
+  }
+
+  /* The blanks in a rendered prompt: every %%BLANKn%% marker in its text,
+     code included, replaced by a box, in order. A marker the markdown
+     broke up (it never should) is simply left as text, and the question
+     then has fewer boxes than blanks — which the server marks as empty. */
+  function fillBlanks(root) {
+    var found = [], walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    var nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(function (node) {
+      var parts = node.nodeValue.split(/%%BLANK(\d+)%%/);
+      if (parts.length < 2) return;
+      var frag = document.createDocumentFragment();
+      parts.forEach(function (part, i) {
+        if (i % 2 === 0) { if (part) frag.appendChild(document.createTextNode(part)); return; }
+        var box = el("input", "field quiz-blank");
+        box.type = "text";
+        box.maxLength = 300;
+        box.setAttribute("aria-label", "Blank " + (Number(part) + 1));
+        box.dataset.blank = part;
+        frag.appendChild(box);
+      });
+      node.parentNode.replaceChild(frag, node);
+    });
+    Array.prototype.forEach.call(root.querySelectorAll("input.quiz-blank"), function (b) {
+      found[Number(b.dataset.blank)] = b;
+    });
+    return found.filter(Boolean);
   }
 
   // --------------------------------------------------- long responses

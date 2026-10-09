@@ -268,7 +268,7 @@
                           </div>
                         </li>
                       {% else %}
-                        <li class="{{ 'is-right' if a.right else 'is-wrong' }}">{{ '✓' if a.right else '✗' }}
+                        <li class="{{ 'is-right' if a.right else 'is-partial' if a.partial else 'is-wrong' }}">{{ '✓' if a.right else '◐' if a.partial else '✗' }}
                           <span class="dim">{{ a.prompt }}</span> — <strong>{{ a.response }}</strong></li>
                       {% endif %}
                     {% endfor %}

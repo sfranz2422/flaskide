@@ -185,6 +185,11 @@ samples = [
     "Answer: is not an answer line when it is the question?\nanswer:   \n",
     "Explain why.\nType: Long\npoints: 4\n- [x] ignored\nanswer: ignored too",
     "id: 0123456789ab\npoints: 4\ntype: essay\nRedacted long?",
+    "type: blank\nA [[while]] loop, [[ True | true ]].\n~~~\nfor i in [[range]](3):\n~~~",
+    "id: 0123456789ab\npoints: 2\ntype: blank\nRedacted [[]] and [[]].",
+    "type: match\nMatch.\n- for -> each\n- while -> condition\n- [x] not a pair\noption: stop",
+    "id: 0123456789ab\npoints: 2\ntype: match\nMatch.\nmatch: for\nmatch: while\n"
+    "option: condition\noption: each\noption: stop",
 ]
 if shutil.which("node"):
     harness = "var window = {};\n" + notes_js + """
@@ -202,7 +207,8 @@ console.log(JSON.stringify(%s.map(function (s) { return N.parseQuiz(s); })));
         same = (js["prompt"] == py["prompt"] and js["choices"] == py["choices"]
                 and js["correct"] == py["correct"] and js["answers"] == py["answers"]
                 and js["points"] == py["points"] and js["kind"] == py["kind"]
-                and js["id"] == py["given_id"] and js["hasKey"] == py["has_key"])
+                and js["id"] == py["given_id"] and js["hasKey"] == py["has_key"]
+                and js["options"] == py["options"])
         check("  block %d reads the same in both" % (i + 1), same,
               "" if same else "js=%r py=%r" % (js, py))
 else:
@@ -558,6 +564,96 @@ check("  and 'needs grading' is gone", "Needs grading" not in page)
 d = teacher.post("/api/quiz/grade", json=dict(GRADE, score="")).get_json()
 check("emptying the mark puts it back to waiting",
       d.get("score") == "" and d.get("waiting") == 1, repr(d))
+
+# ------------------------------------------- fill in the blank, and matching
+print("\nFill in the blank, and matching")
+
+# The answers are words found nowhere else, so finding one is finding the key.
+BLANK_Q = ("type: blank\nThe animal is a [[OCELOT|ocelot cat]] and it eats\n"
+           "~~~python\nfood = [[MANGOFRUIT]]\n~~~\npoints: 2")
+MATCH_Q = ("type: match\nMatch each to its home.\n- penguin -> ICEFLOEHOME\n"
+           "- camel -> DUNEHOME\n- otter -> RIVERHOME\noption: SKYHOME\npoints: 3")
+bq, mq = quiz.parse(BLANK_Q), quiz.parse(MATCH_Q)
+check("type: blank makes a blank per [[ ]], code included",
+      bq["kind"] == "blank" and bq["qid"]
+      and bq["answers"] == [["OCELOT", "ocelot cat"], ["MANGOFRUIT"]], repr(bq["answers"]))
+check("type: match reads its pairs, and options sorted",
+      mq["kind"] == "match" and mq["qid"] and mq["choices"] == ["penguin", "camel", "otter"]
+      and mq["correct"] == ["ICEFLOEHOME", "DUNEHOME", "RIVERHOME"]
+      and mq["options"] == ["DUNEHOME", "ICEFLOEHOME", "RIVERHOME", "SKYHOME"], repr(mq))
+check("  fixing a blank's answer is the same question, so it regrades",
+      quiz.parse(BLANK_Q.replace("MANGOFRUIT", "MANGO"))["qid"] == bq["qid"])
+check("  and fixing a pair is too",
+      quiz.parse(MATCH_Q.replace("camel -> DUNEHOME", "camel -> RIVERHOME")
+                 .replace("otter -> RIVERHOME", "otter -> DUNEHOME"))["qid"] == mq["qid"])
+TWO = "```quiz\n%s\n```\n\n```quiz\n%s\n```\n" % (BLANK_Q, MATCH_Q)
+red = quiz.redact(TWO)
+check("  redacted, the blanks are empty", "OCELOT" not in red and "MANGOFRUIT" not in red
+      and "food = [[]]" in red)
+check("  and the pairs are taken apart: lefts, then every right sorted",
+      "->" not in red and "match: penguin\nmatch: camel\nmatch: otter\n"
+      "option: DUNEHOME\noption: ICEFLOEHOME\noption: RIVERHOME\noption: SKYHOME" in red)
+check("  each keeps its id", ("id: " + bq["qid"]) in red and ("id: " + mq["qid"]) in red)
+check("  a second pass changes nothing", quiz.redact(red) == red)
+for blk, want in zip(red.split("```quiz\n")[1:], (bq, mq)):
+    back = quiz.parse(blk.split("```")[0])
+    check("  the student's %s reads back as the same question" % want["kind"],
+          back["kind"] == want["kind"] and back["given_id"] == want["qid"]
+          and not back["has_key"] and back["options"] == want["options"], repr(back)[:120])
+
+r = teacher.post("/api/assignment", json={
+    "title": "Animals", "files": {ENTRY: 'from flask import Flask\n', "notes.md": TWO}})
+ANIMALS = r.get_json()["slug"]
+r = kid2.get("/a/" + ANIMALS)
+page = kid2.get(r.headers["Location"]).get_data(as_text=True)
+check("the assignment link gives a student neither key",
+      not any(w in page for w in ("OCELOT", "MANGOFRUIT", "-> ICEFLOE", "penguin -> ")),
+      [w for w in ("OCELOT", "MANGOFRUIT", "penguin -> ") if w in page])
+check("  (the options are there to pick from, as they should be)", "ICEFLOEHOME" in page)
+
+st, d = answer(kid2, bq["qid"], json.dumps(["ocelot cat", "papaya"]), slug=ANIMALS)
+check("one blank of two right is half the points",
+      st == 200 and d.get("correct") is False and d.get("earned") == 1 and d.get("points") == 2,
+      repr(d))
+st, d = answer(kid3, bq["qid"], json.dumps(["  Ocelot. ", "mangofruit"]), slug=ANIMALS)
+check("  blanks are compared as kindly as a short answer", d.get("correct") is True
+      and d.get("earned") == 2, repr(d))
+st, d = answer(kid, bq["qid"], json.dumps(["ocelot"]), slug=ANIMALS)
+check("  the wrong number of blanks is refused, not marked", st == 400, (st, d))
+st, d = answer(kid, bq["qid"], "ocelot", slug=ANIMALS)
+check("  so is something that isn't a list", st == 400, (st, d))
+st, d = answer(kid, bq["qid"], json.dumps(["", " "]), slug=ANIMALS)
+check("  and nothing filled in at all", st == 400, (st, d))
+
+st, d = answer(kid2, mq["qid"], json.dumps(["ICEFLOEHOME", "SKYHOME", "RIVERHOME"]), slug=ANIMALS)
+check("two pairs of three is two thirds of the points",
+      st == 200 and d.get("earned") == 2 and d.get("correct") is False, repr(d))
+st, d = answer(kid2, mq["qid"], json.dumps(["ICEFLOEHOME", "DUNEHOME", "RIVERHOME"]), slug=ANIMALS)
+check("  one try holds", d.get("already") and d.get("earned") == 2, repr(d))
+st, d = answer(kid3, mq["qid"], json.dumps(["ICEFLOEHOME", "DUNEHOME", "RIVERHOME"]), slug=ANIMALS)
+check("  all three is all of them", d.get("correct") is True and d.get("earned") == 3, repr(d))
+mine = kid2.get("/api/quiz/%s/mine" % ANIMALS).get_json()["answers"]
+check("the page is told the part marks",
+      mine[bq["qid"]]["earned"] == 1 and mine[mq["qid"]]["earned"] == 2, repr(mine))
+db = P.SessionLocal()
+animals_id = db.query(accounts.Assignment).filter_by(slug=ANIMALS).first().id
+db.close()
+check("  and the grade adds them up: 1 + 2",
+      P._quiz_earned(P.SessionLocal(), animals_id).get(KID2) == 3)
+
+_d = P.SessionLocal().query(accounts.Draft).filter_by(
+    owner_id=KID2, assignment_id=animals_id).first()
+r = kid2.post("/api/submit", json={"draft": _d.slug, "files": json.loads(_d.files)})
+check("  the student turns it in", r.status_code == 200, (r.status_code, r.get_json()))
+db = P.SessionLocal()
+db.query(accounts.Assignment).filter_by(id=animals_id).update({"kind": "lesson"})
+db.commit()
+db.close()
+page = teacher.get("/teacher/" + ANIMALS).get_data(as_text=True)
+listed = page.split("lesson-answers")[1].split("</ol>")[0] if "lesson-answers" in page else ""
+check("the teacher's list shows a part-right answer as part-right, readably",
+      'class="is-partial"' in listed and "ocelot cat · papaya" in listed
+      and "penguin → ICEFLOEHOME; camel → SKYHOME; otter → RIVERHOME" in listed)
 
 # ------------------------------------------------------------- the help
 print("\nThe help page")

@@ -21,6 +21,20 @@ A teacher writes a question in the markdown notes as a fenced block:
     points: 5
     ```
 
+    ```quiz
+    type: blank
+    A [[while]] loop repeats as long as its condition is [[True|true]].
+    ```
+
+    ```quiz
+    type: match
+    Match each keyword to what it does.
+    - for -> repeats once for each item
+    - while -> repeats while a condition holds
+    - if -> runs once, or not at all
+    option: stops the program
+    ```
+
 Choices make it multiple choice and `[x]` marks the right one (more than one
 `[x]` means any of them counts). No choices makes it short answer, and every
 `answer:` line is one accepted answer. `type: long` (or `type: essay`) makes
@@ -28,7 +42,15 @@ it a long response: the student writes in a box with a small formatting
 toolbar, and the teacher marks it by hand on the assignment's page — there
 is no key, so choices and `answer:` lines in it are ignored. Until the
 teacher gives it a score it counts 0, and the class page says the
-assignment needs grading. `points:` defaults to 1. Code can go in
+assignment needs grading. `points:` defaults to 1.
+
+`type: blank` makes every `[[...]]` in the question a box to type in, code
+fences included (filling in a line of code is the usual use); `|` separates
+answers that are all accepted, compared as kindly as a short answer.
+`type: match` reads `- left -> right` lines as pairs: students pick a right
+for each left from a list of every right, plus any `option:` lines, which
+are wrong answers to choose from. Both give PARTIAL credit — two of three
+blanks right earns two thirds of the points. Code can go in
 the question inside a `~~~` fence, which the outer ``` fence leaves alone, and
 nothing inside that inner fence is read as a choice or an answer.
 
@@ -61,6 +83,11 @@ ANSWER = re.compile(r"^answer\s*:\s*(.*)$", re.I)
 POINTS = re.compile(r"^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$", re.I)
 QID = re.compile(r"^id\s*:\s*([0-9a-f]{12})\s*$")
 LONG = re.compile(r"^type\s*:\s*(long|essay)\s*$", re.I)
+TYPE = re.compile(r"^type\s*:\s*(blanks?|fill|match|matching)\s*$", re.I)
+PAIR = re.compile(r"^[-*+]\s+(.+?)\s+->\s+(.+)$")
+MATCH = re.compile(r"^match\s*:\s*(.+)$", re.I)
+OPTION = re.compile(r"^option\s*:\s*(.+)$", re.I)
+BLANK = re.compile(r"\[\[([^\[\]\n]*)\]\]")
 
 
 def parse(body):
@@ -76,7 +103,8 @@ def parse(body):
     """
     lines = str(body or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     prompt, choices, correct, answers = [], [], [], []
-    points, given_id, inner, long_ = 1.0, "", None, False
+    points, given_id, inner, long_, typed = 1.0, "", None, False, ""
+    lefts, rights, options = [], [], []
     for ln in lines:
         s = ln.strip()
         f = FENCE.match(ln)
@@ -112,22 +140,61 @@ def parse(body):
         if LONG.match(s):
             long_ = True
             continue
+        m = TYPE.match(s)
+        if m:
+            typed = "match" if m.group(1).lower().startswith("match") else "blank"
+            continue
+        if typed == "match":
+            m = PAIR.match(s)
+            if m:
+                lefts.append(m.group(1).strip())
+                rights.append(m.group(2).strip())
+                continue
+            m = MATCH.match(s)
+            if m:
+                lefts.append(m.group(1).strip())
+                continue
+            m = OPTION.match(s)
+            if m:
+                options.append(m.group(1).strip())
+                continue
         prompt.append(ln)
     while prompt and not prompt[0].strip():
         prompt.pop(0)
     while prompt and not prompt[-1].strip():
         prompt.pop()
+    text = "\n".join(prompt)
+    seen = text                    # what the student is shown, for the qid
     if long_:
         # Marked by hand, so there is no key to keep — and a stray `[x]` or
         # `answer:` must not become one, or redact would print it back out.
         kind, choices, correct, answers = "long", [], [], []
+    elif typed == "blank":
+        # Each [[...]] is a blank and its key; [[]] is one already redacted.
+        kind, choices, correct = "blank", [], []
+        answers = [[a.strip() for a in b.split("|") if a.strip()]
+                   for b in BLANK.findall(text)]
+        seen = BLANK.sub("[[]]", text)
+    elif typed == "match":
+        # `correct` is the right for each left, in order. The list students
+        # pick from is every right and option, SORTED, so neither the order
+        # nor the place of an answer gives the pairs away.
+        kind, choices, correct, answers = "match", lefts, rights, []
+        options = sorted(set(rights + options))
     else:
         kind = "choice" if choices else "text"
-    text = "\n".join(prompt)
-    has_key = bool(correct) if kind == "choice" else bool(answers)
-    usable = bool(text.strip()) and points > 0 and (
-        kind == "long" or (has_key and (kind == "text" or len(choices) >= 2)))
-    qid = hashlib.sha1("\0".join([kind, text] + choices).encode("utf-8")
+    if kind == "blank":
+        has_key = any(answers)
+        ok = bool(answers) and all(answers)
+    elif kind == "match":
+        has_key = bool(rights)
+        ok = len(lefts) >= 2 and len(rights) == len(lefts)
+    else:
+        has_key = bool(correct) if kind == "choice" else bool(answers)
+        ok = kind == "long" or (has_key and (kind == "text" or len(choices) >= 2))
+    usable = bool(text.strip()) and points > 0 and ok
+    shown = choices + (options if kind == "match" else [])
+    qid = hashlib.sha1("\0".join([kind, seen] + shown).encode("utf-8")
                        ).hexdigest()[:12]
     return {
         "qid": qid if usable else "",
@@ -137,8 +204,9 @@ def parse(body):
         "choices": choices,
         "correct": correct,
         "answers": answers,
+        "options": options if kind == "match" else [],
         "points": points,
-        "has_key": bool(correct or answers),
+        "has_key": has_key,
     }
 
 
@@ -206,9 +274,18 @@ def redact(md):
         lines.append("points: " + _points_text(q["points"]))
         if q["kind"] == "long":
             lines.append("type: long")
-        if q["prompt"]:
-            lines.extend(q["prompt"].split("\n"))
-        lines.extend("- [ ] " + c for c in q["choices"])
+        if q["kind"] in ("blank", "match"):
+            lines.append("type: " + q["kind"])
+        prompt = q["prompt"]
+        if q["kind"] == "blank":
+            prompt = BLANK.sub("[[]]", prompt)
+        if prompt:
+            lines.extend(prompt.split("\n"))
+        if q["kind"] == "match":
+            lines.extend("match: " + c for c in q["choices"])
+            lines.extend("option: " + o for o in q["options"])
+        else:
+            lines.extend("- [ ] " + c for c in q["choices"])
         lines.append(closer)
         out.extend(lines)
     return "\n".join(out)
@@ -254,15 +331,60 @@ def normalize(text):
     return text[:-1].rstrip() if text.endswith(".") else text
 
 
+def items(response):
+    """A blank or match response — a JSON list of strings, one per blank or
+    left — as that list. Anything else is an empty list, which marks 0."""
+    import json
+    try:
+        got = json.loads(response or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(x) for x in got] if isinstance(got, list) else []
+
+
+def fraction(kind, correct, answers, response):
+    """How much of a question is right, 0 to 1. Whole or nothing for a
+    choice or a short answer; per blank or per pair for the other two, so
+    two of three right earns two thirds of the points. A long response is
+    0 here: its points are the teacher's score on the answer."""
+    if kind == "long":
+        return 0.0
+    if kind == "blank":
+        got = items(response)
+        right = sum(1 for i, alts in enumerate(answers)
+                    if i < len(got) and normalize(got[i]) in {normalize(a) for a in alts})
+        return right / len(answers) if answers else 0.0
+    if kind == "match":
+        got = items(response)
+        right = sum(1 for i, want in enumerate(correct)
+                    if i < len(got) and got[i] == want)
+        return right / len(correct) if correct else 0.0
+    return 1.0 if is_correct(kind, correct, answers, response) else 0.0
+
+
 def is_correct(kind, correct, answers, response):
     """Right or wrong, for the kinds a machine can mark. A long response is
     never "correct" here: its points are the teacher's score on the answer."""
     if kind == "long":
         return False
+    if kind in ("blank", "match"):
+        return fraction(kind, correct, answers, response) == 1.0
     if kind == "choice":
         return response in correct
     want = {normalize(a) for a in answers}
     return normalize(response) in want
+
+
+def response_text(kind, response, lefts=()):
+    """A blank or match response as a line of text, for the teacher's list
+    of answers: "while · True", or "for → repeats; while → …"."""
+    got = items(response)
+    if kind == "blank":
+        return " · ".join(g or "(blank)" for g in got)
+    if kind == "match":
+        return "; ".join("%s → %s" % (l, got[i] if i < len(got) and got[i] else "(none)")
+                         for i, l in enumerate(lefts))
+    return response
 
 
 # ------------------------------------------------------------ long responses
