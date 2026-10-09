@@ -384,6 +384,63 @@ check("turned in: the name opens what they turned in",
 check("  and their grade is on the page", 'badge-grade">8 / 10</span>' in page)
 check("  only their own", 'badge-grade">8' not in teacher.get("/class/%d" % C4).get_data(as_text=True))
 
+# "Not in Classroom": who turned it in without their grade there yet.
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+check("not posted to Classroom: the column says there's nowhere to send",
+      'title="Not posted to Google Classroom">—</span>' in _row_html(hello_row))
+db = P.SessionLocal()
+db.add(accounts.ClassroomPost(assignment_id=a.id, course_id=P4,
+                              course_name="Intro to Programming — Period 4", work_id="w1"))
+db.commit()
+db.close()
+
+
+def _unsent():
+    global page
+    page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+    m = re.search(r'class="unsent"[^>]*>(\d+) to send<|class="all-sent"', _row_html(hello_row))
+    return m and (m.group(1) or "all")
+
+
+check("posted, graded and never synced: 1 to send", _unsent() == "1")
+db = P.SessionLocal()
+db.query(accounts.Submission).filter_by(id=sub.id).update({"score_synced": 8})
+db.commit()
+db.close()
+check("  synced: all sent", _unsent() == "all")
+teacher.post("/api/assignment/%s/feedback" % HELLO,
+             json={"submission": sub.id, "feedback": "", "score": "9"})
+check("  regraded since the sync: 1 to send again", _unsent() == "1")
+teacher.post("/api/assignment/%s/feedback" % HELLO,
+             json={"submission": sub.id, "feedback": "", "score": ""})
+db = P.SessionLocal()
+db.query(accounts.Submission).filter_by(id=sub.id).update({"score_synced": None})
+db.commit()
+db.close()
+check("  turned in and not graded at all: counted, it needs doing", _unsent() == "1")
+check("  and it opens the assignment, where Sync is",
+      re.search(r'class="unsent" href="/teacher/%s"\s+title="1 turned in' % HELLO,
+                _row_html(hello_row)) is not None)
+check("students never see the column", "to send" not in kid1.get("/class/%d" % C4).get_data(as_text=True))
+# A post from the first version, kept on the assignment, counts too.
+db = P.SessionLocal()
+db.query(accounts.ClassroomPost).filter_by(assignment_id=a.id).delete()
+db.query(accounts.Assignment).filter_by(id=a.id).update({"classroom_work_id": "w-old"})
+db.commit()
+db.close()
+check("  an assignment posted by the first version counts too", _unsent() == "1")
+db = P.SessionLocal()
+db.query(accounts.Assignment).filter_by(id=a.id).update({"classroom_work_id": ""})
+db.commit()
+db.close()
+# Back as it was, for everything below.
+teacher.post("/api/assignment/%s/feedback" % HELLO,
+             json={"submission": sub.id, "feedback": "", "score": "8"})
+db = P.SessionLocal()
+db.query(accounts.ClassroomPost).filter_by(assignment_id=a.id).delete()
+db.commit()
+db.close()
+
 # The live link: always made, shown to students unless the teacher hides it.
 _live_code = q(accounts.LiveSession, assignment_id=a.id)[0].code
 check("a new assignment's live link is on the students' page",

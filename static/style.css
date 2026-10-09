@@ -1819,3 +1819,8 @@ pre .quiz-blank, code .quiz-blank { font-family: inherit; }
 .quiz-match-left { font-weight: 500; }
 .quiz-match-pick { width: 100%; }
 @media (max-width: 520px) { .quiz-match-row { grid-template-columns: 1fr; gap: 2px; } }
+
+/* The class page's "Not in Classroom" column: grades still to send. */
+.class-list a.unsent { color: var(--amber); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.class-list a.unsent:hover { text-decoration: underline; }
+.class-list .all-sent { color: var(--green); white-space: nowrap; }

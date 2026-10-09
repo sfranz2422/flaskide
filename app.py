@@ -4075,6 +4075,25 @@ def _class_rows(db, course, user=None, student=False):
             posted.setdefault(p.assignment_id, []).append(p.course_name or "a class")
     # Long responses turned in and not marked: "needs grading" on the row.
     waiting = _ungraded(db, ids) if not student else {}
+    # Turned in, and the grade not in Classroom yet — not graded, graded and
+    # not sent, or changed since the last Sync — for each assignment that
+    # was posted there. The same test as each student's "not in Classroom
+    # yet" on the assignment's page (_is_synced), so the two always agree.
+    # Whether the teacher has then pressed Return in Classroom is not known
+    # here: Sync sends draft grades and the return happens on Google's side,
+    # and asking Google on every load of this page would make it crawl.
+    unsent, sent_to = {}, set()
+    if not student and ids:
+        sent_to = {p.assignment_id for p in db.query(accounts.ClassroomPost.assignment_id)
+                   .filter(accounts.ClassroomPost.assignment_id.in_(ids))}
+        sent_to |= {a.id for a in items.values() if a.classroom_work_id}
+        earned_by = {aid: _quiz_earned(db, aid) for aid in sent_to}
+        for sub in (db.query(accounts.Submission)
+                      .filter(accounts.Submission.assignment_id.in_(list(sent_to)))
+                    if sent_to else []):
+            total = _total(sub.score, earned_by[sub.assignment_id].get(sub.student_id))
+            if not _is_synced(sub, total):
+                unsent[sub.assignment_id] = unsent.get(sub.assignment_id, 0) + 1
     counts = {}
     if not student and ids:
         for aid, n in (db.query(accounts.Submission.assignment_id, func.count())
@@ -4111,6 +4130,8 @@ def _class_rows(db, course, user=None, student=False):
                "show_live": bool(r.show_live),
                "out_of": a.out_of or "", "count": counts.get(a.id, 0),
                "waiting": waiting.get(a.id, 0),
+               # None when it isn't in Classroom: there is nowhere to send.
+               "unsent": unsent.get(a.id, 0) if a.id in sent_to else None,
                # A post from the first version still in the assignment's own
                # columns counts too; its page moves it into ClassroomPost.
                "posted": posted.get(a.id) or ([a.classroom_course_name or "a class"]
