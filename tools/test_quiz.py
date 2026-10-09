@@ -559,6 +559,33 @@ d = teacher.post("/api/quiz/grade", json=dict(GRADE, score="")).get_json()
 check("emptying the mark puts it back to waiting",
       d.get("score") == "" and d.get("waiting") == 1, repr(d))
 
+# ------------------------------------------------------------- the help
+print("\nThe help page")
+for kind, title, _, block in P.QUESTION_EXAMPLES:
+    got = quiz.parse(block)
+    check("  its %s example is one, and answerable" % title,
+          got["kind"] == kind and got["qid"], repr(got)[:120])
+page = stranger.get("/help/questions").get_data(as_text=True)
+check("it opens, signed out, with every example",
+      all(t in page for _, t, _, _ in P.QUESTION_EXAMPLES) and "type: long" in page)
+# The examples are drawn by notes.js, under the name it gives itself, which
+# is different in each of the three editors. Called by another editor's name
+# they draw nothing at all, with no error a page visitor would ever see.
+_global = re.search(r"window\.(\w+) = \(function", notes_js).group(1)
+check("  and draws its examples with this editor's notes.js",
+      "window.%s.render(el, el.dataset.md)" % _global in page, _global)
+check("the code editor's notes link to it",
+      'href="/help/questions"' in teacher.get("/teacher/%s/edit" % SLUG).get_data(as_text=True))
+r = teacher.post("/api/lesson", json={"title": "Help"})
+LESSON = r.get_json()["slug"]
+check("  and so does the lesson editor",
+      'href="/help/questions"' in teacher.get("/teacher/%s/lesson" % LESSON).get_data(as_text=True))
+db = P.SessionLocal()
+starter = quiz.file_keys(db.query(accounts.Assignment).filter_by(slug=LESSON).first().file_map())
+db.close()
+check("a new lesson starts with a long response to copy",
+      [q["kind"] for q in starter] == ["choice", "long"], [q["kind"] for q in starter])
+
 # ------------------------------------------------------------ the wiring
 print("\nThe wiring")
 

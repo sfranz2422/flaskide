@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Question formats — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("flaskide-theme");
+      if (saved === "light" || saved === "dark") {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
+    } catch (e) { /* storage blocked; the CSS default still applies */ }
+  })();
+</script>
+</head>
+<body>
+
+{#  How to write questions in notes, linked from both editors. The examples
+    are QUESTION_EXAMPLES in app.py, which test_quiz.py runs through the
+    real parser; each is shown as written and as it looks, rendered by the
+    same notes.js the editors use (the teacher's preview, answer and all). #}
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">Question formats</span></div>
+  <div class="actions"></div>
+</header>
+
+<main class="sheet prose help-questions">
+  <h1>Questions in your notes</h1>
+  <p>A question is a fenced block that starts with <code>```quiz</code> and ends
+    with <code>```</code>, anywhere in an assignment's or a lesson's notes.
+    Students answer each one once. Choices and short answers are marked
+    straight away; a long response waits for you. The points go on top of
+    your own score for the work, and Sync sends the total to Classroom.</p>
+  <p><code>points:</code> sets what it's worth, and is 1 if you leave it out.
+    Students never see the answers: they're taken out before the notes leave
+    the server.</p>
+
+  {% for ex in examples %}
+    <section class="help-example">
+      <h2>{{ ex.title }}</h2>
+      <p>{{ ex.about }}</p>
+      <div class="help-pair">
+        <div><div class="dim small">You write</div><pre class="help-src">{{ ex.block }}</pre></div>
+        <div><div class="dim small">It looks like</div>
+          <div class="notes-body prose help-look" data-md="{{ ex.block }}"></div></div>
+      </div>
+    </section>
+  {% endfor %}
+
+  <h2>Slides</h2>
+  <p>A line with only <code>---</code> on it starts a new slide. A question can go on any slide.</p>
+</main>
+
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script>
+  document.querySelectorAll(".help-look[data-md]").forEach(function (el) {
+    window.FlaskIDENotes.render(el, el.dataset.md);
+  });
+</script>
+</body>
+</html>

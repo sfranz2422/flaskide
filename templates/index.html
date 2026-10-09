@@ -272,6 +272,8 @@
         <span id="notes-name">Notes</span>
         <span class="head-right">
           {% if authoring %}
+            <a class="linkbtn" href="{{ url_for('help_questions') }}" target="_blank" rel="noopener"
+               title="How to write ```quiz questions in these notes">Question formats</a>
             <button id="notes-edit" class="linkbtn">Edit source</button>
           {% endif %}
           <span class="view-switch" role="group" aria-label="Show in this pane" hidden>

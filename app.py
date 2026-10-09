@@ -1884,6 +1884,19 @@ What does a line with only --- on it do in these notes?
 - [x] Starts a new slide
 points: 1
 ```
+
+---
+
+## A longer answer
+
+`type: long` gives students a box to write a paragraph in. You give it
+points yourself, on the lesson's page.
+
+```quiz
+In a few sentences, what would you put on the first slide of a lesson, and why?
+type: long
+points: 3
+```
 """
 
 
@@ -5070,6 +5083,35 @@ def not_found(_):
 @app.get("/healthz")
 def healthz():
     return "ok"
+
+
+#: The examples on /help/questions, each (kind, heading, what to know, the
+#: block). The page shows each block's source beside how it looks, and
+#: test_quiz.py reads every one with quiz.parse and checks it is the kind it
+#: says and answerable — so the help cannot quietly drift from the format.
+QUESTION_EXAMPLES = [
+    ('choice', 'Multiple choice',
+     'Put [x] on the right choice. More than one [x] means any of them counts.',
+     'Which decorator connects a URL to a function?\n- [x] `@app.route`\n- [ ] `@app.url`\n- [ ] `@flask.page`\npoints: 2'),
+    ('text', 'Short answer',
+     "One answer: line for each answer you'll accept. Capitals, extra spaces and a full stop at the end don't matter; nothing else is forgiven.",
+     'Which HTTP method does a form use to send data to the server?\nanswer: POST'),
+    ('long', 'Long response',
+     "type: long (or type: essay) gives students a box with a small toolbar — bold, italic, underline, lists. There is no key: you give it points on the assignment's page, and it says “to grade” until you do.",
+     'Explain, in a paragraph, why a password should never be stored as plain text.\ntype: long\npoints: 5'),
+    ('choice', 'Code in a question',
+     'Put code inside a ~~~ fence. Nothing in it is read as a choice or an answer.',
+     'What does visiting /hello show?\n~~~python\n@app.route("/hello")\ndef hello():\n    return "Hi!"\n~~~\n- [x] Hi!\n- [ ] hello\n- [ ] A 404 error'),
+]
+
+
+@app.get("/help/questions")
+def help_questions():
+    """How to write questions in notes. Open to anyone: it is the format,
+    nothing more, and a teacher may want it before they have signed in."""
+    return render_template("help_questions.html", examples=[
+        {"kind": k, "title": t, "about": a, "block": "```quiz\n%s\n```" % b}
+        for k, t, a, b in QUESTION_EXAMPLES])
 
 
 if __name__ == "__main__":

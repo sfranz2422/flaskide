@@ -1784,3 +1784,14 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .banner-body img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
 .banner-body > :last-child { margin-bottom: 0; }
 .class-banner .desc-edit { margin-top: 10px; }
+
+/* Question formats (/help/questions): each example as written, beside how
+   it looks. Side by side where there's room, stacked on a phone. */
+.help-questions { max-width: 980px; }
+.help-example { margin: 28px 0; }
+.help-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.help-src { margin: 4px 0 0; padding: 10px 12px; border: 1px solid var(--line);
+            border-radius: 8px; background: var(--bg-panel); white-space: pre-wrap;
+            overflow-wrap: anywhere; font-size: 13px; }
+.help-look { margin-top: 4px; }
+@media (max-width: 720px) { .help-pair { grid-template-columns: 1fr; } }
