@@ -209,6 +209,14 @@ check("signed in, a saved project: just the Saved state",
       has_id(page, "save-state") and not has_id(page, "share")
       and not has_id(page, "save-project") and not has_id(page, "turn-in"))
 
+page = teacher.get("/teacher/%s/edit" % hw).get_data(as_text=True)
+check("a teacher editing an assignment: Update assignment",
+      has_id(page, "update-assignment"))
+check("  and no Save, which kept a copy in My projects instead",
+      not has_id(page, "save-project"))
+page = teacher.get("/new").get_data(as_text=True)
+check("a teacher's new project still has Save", has_id(page, "save-project"))
+
 page = stranger.get("/new").get_data(as_text=True)
 check("signed out: Sign in", "/login" in page and ">Sign in<" in page)
 check("  and Share, since sign-in is optional", has_id(page, "share"))

@@ -104,7 +104,11 @@
     {% else %}
       {% if draft_slug %}
         <span id="save-state" class="savestate" aria-live="polite">Saved</span>
-      {% elif user %}
+      {#  Not while editing an assignment: Save keeps a separate copy in My
+          projects, and a teacher pressing it there thought they had saved
+          the assignment — the class's copy never changed. Update assignment
+          is the one save on that page. #}
+      {% elif user and not editing_assignment %}
         <button id="save-project" class="btn{% if not is_teacher %} btn-primary{% endif %}"
                 title="Keep this project on your account so it saves itself from now on.">Save</button>
       {% endif %}
