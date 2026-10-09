@@ -904,6 +904,12 @@ with _older.begin() as _c:
         "answered_at DATETIME NOT NULL)"))
     _c.execute(sqlalchemy.text(
         "INSERT INTO quiz_answers VALUES (1, 1, 1, 'abc', '5', '2026-10-08 10:00:00')"))
+    _c.execute(sqlalchemy.text(
+        "CREATE TABLE submissions (id INTEGER PRIMARY KEY, assignment_id INTEGER NOT NULL, "
+        "student_id INTEGER NOT NULL, snippet_slug VARCHAR(16) NOT NULL, "
+        "submitted_at DATETIME NOT NULL, times_submitted INTEGER NOT NULL)"))
+    _c.execute(sqlalchemy.text(
+        "INSERT INTO submissions VALUES (1, 1, 1, 'abc', '2026-10-08 10:00:00', 1)"))
 accounts.create_all(_older)
 def _column(sql):
     try:
@@ -917,6 +923,9 @@ _b = _column("SELECT banner FROM classes")
 _s = _column("SELECT score FROM quiz_answers")
 check("an older classes table gets a banner, empty", _b == [("",)], _b)
 check("an older quiz_answers table gets a score, not marked", _s == [(None,)], _s)
+_a = _column("SELECT auto_snap FROM submissions")
+check("an older submissions table gets auto_snap 0: never rewrite a pressed copy",
+      _a == [(0,)], _a)
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

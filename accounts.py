@@ -229,6 +229,12 @@ class Submission(Base):
     snippet_slug = Column(String(16), nullable=False)
     submitted_at = Column(DateTime, nullable=False, default=now)
     times_submitted = Column(Integer, nullable=False, default=1)
+    #: 1 when snippet_slug is a snapshot the automatic turn-in made (app.py,
+    #: _auto_turn_in), which the next automatic one REWRITES in place rather
+    #: than adding another: a project carrying a few books' worth of data
+    #: files would otherwise leave a full copy every two minutes. 0 once the
+    #: student presses Turn in — that copy is theirs and stays as it is.
+    auto_snap = Column(Integer, nullable=False, default=0)
 
     #: The teacher's comment on it, shown on the student's My work page.
     #: On this row rather than the snapshot, so it SURVIVES a re-submit —
@@ -645,6 +651,10 @@ def _as_map(raw) -> dict:
 LATER_COLUMNS = [
     # NULL is true of every answer from before long responses: none of them
     # was one, and NULL is "not marked by hand", which they never need.
+    # 0 is true of every submission from before: each snapshot was made by
+    # pressing Turn in, and must never be rewritten.
+    ("submissions", "auto_snap",
+     "ALTER TABLE submissions ADD COLUMN auto_snap INTEGER NOT NULL DEFAULT 0"),
     ("quiz_answers", "score",
      "ALTER TABLE quiz_answers ADD COLUMN score FLOAT"),
     # Empty is true of every class made before the banner: none had one.

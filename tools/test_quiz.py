@@ -715,11 +715,22 @@ r = save("print('more')\n")
 _, sub, _ = auto_state()
 check("an ordinary autosave turns nothing in", r.status_code == 200
       and sub.snippet_slug == first and not r.get_json().get("turned_in_at"))
+def snapshots():
+    db = P.SessionLocal()
+    try:
+        return db.query(P.Project).count()
+    finally:
+        db.close()
+
+
+copies = snapshots()
 r = save("print('more')\n", turn_in=True)
 _, sub, snap = auto_state()
 check("the page's two-minute save turns the changed work in",
-      r.get_json().get("turned_in_at") and sub.snippet_slug != first
-      and snap.file_map().get(ENTRY) == "print('more')\n")
+      r.get_json().get("turned_in_at") and snap.file_map().get(ENTRY) == "print('more')\n")
+check("  rewriting its own last copy, not adding another",
+      sub.snippet_slug == first and snapshots() == copies,
+      "books in a project made a full copy every two minutes")
 check("  still no attempt counted", sub.times_submitted == 0)
 second, second_at = sub.snippet_slug, sub.submitted_at
 r = save("print('more')\n", turn_in=True)
@@ -731,6 +742,21 @@ d, _, _ = auto_state()
 r = kid5.post("/api/submit", json={"draft": d.slug, "files": json.loads(d.files)})
 check("pressing Turn in afterwards is their first attempt",
       r.status_code == 200 and r.get_json().get("again") is False, r.get_json())
+_, sub, pressed = auto_state()
+pressed_slug = pressed.slug
+r = save("print('after pressing')\n", turn_in=True)
+_, sub, snap = auto_state()
+db = P.SessionLocal()
+kept = db.query(P.Project).filter_by(slug=pressed_slug).first().file_map().get(ENTRY)
+db.close()
+check("the copy they pressed Turn in for is never rewritten",
+      sub.snippet_slug != pressed_slug and kept == "print('more')\n"
+      and snap.file_map().get(ENTRY) == "print('after pressing')\n", kept)
+auto_slug = sub.snippet_slug
+r = save("print('and again')\n", turn_in=True)
+_, sub, snap = auto_state()
+check("  the automatic one after it is rewritten in place again",
+      sub.snippet_slug == auto_slug and snap.file_map().get(ENTRY) == "print('and again')\n")
 
 r = teacher.post("/api/assignment", json={
     "title": "Mine", "files": {ENTRY: 'from flask import Flask\n', "notes.md": "```quiz\nPick b\n- [ ] a\n- [x] b\n```\n"}})

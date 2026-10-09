@@ -1029,23 +1029,27 @@ def _auto_turn_in(db, item, user, draft=None):
     if draft is not None and not _is_lesson(item):
         had = (db.query(Project).filter_by(slug=row.snippet_slug).first()
                if row is not None and row.snippet_slug else None)
-        if had is None or had.file_map() != draft.file_map():
+        if had is not None and had.file_map() == draft.file_map():
+            return row                        # nothing new to hand in
+        if had is not None and row.auto_snap:
+            # Its own last copy: rewritten, not added to (Submission.auto_snap).
+            had.files = draft.files
+            had.title = draft.title or item.title
+        else:
             snap = Project(slug=new_slug(db), title=draft.title or item.title,
                            author=user.display_name(), files=draft.files)
             db.add(snap)
             db.flush()
-        elif row is not None:
-            return row                        # nothing new to hand in
     if row is None:
         # 0 attempts: pressing Turn in is an attempt, and this wasn't one.
         # The student's first press then counts 1, not "turned in 2 times".
         row = accounts.Submission(assignment_id=item.id, student_id=user.id,
                                   snippet_slug=snap.slug if snap else "",
-                                  times_submitted=0)
+                                  times_submitted=0, auto_snap=1 if snap else 0)
         db.add(row)
     else:
         if snap is not None:
-            row.snippet_slug = snap.slug
+            row.snippet_slug, row.auto_snap = snap.slug, 1
         row.submitted_at = accounts.now()
     try:
         db.commit()
@@ -1627,6 +1631,9 @@ def turn_in():
             row.snippet_slug = snap.slug
             row.submitted_at = accounts.now()
             row.times_submitted = (row.times_submitted or 0) + 1
+        # Pressed, so this copy is theirs: the automatic turn-in will make a
+        # new one beside it rather than rewrite it (Submission.auto_snap).
+        row.auto_snap = 0
         db.commit()
         return jsonify(ok=True,
                        submitted_at=row.submitted_at.strftime("%b %d at %I:%M %p"),
