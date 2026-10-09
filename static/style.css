@@ -1758,14 +1758,27 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .kind-tag.tag-not-posted { opacity: .55; }
 /* The teacher's class page gets the width: titles, tags, descriptions and
    six actions share each row, and at the site's 860px the title column was
-   squeezed until a tag broke in half. Students' pages keep the reading width. */
-.class-teacher .sheet { max-width: 1240px; }
-.class-teacher .class-list td.rowactions { white-space: nowrap; }
-.class-teacher .desc-preview { max-width: 720px; }
+   squeezed until a tag broke in half. 1600px since the Not in Classroom
+   column: at 1240 a row's last action ran off the edge behind a horizontal
+   scrollbar, on a screen with room to spare either side.
+
+   And the actions WRAP, each one kept whole, so a narrower screen gets a
+   second line of them rather than a scrollbar. Kept on one line they set
+   the table's least width, which is what pushed it past the page. */
+.class-teacher .sheet { max-width: 1600px; }
+.class-teacher .class-list td.rowactions { white-space: normal; text-align: right; min-width: 220px; }
+.class-teacher .class-list td.rowactions .linkbtn { white-space: nowrap; display: inline-block;
+                                                    margin: 2px 0 2px 12px; }
+/* 960, up from 720 with the page: a week's plan as a table was cut off
+   behind its own scrollbar on a wide screen with room to spare.
+   contain: inline-size stops what is inside — that table — from setting the
+   column's width: the box takes the room the row leaves, up to 960, and
+   anything wider scrolls inside it instead of pushing the page sideways. */
+.class-teacher .desc-preview { max-width: 960px; contain: inline-size; }
 .kind-tag { white-space: nowrap; display: inline-block; }
 /* The students' class page, as wide as the teacher's: room for a video, a
    table and a picture side by side with the words. */
-.class-student .sheet { max-width: 1240px; }
+.class-student .sheet { max-width: 1600px; }
 
 /* A YouTube link on its own line, as a player (embeds.js): 16:9, as wide as
    the description, never wider than is comfortable to watch. */

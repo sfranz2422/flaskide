@@ -688,7 +688,12 @@ check("a description cannot be written by a student, which is what makes it safe
 _css = open(os.path.join(PYIDE, "static", "style.css")).read()
 check("the students' class page is as wide as the teacher's",
       'class="class-page class-student"' in kid1.get("/class/%d" % C4).get_data(as_text=True)
-      and ".class-student .sheet { max-width: 1240px; }" in _css)
+      and re.search(r"\.class-student \.sheet \{ max-width: (\d+)px; \}", _css).group(1)
+      == re.search(r"\.class-teacher \.sheet \{ max-width: (\d+)px; \}", _css).group(1))
+check("  and a row's actions wrap rather than push the page sideways",
+      re.search(r"\.class-teacher \.class-list td\.rowactions \{ white-space: normal;", _css)
+      and "contain: inline-size" in _css,
+      "the last action ran off the edge behind a horizontal scrollbar")
 check("tables in descriptions have lines to read by",
       re.search(r"\.md th, \.md td \{[^}]*border: 1px solid", _css) is not None)
 
