@@ -276,7 +276,8 @@ class QuizQuestion(Base):
     assignment_id = Column(Integer, ForeignKey("assignments.id"),
                            index=True, nullable=False)
     qid = Column(String(16), nullable=False)
-    #: "choice" or "text".
+    #: "choice", "text", or "long" — a long response, marked by hand, which
+    #: has no key: its points are QuizAnswer.score.
     kind = Column(String(8), nullable=False, default="choice")
     prompt = Column(Text, nullable=False, default="")
     #: JSON lists: every choice shown, the ones that are right, and for a
@@ -294,7 +295,9 @@ class QuizAnswer(Base):
     quick clicks cannot both record one.
 
     Whether it is right is NOT stored. It is worked out against the key
-    whenever it is needed, so a corrected key corrects the marks."""
+    whenever it is needed, so a corrected key corrects the marks. The one
+    exception is a long response, which has no key: the teacher reads it and
+    gives it `score`."""
     __tablename__ = "quiz_answers"
     __table_args__ = (
         UniqueConstraint("assignment_id", "student_id", "qid",
@@ -308,6 +311,11 @@ class QuizAnswer(Base):
     qid = Column(String(16), nullable=False)
     response = Column(Text, nullable=False, default="")
     answered_at = Column(DateTime, nullable=False, default=now)
+    #: A long response's points, given by the teacher. NULL is "not marked
+    #: yet" — which is what puts "needs grading" on the class page — and is
+    #: not the same as 0. Unused for every other kind, which is marked
+    #: against the key instead.
+    score = Column(Float, nullable=True)
 
 
 # --------------------------------------------------------------------------
@@ -396,6 +404,10 @@ class Course(Base):
     course_name = Column(String(200), nullable=False, default="")
     #: When the roster was last fetched from Classroom; NULL is never.
     roster_at = Column(DateTime, nullable=True)
+    #: The box pinned to the top of the class's page, under its name: a
+    #: picture, a welcome, office hours. Markdown, like a description, and
+    #: shown the same way. Empty is no box.
+    banner = Column(Text, nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=now)
 
 
@@ -631,6 +643,13 @@ def _as_map(raw) -> dict:
 # from an earlier deploy needs these. Every default has to leave existing rows
 # correct: an assignment that existed before archiving did is not archived.
 LATER_COLUMNS = [
+    # NULL is true of every answer from before long responses: none of them
+    # was one, and NULL is "not marked by hand", which they never need.
+    ("quiz_answers", "score",
+     "ALTER TABLE quiz_answers ADD COLUMN score FLOAT"),
+    # Empty is true of every class made before the banner: none had one.
+    ("classes", "banner",
+     "ALTER TABLE classes ADD COLUMN banner TEXT NOT NULL DEFAULT ''"),
     # 1: every item from before showed its live link, and still should.
     ("class_items", "show_live",
      "ALTER TABLE class_items ADD COLUMN show_live INTEGER NOT NULL DEFAULT 1"),

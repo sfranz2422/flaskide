@@ -183,6 +183,8 @@ samples = [
     "\r\nCRLF?\r\n- [x] yes\r\n- [ ] no\r\npoint: 1.5\r\n",
     "id: 0123456789ab\npoints: 2\nRedacted?\n- [ ] a\n- [ ] b",
     "Answer: is not an answer line when it is the question?\nanswer:   \n",
+    "Explain why.\nType: Long\npoints: 4\n- [x] ignored\nanswer: ignored too",
+    "id: 0123456789ab\npoints: 4\ntype: essay\nRedacted long?",
 ]
 if shutil.which("node"):
     harness = "var window = {};\n" + notes_js + """
@@ -438,6 +440,125 @@ check("  one nobody answered can, keys and all",
       r.status_code == 200 and had_keys == 1 and left == 0,
       "status %s, keys %s before and %s after" % (r.status_code, had_keys, left))
 
+# ------------------------------------------------------- long responses
+print("\nLong responses")
+
+LONG_Q = "Explain why a loop stops.\ntype: long\npoints: 4\n- [x] not a key\nanswer: nor this"
+lq = quiz.parse(LONG_Q)
+check("type: long is a long response, answerable with no key",
+      lq["kind"] == "long" and lq["qid"] and lq["points"] == 4
+      and lq["correct"] == [] and lq["answers"] == [] and lq["choices"] == [], repr(lq))
+LONG_NOTES = ("# Essay\n\n```quiz\n" + LONG_Q + "\n```\n\n```quiz\nPick b\n"
+              "- [ ] a\n- [x] b\n```\n")
+red = quiz.redact(LONG_NOTES)
+check("  redacted, it keeps type: long and gets its id",
+      "type: long" in red and ("id: " + lq["qid"]) in red, red[:80])
+check("  and nothing it was written with leaks as a key",
+      "not a key" not in red and "nor this" not in red)
+check("  a second pass changes nothing", quiz.redact(red) == red)
+again = quiz.parse(red.split("```quiz\n")[1].split("```")[0])
+check("  the student's copy reads as the same long question",
+      again["kind"] == "long" and again["given_id"] == lq["qid"]
+      and again["qid"] == lq["qid"], repr(again))
+
+dirty = ('<p onclick="x()">Hi <b style="color:red">there</b></p><script>alert(1)</script>'
+         '<a href="javascript:alert(2)">link</a><img src=x onerror=alert(3)>'
+         '<ul><li>one</li></ul><iframe src="//evil"></iframe>&lt;b&gt;')
+cleaned = quiz.clean_html(dirty)
+check("clean_html keeps the toolbar's tags and nothing else",
+      cleaned == "<p>Hi <b>there</b></p>link<ul><li>one</li></ul>&lt;b&gt;", cleaned)
+check("  plain_text sees through it", quiz.plain_text("<p>a &amp; b</p><p><br></p>") == "a & b")
+
+r = teacher.post("/api/assignment", json={
+    "title": "Essay", "files": {ENTRY: 'from flask import Flask\n', "notes.md": LONG_NOTES}})
+ESSAY = r.get_json()["slug"]
+CLASS = teacher.post("/api/class", json={"name": "P4 Intro"}).get_json()["id"]
+teacher.post("/api/assignment/%s/class" % ESSAY, json={"class": CLASS})
+
+st, d = answer(kid, lq["qid"], "<p><br></p>", slug=ESSAY)
+check("an empty long response is refused", st == 400, st)
+st, d = answer(kid, lq["qid"], dirty, slug=ESSAY)
+check("a long response is taken, and not marked right or wrong",
+      st == 200 and d.get("kind") == "long" and d.get("graded") is False
+      and d.get("correct") is None and d.get("points") == 4, repr(d))
+db = P.SessionLocal()
+kept = db.query(accounts.QuizAnswer).filter_by(student_id=KID, qid=lq["qid"]).first()
+kept = kept.response if kept else ""
+db.close()
+check("  it is cleaned before it is kept", kept == cleaned, kept)
+st, d = answer(kid, lq["qid"], "<p>A better answer</p>", slug=ESSAY)
+check("  and one try holds for it too",
+      d.get("response") == cleaned and d.get("already"), repr(d))
+st, d = answer(teacher, lq["qid"], "<p>Mine</p>", slug=ESSAY)
+check("the teacher's own try is not recorded",
+      st == 200 and d.get("practice") and d.get("graded") is False, repr(d))
+mine = kid.get("/api/quiz/%s/mine" % ESSAY).get_json()["answers"]
+check("the page is told it is waiting for the teacher",
+      mine.get(lq["qid"], {}).get("graded") is False, repr(mine))
+
+page = teacher.get("/teacher/class/%d" % CLASS).get_data(as_text=True)
+check("not turned in yet: no 'needs grading' (it's not the teacher's yet)",
+      "Needs grading" not in page)
+
+kid.get("/a/" + ESSAY)
+db = P.SessionLocal()
+essay_id = db.query(accounts.Assignment).filter_by(slug=ESSAY).first().id
+essay_draft = db.query(accounts.Draft).filter_by(owner_id=KID, assignment_id=essay_id).first()
+db.close()
+r = kid.post("/api/submit", json={"draft": essay_draft.slug,
+                                   "files": json.loads(essay_draft.files)})
+check("the student turns it in", r.status_code == 200, r.status_code)
+
+# As if it had been stored by a route that forgot to clean it: the page
+# must clean it again on the way out, or this check could never fail.
+db = P.SessionLocal()
+db.query(accounts.QuizAnswer).filter_by(assignment_id=essay_id, student_id=KID).update(
+    {"response": dirty})
+db.commit()
+db.close()
+
+page = teacher.get("/teacher/class/%d" % CLASS).get_data(as_text=True)
+check("the class page says it needs grading", "Needs grading · 1" in page)
+dash = teacher.get("/teacher").get_data(as_text=True)
+check("  so does the class's card on the dashboard", "1 to grade" in dash)
+page = teacher.get("/teacher/" + ESSAY).get_data(as_text=True)
+check("the assignment's page lists the answer to mark",
+      'class="long-answer is-waiting"' in page and "<b>there</b>" in page
+      and 'data-qid="%s"' % lq["qid"] in page)
+check("  cleaned on the way out as well", not re.search(
+    r"<script|onerror|onclick|javascript:|<iframe|<img", page.split("lesson-answers")[1]
+    .split("</ol>")[0]))
+check("  and its header says how many wait", re.search(
+    r'id="needs-grading"[^>]*>1 to grade<', page) is not None)
+
+GRADE = {"assignment": ESSAY, "student": KID, "question": lq["qid"], "score": "3"}
+r = kid.post("/api/quiz/grade", json=GRADE)
+check("a student cannot mark", r.status_code == 403, r.status_code)
+r = client(add_user("t2", "other@example.org", "Not Teacher")).post("/api/quiz/grade", json=GRADE)
+check("  nor anyone who isn't a teacher", r.status_code == 403, r.status_code)
+# Answered, so the only thing refusing it is that it has a key.
+pick_b = quiz.keys(LONG_NOTES)[1]["qid"]
+answer(kid, pick_b, "b", slug=ESSAY)
+r = teacher.post("/api/quiz/grade", json=dict(GRADE, question=pick_b))
+check("a question marked by its key cannot be marked by hand", r.status_code == 404, r.status_code)
+r = teacher.post("/api/quiz/grade", json=dict(GRADE, score="lots"))
+check("a score that isn't a number is refused", r.status_code == 400, r.status_code)
+
+d = teacher.post("/api/quiz/grade", json=GRADE).get_json()
+check("the teacher marks it 3 (plus 1 for picking b)", d.get("score") == "3" and d.get("quiz") == "4"
+      and d.get("waiting") == 0, repr(d))
+check("  and it is in the grade", P._quiz_earned(P.SessionLocal(), essay_id).get(KID) == 4)
+mine = kid.get("/api/quiz/%s/mine" % ESSAY).get_json()["answers"][lq["qid"]]
+check("  the student is told their mark", mine.get("graded") is True
+      and mine.get("earned") == 3, repr(mine))
+check("  and what they wrote comes back cleaned", mine.get("response") == cleaned,
+      mine.get("response"))
+page = teacher.get("/teacher/class/%d" % CLASS).get_data(as_text=True)
+check("  and 'needs grading' is gone", "Needs grading" not in page)
+d = teacher.post("/api/quiz/grade", json=dict(GRADE, score="")).get_json()
+check("emptying the mark puts it back to waiting",
+      d.get("score") == "" and d.get("waiting") == 1, repr(d))
+
 # ------------------------------------------------------------ the wiring
 print("\nThe wiring")
 
@@ -459,6 +580,16 @@ check("the answer box can be typed in under the no-select rule",
       re.search(r"body:not\(\.is-authoring\) \.notes-body \.quiz-text,[^{]*\{\s*"
                 r"user-select: text;\s*-webkit-user-select: text;", css) is not None,
       "Safari will not type into it otherwise")
+check("  nor can the long response's box",
+      re.search(r"body:not\(\.is-authoring\) \.notes-body \.quiz-long-box,[^{]*\{\s*"
+                r"user-select: text;", css) is not None)
+lesson_js = open(os.path.join(PYIDE, "static", "lesson.js")).read()
+check("the slide keys leave a long response's box alone",
+      "isContentEditable" in lesson_js and lesson_js.count("if (typing(e)) return;") == 2,
+      "← and → turned the slide mid-sentence")
+check("what a student writes is cleaned in the browser before it is sent",
+      re.search(r"var value = area\.textContent\.trim\(\) \? cleanLong\(", notes_js)
+      is not None)
 
 # ------------------------------------------- the notes pane in the editor
 print("\nThe notes pane in FlaskIDE's editor")

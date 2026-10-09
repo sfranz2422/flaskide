@@ -256,12 +256,13 @@ window.FlaskIDENotes = (function () {
   var ANSWER = /^answer\s*:\s*(.*)$/i;
   var POINTS = /^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$/i;
   var QID = /^id\s*:\s*([0-9a-f]{12})\s*$/;
+  var LONG = /^type\s*:\s*(long|essay)\s*$/i;
 
   function parseQuiz(body) {
     var lines = String(body || "").replace(/\r\n?/g, "\n").split("\n");
     var q = { id: "", prompt: "", choices: [], correct: [], answers: [],
               points: 1 };
-    var prompt = [], inner = null;
+    var prompt = [], inner = null, long = false;
     lines.forEach(function (ln) {
       var s = ln.trim(), m;
       var f = ln.match(FENCE);
@@ -282,6 +283,8 @@ window.FlaskIDENotes = (function () {
         q.points = parseFloat(m[1]);
       } else if ((m = s.match(QID))) {
         q.id = m[1];
+      } else if (LONG.test(s)) {
+        long = true;
       } else {
         prompt.push(ln);
       }
@@ -289,7 +292,9 @@ window.FlaskIDENotes = (function () {
     while (prompt.length && !prompt[0].trim()) prompt.shift();
     while (prompt.length && !prompt[prompt.length - 1].trim()) prompt.pop();
     q.prompt = prompt.join("\n");
-    q.kind = q.choices.length ? "choice" : "text";
+    // A long response is marked by hand: no key, so none is kept (quiz.parse).
+    if (long) { q.choices = []; q.correct = []; q.answers = []; }
+    q.kind = long ? "long" : q.choices.length ? "choice" : "text";
     q.hasKey = !!(q.correct.length || q.answers.length);
     return q;
   }
@@ -356,12 +361,15 @@ window.FlaskIDENotes = (function () {
     var n = ++widgetCount;
     var box = el("div", "quiz");
     var head = el("div", "quiz-head");
-    head.appendChild(el("span", "quiz-label", "Question"));
+    head.appendChild(el("span", "quiz-label",
+                        q.kind === "long" ? "Long response" : "Question"));
     head.appendChild(el("span", "quiz-points dim", pointsText(q.points)));
     box.appendChild(head);
     var prompt = el("div", "quiz-prompt");
     md(prompt, q.prompt);
     box.appendChild(prompt);
+
+    if (q.kind === "long") return buildLong(q, box);
 
     var inputs = [];
     if (q.kind === "choice") {
@@ -535,6 +543,193 @@ window.FlaskIDENotes = (function () {
     return box;
   }
 
+  // --------------------------------------------------- long responses
+  /* A long response: a box to write in, with a small toolbar — bold,
+     italic, underline and two kinds of list — and no key. The teacher marks
+     it by hand on the assignment's page; until then the student is told it
+     is waiting, never right or wrong.
+
+     What is sent is the box's HTML, cut down to those few tags and NO
+     attributes (LONG_RULES). The server cuts it down again (quiz.clean_html)
+     because a request need not come from this page, and both are needed for
+     the same reason: the answer is drawn as markup on the teacher's screen.
+
+     Pasting goes in as plain text. Pasted from Google Docs or Word, a
+     paragraph brings a page of spans and styles that the cleaning would
+     strip anyway — and until then the box would look formatted in ways the
+     teacher will never see.
+
+     What is typed is kept in this browser until it is sent, as well as in
+     `pending`: a paragraph lost to a closed tab or a dead Chromebook
+     battery is the failure worth guarding against here. */
+  var LONG_RULES = {
+    ALLOWED_TAGS: ["p", "div", "br", "b", "strong", "i", "em", "u", "ul", "ol", "li"],
+    ALLOWED_ATTR: []
+  };
+  var LONG_MAX = 20000;
+
+  function cleanLong(html) {
+    return window.DOMPurify ? window.DOMPurify.sanitize(html || "", LONG_RULES) : "";
+  }
+
+  function longKey(qid) { return "pyide-long:" + quizCtx.assignment + ":" + qid; }
+  function longLoad(qid) {
+    try { return localStorage.getItem(longKey(qid)) || ""; } catch (e) { return ""; }
+  }
+  function longStore(qid, html) {
+    try {
+      if (html) localStorage.setItem(longKey(qid), html);
+      else localStorage.removeItem(longKey(qid));
+    } catch (e) { /* private window: pending still holds it for this page */ }
+  }
+
+  var LONG_TOOLS = [
+    ["bold", "B", "Bold"], ["italic", "I", "Italic"], ["underline", "U", "Underline"],
+    ["insertUnorderedList", "• List", "Bulleted list"],
+    ["insertOrderedList", "1. List", "Numbered list"]
+  ];
+
+  function buildLong(q, box) {
+    box.classList.add("quiz-long");
+    var bar = el("div", "quiz-long-bar");
+    var area = el("div", "quiz-long-box");
+    area.setAttribute("role", "textbox");
+    area.setAttribute("aria-multiline", "true");
+    area.setAttribute("aria-label", "Your answer");
+    area.dataset.placeholder = "Write your answer here.";
+    LONG_TOOLS.forEach(function (t) {
+      var b = el("button", "quiz-tool quiz-tool-" + t[0], t[1]);
+      b.type = "button";
+      b.title = t[2];
+      // mousedown, not click: a click moves focus to the button first and
+      // the selection the student made is gone before the command runs.
+      b.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        if (area.contentEditable !== "true") return;
+        area.focus();
+        document.execCommand(t[0], false, null);
+        changed();
+      });
+      bar.appendChild(b);
+    });
+    var foot = el("div", "quiz-foot");
+    box.appendChild(bar);
+    box.appendChild(area);
+    box.appendChild(foot);
+
+    function editable(on) {
+      area.contentEditable = on ? "true" : "false";
+      box.classList.toggle("quiz-long-locked", !on);
+    }
+    editable(false);
+
+    // The teacher's own copy: no id yet, and nothing to reveal.
+    if (!q.id) {
+      box.classList.add("quiz-preview");
+      foot.appendChild(el("span", "dim small",
+        "Students write their answer here. You mark it on the assignment's page."));
+      if (!(q.prompt.trim() && q.points > 0)) {
+        foot.appendChild(el("span", "quiz-warn small",
+          "Not answerable yet: it needs a question and points above 0."));
+      }
+      return box;
+    }
+    box.dataset.qid = q.id;
+    if (!quizCtx.assignment) {
+      foot.appendChild(el("span", "dim small",
+        "Answers are only recorded on an assignment, so this one can't be answered here."));
+      return box;
+    }
+    if (!quizCtx.signedIn) {
+      var a = el("a", "", "Sign in");
+      a.href = "/login?next=" + encodeURIComponent(location.pathname);
+      foot.appendChild(a);
+      foot.appendChild(document.createTextNode(" to answer this question."));
+      foot.classList.add("small");
+      return box;
+    }
+
+    var send = el("button", "btn btn-primary quiz-send", "Turn in answer");
+    send.type = "button";
+    send.disabled = true;
+    var note = el("span", "quiz-result small dim",
+                  "One try — once it's turned in it can't be changed.");
+    foot.appendChild(send);
+    foot.appendChild(note);
+
+    function changed() {
+      var html = area.textContent.trim() ? cleanLong(area.innerHTML) : "";
+      pending[q.id] = html;
+      longStore(q.id, html);
+      if (html.length > LONG_MAX) note.textContent = "That's too long to turn in — make it shorter.";
+    }
+    area.addEventListener("input", changed);
+    area.addEventListener("paste", function (e) {
+      var text = (e.clipboardData || window.clipboardData).getData("text/plain");
+      e.preventDefault();
+      document.execCommand("insertText", false, text);
+    });
+    area.addEventListener("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && /^[biu]$/i.test(e.key)) {
+        e.preventDefault();
+        document.execCommand({ b: "bold", i: "italic", u: "underline" }[e.key.toLowerCase()]);
+        changed();
+      }
+    });
+
+    box.paint = function () {
+      var got = answered[q.id];
+      if (!got) {
+        if (!area.innerHTML) area.innerHTML = cleanLong(pending[q.id] || longLoad(q.id));
+        editable(true);
+        send.disabled = false;
+        return;
+      }
+      area.innerHTML = cleanLong(got.response);
+      editable(false);
+      bar.hidden = true;
+      send.hidden = true;
+      longStore(q.id, "");
+      note.className = "quiz-result small";
+      note.textContent = got.graded
+        ? "Marked — " + got.earned + " of " + pointsText(got.points)
+        : "✓ Turned in — your teacher will mark it.";
+      box.classList.toggle("quiz-marked", !!got.graded);
+    };
+
+    send.addEventListener("click", function () {
+      var value = area.textContent.trim() ? cleanLong(area.innerHTML) : "";
+      if (!value) { note.textContent = "Write an answer first."; return; }
+      if (value.length > LONG_MAX) { note.textContent = "That's too long to turn in — make it shorter."; return; }
+      if (!confirm("Turn in this answer? You can't change it afterwards.")) return;
+      send.disabled = true;
+      note.textContent = "Sending…";
+      fetch("/api/quiz/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment: quizCtx.assignment,
+                               question: q.id, response: value })
+      }).then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+      }).then(function (out) {
+        if (!out.ok) {
+          send.disabled = false;
+          note.textContent = out.d.error || "That didn't go through. Try again.";
+          return;
+        }
+        answered[q.id] = out.d;
+        delete pending[q.id];
+        paintAll(q.id);
+      }).catch(function () {
+        send.disabled = false;
+        note.textContent = "No connection — your answer wasn't sent. It's kept here; try again.";
+      });
+    });
+
+    loadMine().then(function () { box.paint(); });
+    return box;
+  }
+
   /* The same question can be on the page twice — the live page shows the
      notes in their own pane and again in the mirror when the teacher opens
      the .md — and answering one must lock both. */
@@ -546,6 +741,7 @@ window.FlaskIDENotes = (function () {
   }
 
   return {
+    cleanLong: cleanLong,
     isMarkdown: isMarkdown,
     slides: slides,
     render: render,

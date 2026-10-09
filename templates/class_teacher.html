@@ -59,6 +59,32 @@
   {%- endmacro %}
 
 
+  {#  The banner: pinned above everything, never in the order. The class's
+      name, and under it whatever the teacher writes — a picture, a welcome,
+      where to find help. The same box and toolbar as a description, so
+      Add picture works the same. data-item="banner" is only for that box
+      (_describe.html keys its editor on it); the order and the row buttons
+      look at tr[data-item] only, so it can never be sent as a position. #}
+  <section class="class-banner" id="banner" data-item="banner">
+    <div class="banner-head">
+      <h1 class="banner-title">{{ course.name }}</h1>
+      <button class="linkbtn js-describe" type="button">{{ "Edit banner" if course.banner else "Add a banner" }}</button>
+    </div>
+    <div class="md desc-preview banner-body {{ 'is-empty' if not course.banner }}" data-md="{{ course.banner }}">{{ course.banner }}</div>
+    {% if not course.banner %}<p class="dim small banner-hint">Pinned to the top of the class's page, under its name:
+      a picture, a welcome, office hours. Students see it above everything else.</p>{% endif %}
+    <div class="desc-edit" hidden>
+      <textarea class="field desc-box" rows="5" maxlength="20000"
+                placeholder="A picture, a welcome, office hours… Markdown works: **bold**, - lists, [a link](https://example.com)">{{ course.banner }}</textarea>
+      <div class="grade-line">
+        <button class="btn btn-primary js-desc-save" type="button">Save</button>
+        <button class="btn js-desc-cancel" type="button">Cancel</button>
+        <label class="btn js-pic-label" title="Upload a picture into the banner">Add picture
+          <input class="js-pic" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></label>
+      </div>
+    </div>
+  </section>
+
   {#  Made here, an assignment goes on top with its assignment link and its
       live link already made, and opens in the editor to write its starter. #}
   <section class="class-tools">
@@ -125,6 +151,10 @@
               <td class="order">{{ arrows() }}</td>
               <td>
                 <a href="{{ url_for('teacher_assignment', slug=r.slug) }}">{{ r.title }}</a>
+                {#  Long responses turned in and waiting for points; marked on
+                    the assignment's page, which this opens. #}
+                {% if r.waiting %}<a class="needs-grading" href="{{ url_for('teacher_assignment', slug=r.slug) }}"
+                   title="{{ r.waiting }} long response{{ '' if r.waiting == 1 else 's' }} waiting for your points">Needs grading · {{ r.waiting }}</a>{% endif %}
                 {#  What it is — the three kinds the Add form makes — and whether
                     it was posted to Google Classroom (and to which, on hover). #}
                 <span class="kind-tag">{{ "lesson" if r.kind == 'lesson' else "code" }}</span>
@@ -217,6 +247,8 @@
         </select>
       {% endif %}
       <button class="btn" type="submit">Save</button>
+      <button id="class-duplicate" class="linkbtn" type="button"
+              title="A new class laid out like this one, with fresh copies of its assignments — for next semester">Duplicate class</button>
       <button id="class-delete" class="linkbtn danger" type="button">Delete class</button>
       <span id="class-state" class="dim small"></span>
     </form>
@@ -273,7 +305,7 @@
      The server takes the whole order or none of it, so a page out of date
      is told to reload rather than shuffling something it never showed. */
   function saveOrder() {
-    var ids = Array.prototype.map.call(document.querySelectorAll("[data-item]"),
+    var ids = Array.prototype.map.call(document.querySelectorAll("tr[data-item]"),
                                        function (el) { return Number(el.dataset.item); });
     send(api + "/order", { items: ids }).then(function (out) {
       if (!out.ok) { alert(out.d.error || "Order not saved"); location.reload(); }
@@ -361,6 +393,33 @@
     }
   });
 
+  // The banner: its own box, saved on the class rather than as an item.
+  (function () {
+    var box = document.getElementById("banner");
+    box.addEventListener("click", function (e) {
+      var t = e.target.classList;
+      if (t.contains("js-describe") || t.contains("js-desc-cancel")) {
+        var edit = box.querySelector(".desc-edit");
+        edit.hidden = !edit.hidden;
+        if (!edit.hidden) openEditor(box);
+        return;
+      }
+      if (t.contains("js-desc-save")) {
+        send(api, { banner: descText(box) }).then(function (out) {
+          if (!out.ok) { alert(out.d.error || "Not saved"); return; }
+          var view = box.querySelector(".desc-preview");
+          view.dataset.md = out.d.banner;
+          view.classList.toggle("is-empty", !out.d.banner);
+          showDescription(view, out.d.banner);
+          box.querySelector(".desc-edit").hidden = true;
+          var hint = box.querySelector(".banner-hint");
+          if (hint) hint.hidden = !!out.d.banner;
+          box.querySelector(".js-describe").textContent = out.d.banner ? "Edit banner" : "Add a banner";
+        });
+      }
+    });
+  })();
+
   (function () {
     var b = document.getElementById("roster-sync");
     if (!b) return;
@@ -406,6 +465,20 @@
         if (out.d.roster_error) alert("Saved, but the roster didn't come: " + out.d.roster_error);
         location.reload();
       });
+    });
+    /* Next semester's class: the same page with every assignment copied
+       empty. The new one opens unlinked, to choose its Classroom class. */
+    document.getElementById("class-duplicate").addEventListener("click", function () {
+      var name = prompt("Name for the new class. It gets this page's banner, groups, materials and " +
+                        "a fresh copy of every assignment — no students' work, nothing posted to " +
+                        "Classroom. Archived assignments aren't copied.",
+                        document.getElementById("class-name").value.trim() + " (copy)");
+      if (!name || !name.trim()) return;
+      state.textContent = "Copying…";
+      send(api + "/duplicate", { name: name.trim() }).then(function (out) {
+        if (!out.ok) { state.textContent = out.d.error || "Not copied"; return; }
+        location.href = out.d.url;
+      }).catch(function () { state.textContent = "Not copied — check your connection"; });
     });
     document.getElementById("class-delete").addEventListener("click", function () {
       if (!confirm("Delete this class? Its page, groups and roster go. Its assignments don't: " +

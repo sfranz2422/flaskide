@@ -24,7 +24,10 @@
 
 <header class="bar">
   <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
-  <div class="meta"><span class="pagetitle">{{ assignment.title }}</span></div>
+  <div class="meta"><span class="pagetitle">{{ assignment.title }}</span>
+    {#  Long responses turned in and not marked yet; kept up to date by Mark. #}
+    <span id="needs-grading" class="needs-grading" title="Long responses waiting for your points — they're under each student below"
+          {% if not waiting %}hidden{% endif %}>{{ waiting }} to grade</span></div>
   <div class="actions">
     {% if in_class %}
       <a class="btn" href="{{ url_for('teacher_class', class_id=in_class.id) }}">← {{ in_class.name }}</a>
@@ -242,17 +245,35 @@
                 {#  A lesson has no code to open: what the student did is their
                     answers, so they are listed, right or not, in the order
                     given. In this row, not one of its own: the period tabs
-                    hide a student's row with the one straight after it. #}
-                {% if assignment.kind == 'lesson' %}
-                  {% if s.answers %}
-                    <ol class="lesson-answers small">
-                      {% for q, a, right in s.answers %}
-                        <li class="{{ 'is-right' if right else 'is-wrong' }}">{{ '✓' if right else '✗' }}
-                          <span class="dim">{{ q }}</span> — <strong>{{ a }}</strong></li>
-                      {% endfor %}
-                    </ol>
-                  {% else %}<p class="dim small">No questions answered.</p>{% endif %}
-                {% endif %}
+                    hide a student's row with the one straight after it.
+
+                    A long response is listed for any assignment, because
+                    this is where it is marked: the answer, and a box for
+                    its points. `html` was cut down to a few tags with no
+                    attributes by the server on the way here
+                    (quiz.clean_html), which is what makes |safe safe. #}
+                {% if s.answers %}
+                  <ol class="lesson-answers small">
+                    {% for a in s.answers %}
+                      {% if a.kind == 'long' %}
+                        <li class="long-answer {{ 'is-waiting' if not a.score }}" data-qid="{{ a.qid }}" data-student="{{ s.student_id }}">
+                          <span class="dim">{{ a.prompt }}</span>
+                          <div class="long-answer-text prose">{{ a.html | safe }}</div>
+                          <div class="grade-line">
+                            <input class="field la-score" type="number" step="any" min="0" value="{{ a.score }}"
+                                   aria-label="Points for {{ s.name }}'s answer">
+                            <span class="dim">/ {{ a.points }}</span>
+                            <button class="btn la-save" type="button">Mark</button>
+                            <span class="la-state small">{{ "" if a.score else "Needs grading" }}</span>
+                          </div>
+                        </li>
+                      {% else %}
+                        <li class="{{ 'is-right' if a.right else 'is-wrong' }}">{{ '✓' if a.right else '✗' }}
+                          <span class="dim">{{ a.prompt }}</span> — <strong>{{ a.response }}</strong></li>
+                      {% endif %}
+                    {% endfor %}
+                  </ol>
+                {% elif assignment.kind == 'lesson' %}<p class="dim small">No questions answered.</p>{% endif %}
                 <textarea class="field fb-text" rows="2" maxlength="5000"
                           placeholder="Feedback for {{ s.name }} — they see it on their My work page">{{ s.feedback }}</textarea>
                 <div class="fb-foot">
@@ -348,6 +369,49 @@
       btn.disabled = false;
       state.textContent = "Not saved — check your connection";
     });
+  });
+
+  /* A long response's points. Saved on Mark, or Enter in the box; the
+     student's total and its Classroom state change with it. */
+  function markLong(li) {
+    var row = li.closest(".fb-row"), state = li.querySelector(".la-state");
+    var btn = li.querySelector(".la-save");
+    btn.disabled = true;
+    post("/api/quiz/grade", { assignment: slug, student: li.dataset.student,
+                              question: li.dataset.qid,
+                              score: li.querySelector(".la-score").value })
+      .then(function (out) {
+        btn.disabled = false;
+        if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
+        li.classList.toggle("is-waiting", !out.d.score);
+        state.textContent = out.d.score ? "Saved" : "Needs grading";
+        var q = row.querySelector(".fb-quiz");
+        if (q) q.textContent = q.textContent.replace(/^Questions [0-9.]*/, "Questions " + out.d.quiz);
+        var total = row.querySelector(".fb-total");
+        if (total) total.textContent = out.d.total;
+        paintSync(row, out.d.total, out.d.synced);
+        var tag = document.getElementById("needs-grading");
+        if (tag) {
+          tag.hidden = !out.d.waiting;
+          tag.textContent = out.d.waiting + " to grade";
+        }
+      }).catch(function () {
+        btn.disabled = false;
+        state.textContent = "Not saved — check your connection";
+      });
+  }
+  document.addEventListener("click", function (e) {
+    if (e.target.classList.contains("la-save")) markLong(e.target.closest(".long-answer"));
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && e.target.classList.contains("la-score")) {
+      e.preventDefault();
+      markLong(e.target.closest(".long-answer"));
+    }
+  });
+  document.addEventListener("input", function (e) {
+    if (!e.target.classList.contains("la-score")) return;
+    e.target.closest(".long-answer").querySelector(".la-state").textContent = "Not saved";
   });
 
   /* Only a graded assignment has a score box. Without one the key is left

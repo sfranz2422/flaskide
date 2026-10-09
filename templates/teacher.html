@@ -46,7 +46,8 @@
       <ul class="class-cards">
         {% for c in classes %}
           <li><a class="class-card" href="{{ url_for('teacher_class', class_id=c.id) }}">
-            <strong>{{ c.name }}</strong>
+            <strong>{{ c.name }}</strong>{%
+              if class_waiting.get(c.id) %} <span class="needs-grading">{{ class_waiting[c.id] }} to grade</span>{% endif %}
             <span class="dim small">{{ class_sizes.get(c.id, 0) }} assignment{{ '' if class_sizes.get(c.id, 0) == 1 else 's' }}{%
               if c.course_name %} · {{ c.course_name }}{% endif %}</span>
           </a></li>
@@ -81,7 +82,8 @@
           <tr data-slug="{{ a.slug }}" data-count="{{ counts.get(a.id, 0) }}"
               data-title="{{ a.title }}">
             <td><a href="{{ url_for('teacher_assignment', slug=a.slug) }}">{{ a.title }}</a>{%
-              if a.kind == 'lesson' %} <span class="kind-tag">lesson</span>{% endif %}</td>
+              if a.kind == 'lesson' %} <span class="kind-tag">lesson</span>{% endif %}{%
+              if waiting.get(a.id) %} <span class="needs-grading" title="Long responses waiting for your points">{{ waiting[a.id] }} to grade</span>{% endif %}</td>
             <td class="dim" title="Set {{ a.created_at.strftime('%b %d, %Y') }}">{{ a.changed.strftime('%b %d, %Y') }}</td>
             <td><strong>{{ counts.get(a.id, 0) }}</strong></td>
             <td class="right rowactions">

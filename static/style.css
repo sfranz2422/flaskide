@@ -881,7 +881,9 @@ body:not(.is-authoring) .notes-body a {
    rule above, Safari will not let anyone type into it at all — the box
    takes focus and every key does nothing, with no sign of why. */
 body:not(.is-authoring) .notes-body .quiz-text,
-.live-mirror .notes-body .quiz-text {
+.live-mirror .notes-body .quiz-text,
+body:not(.is-authoring) .notes-body .quiz-long-box,
+.live-mirror .notes-body .quiz-long-box {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -1010,6 +1012,49 @@ body:not(.is-authoring) .notes-body .quiz-text,
 .quiz-wrong .quiz-result { color: var(--red); font-weight: 600; }
 .quiz-warn { color: var(--red); }
 .fb-quiz { white-space: nowrap; }
+
+/* A long response (notes.js, buildLong): a writing box with a toolbar of
+   five buttons, no more — bold, italic, underline and two lists are what a
+   paragraph answer needs, and every tag past those is stripped anyway. */
+.prose .quiz.quiz-long .quiz-prompt { margin-bottom: 2px; }
+.quiz-long-bar { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 0; }
+.quiz-long-bar[hidden] { display: none; }
+.quiz-tool { font: inherit; font-size: 13px; min-width: 32px; padding: 3px 8px;
+             border: 1px solid var(--line); border-bottom: none;
+             border-radius: 6px 6px 0 0; background: var(--bg); color: var(--text);
+             cursor: pointer; }
+.quiz-tool:hover { background: var(--hover-bg); }
+.quiz-tool-bold { font-weight: 700; }
+.quiz-tool-italic { font-style: italic; }
+.quiz-tool-underline { text-decoration: underline; }
+.quiz-long-box { min-height: 140px; max-height: 420px; overflow-y: auto;
+                 padding: 8px 10px; border: 1px solid var(--line);
+                 border-radius: 0 6px 6px 6px; background: var(--bg);
+                 color: var(--text); line-height: 1.5; cursor: text;
+                 white-space: pre-wrap; overflow-wrap: anywhere; }
+.quiz-long-box:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.quiz-long-box:empty::before { content: attr(data-placeholder); color: var(--muted); }
+.quiz-long-locked .quiz-long-box { cursor: default; min-height: 0; }
+.quiz-long-locked .quiz-tool { cursor: default; opacity: .5; }
+.quiz-long-box ul, .quiz-long-box ol { margin: .3em 0; padding-left: 1.6em; }
+.quiz-long-box p { margin: 0 0 .5em; }
+.prose .quiz.quiz-marked { border-left-color: var(--green); }
+
+/* Waiting for the teacher: long responses turned in, not yet given points. */
+.needs-grading { display: inline-block; margin-left: 6px; padding: 1px 8px;
+                 border-radius: 999px; font-size: 12px; font-weight: 600;
+                 background: var(--accent); color: #fff; text-decoration: none;
+                 white-space: nowrap; vertical-align: middle; }
+.needs-grading[hidden] { display: none; }
+a.needs-grading:hover { filter: brightness(1.1); }
+.lesson-answers .long-answer { list-style: none; margin: 8px 0 12px -22px; }
+.long-answer-text { margin: 4px 0 6px; padding: 8px 10px; border: 1px solid var(--line);
+                    border-radius: 6px; background: var(--bg-panel); font-size: 14px;
+                    color: var(--text); max-height: 360px; overflow-y: auto; }
+.long-answer-text p { margin: 0 0 .5em; }
+.long-answer-text > :last-child { margin-bottom: 0; }
+.long-answer .la-score { width: 80px; }
+.long-answer.is-waiting .la-state { color: var(--accent); font-weight: 600; }
 #gc-topic[hidden], #gc-topic-note[hidden] { display: none; }
 .gc-link { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 4px; }
 
@@ -1727,3 +1772,15 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
    pictures and videos as thumbnails, so a row stays a row. */
 .desc-preview img, .desc-preview .video-embed, .desc-preview iframe { max-height: 110px; width: auto; }
 .desc-preview .video-embed { aspect-ratio: auto; max-width: 196px; height: 110px; }
+
+/* The class's banner (class pages): its name, and what the teacher pinned
+   under it. A picture in it runs the width of the box, like a header. */
+.class-banner { border: 1px solid var(--line); border-radius: 10px;
+                background: var(--bg-panel); padding: 16px 20px; margin: 0 0 20px; }
+.banner-head { display: flex; align-items: baseline; justify-content: space-between;
+               gap: 12px; flex-wrap: wrap; }
+.banner-title { margin: 0; font-size: 26px; }
+.banner-body:not(.is-empty) { margin-top: 10px; }
+.banner-body img { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+.banner-body > :last-child { margin-bottom: 0; }
+.class-banner .desc-edit { margin-top: 10px; }

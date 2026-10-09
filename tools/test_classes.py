@@ -693,6 +693,102 @@ check("deleting an assignment takes it off its class's page",
 check("  and lets its live lesson go rather than blocking the delete",
       q(accounts.LiveSession, assignment_id=cid) == [])
 
+# ------------------------------------------------------------ the banner
+print("\nThe banner pinned to the top")
+BANNER = "![Room 214](/img/abcdefg)\n\nWelcome to **P4**."
+r = teacher.post("/api/class/%d" % C4, json={"banner": BANNER})
+check("the teacher sets the class's banner",
+      r.status_code == 200 and r.get_json().get("banner") == BANNER, r.get_json())
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+check("  it is on their class page, above everything",
+      'id="banner" data-item="banner"' in page
+      and page.index('class="class-banner"') < page.index('id="new-item"')
+      and 'Welcome to **P4**.' in page.split('id="banner"')[1].split("</section>")[0])
+spage = kid1.get("/class/%d" % C4).get_data(as_text=True)
+check("  and on the students' page, above everything",
+      'class="class-banner"' in spage and "Welcome to **P4**." in spage
+      and spage.index('class="class-banner"') < spage.index('class="stream"'))
+check("  never sent as a place in the order (only rows are)",
+      'document.querySelectorAll("tr[data-item]")' in page
+      and 'document.querySelectorAll("[data-item]")' not in page)
+check("only the class's teacher can set it",
+      kid1.post("/api/class/%d" % C4, json={"banner": "x"}).status_code == 403
+      and other.post("/api/class/%d" % C4, json={"banner": "x"}).status_code == 404)
+check("  and not a book of it",
+      teacher.post("/api/class/%d" % C4, json={"banner": "x" * 20001}).status_code == 413)
+check("  the banner is unchanged by those", q(accounts.Course, id=C4)[0].banner == BANNER)
+
+# ---------------------------------------------------------- next semester
+print("\nDuplicating a class for next semester")
+r = teacher.post("/api/class/%d/new" % C4, json={"title": "Old quiz"})
+OLDQ = r.get_json()["slug"]
+teacher.post("/api/assignment/%s/archive" % OLDQ)
+
+
+def layout(cid):
+    """The page top to bottom, as what each row IS rather than which row:
+    (kind, title, hidden, show_live, description), an assignment's title
+    being its own."""
+    out = []
+    for r in sorted(q(accounts.ClassItem, class_id=cid), key=lambda r: (r.position, r.id)):
+        title = r.title
+        if r.assignment_id:
+            a = q(accounts.Assignment, id=r.assignment_id)[0]
+            if a.archived:
+                continue
+            title = "assignment: " + a.title
+        out.append((r.kind, title, r.hidden, r.show_live, r.description))
+    return out
+
+
+# Something of every kind and setting, so the comparison below means it.
+teacher.post("/api/class/%d/material" % C4, json={"title": "Syllabus", "description": "Read it."})
+_hello_row = q(accounts.ClassItem, assignment_id=q(accounts.Assignment, slug=HELLO)[0].id)[0].id
+teacher.post("/api/class/%d/item/%d" % (C4, _hello_row), json={"hidden": True, "show_live": False})
+before = layout(C4)
+check("  (the old class has a material, a group and a hidden assignment)",
+      any(k == "material" for k, *_ in before) and any(t == "Topic 1" for _, t, *_ in before)
+      and any(h and not sl for _, _, h, sl, _ in before), before)
+items_before = len(q(accounts.ClassItem, class_id=C4))
+r = teacher.post("/api/class/%d/duplicate" % C4, json={"name": "Intro — P4, spring"})
+d = r.get_json() or {}
+NEW = d.get("id")
+check("Duplicate makes a new class", r.status_code == 200 and NEW and NEW != C4, d)
+check("  and says where it is", d.get("url") == "/teacher/class/%s" % NEW, d)
+new = q(accounts.Course, id=NEW)[0] if NEW else None
+check("  with the banner", new is not None and new.banner == BANNER)
+check("  laid out the same: groups, materials, descriptions, hidden, order",
+      layout(NEW) == before and len(before) > 3, (layout(NEW), before))
+check("  not linked to Classroom, and no students yet",
+      new is not None and new.course_id == "" and q(accounts.Enrollment, class_id=NEW) == [])
+old_ids = {r.assignment_id for r in q(accounts.ClassItem, class_id=C4) if r.assignment_id}
+new_ids = {r.assignment_id for r in q(accounts.ClassItem, class_id=NEW) if r.assignment_id}
+check("  every assignment a new one, none shared with the old class",
+      new_ids and not (new_ids & old_ids), (new_ids, old_ids))
+check("  with nothing anyone turned in", all(
+    q(accounts.Submission, assignment_id=i) == [] for i in new_ids))
+check("  nothing posted to Classroom", all(
+    q(accounts.ClassroomPost, assignment_id=i) == [] for i in new_ids))
+check("  each with its own live link, made ahead",
+      all(len(q(accounts.LiveSession, assignment_id=i)) == 1 for i in new_ids))
+copy_of_hello = [a for i in new_ids for a in q(accounts.Assignment, id=i)
+                 if a.title == "Hello World"]
+check("  the copy has the starter and the points",
+      copy_of_hello and (copy_of_hello[0].file_map(), copy_of_hello[0].out_of)
+      == (q(accounts.Assignment, slug=HELLO)[0].file_map(), 10))
+check("  archived assignments stay behind", "assignment: Old quiz" not in
+      [t for _, t, _, _, _ in layout(NEW)] and not any(
+          a.title == "Old quiz" for i in new_ids for a in q(accounts.Assignment, id=i)))
+check("the old class is untouched, students' work and all",
+      len(q(accounts.ClassItem, class_id=C4)) == items_before
+      and q(accounts.Submission, student_id=KID1)[0].score == 8)
+check("only the class's teacher can duplicate it",
+      other.post("/api/class/%d/duplicate" % C4, json={"name": "x"}).status_code == 404
+      and kid1.post("/api/class/%d/duplicate" % C4, json={"name": "x"}).status_code == 403)
+check("  and it needs a name",
+      teacher.post("/api/class/%d/duplicate" % C4, json={"name": " "}).status_code == 400)
+check("the class page offers it", 'id="class-duplicate"' in page)
+
 # The roster: someone leaves P4.
 roster[P4].pop()
 r = teacher.post("/api/class/%d/roster" % C4)
@@ -733,6 +829,37 @@ check("  and a kind, empty: still the heading it was", _k == [("",)], _k)
 with _old.connect() as _c:
     _sl = _c.execute(sqlalchemy.text("SELECT show_live FROM class_items")).fetchall()
 check("  and its live link shown, as it always was", _sl == [(1,)], _sl)
+
+# Tables from before the banner and before long responses: the columns must
+# be added, or the class pages and every quiz answer fail after the deploy.
+_older = sqlalchemy.create_engine("sqlite:///" + os.path.join(tempfile.mkdtemp(), "older.db"))
+with _older.begin() as _c:
+    _c.execute(sqlalchemy.text(
+        "CREATE TABLE classes (id INTEGER PRIMARY KEY, app VARCHAR(16) NOT NULL, "
+        "teacher_id INTEGER NOT NULL, name VARCHAR(200) NOT NULL, "
+        "course_id VARCHAR(32) NOT NULL, course_name VARCHAR(200) NOT NULL, "
+        "roster_at DATETIME, created_at DATETIME NOT NULL)"))
+    _c.execute(sqlalchemy.text(
+        "INSERT INTO classes VALUES (1, 'pyide', 1, 'P4', '', '', NULL, '2026-10-08 10:00:00')"))
+    _c.execute(sqlalchemy.text(
+        "CREATE TABLE quiz_answers (id INTEGER PRIMARY KEY, assignment_id INTEGER NOT NULL, "
+        "student_id INTEGER NOT NULL, qid VARCHAR(16) NOT NULL, response TEXT NOT NULL, "
+        "answered_at DATETIME NOT NULL)"))
+    _c.execute(sqlalchemy.text(
+        "INSERT INTO quiz_answers VALUES (1, 1, 1, 'abc', '5', '2026-10-08 10:00:00')"))
+accounts.create_all(_older)
+def _column(sql):
+    try:
+        with _older.connect() as _c:
+            return _c.execute(sqlalchemy.text(sql)).fetchall()
+    except sqlalchemy.exc.OperationalError as e:
+        return str(e.orig)
+
+
+_b = _column("SELECT banner FROM classes")
+_s = _column("SELECT score FROM quiz_answers")
+check("an older classes table gets a banner, empty", _b == [("",)], _b)
+check("an older quiz_answers table gets a score, not marked", _s == [(None,)], _s)
 
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"

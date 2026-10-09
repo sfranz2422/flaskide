@@ -1639,10 +1639,58 @@ def _quiz_earned(db, assignment_id):
     earned = {}
     for a in db.query(accounts.QuizAnswer).filter_by(
             assignment_id=assignment_id).all():
-        key = keys.get(a.qid)
-        got = key.points if key is not None and _mark(key, a.response) else 0.0
-        earned[a.student_id] = round(earned.get(a.student_id, 0.0) + got, 2)
+        earned[a.student_id] = round(earned.get(a.student_id, 0.0)
+                                     + _earned_one(keys.get(a.qid), a), 2)
     return earned
+
+
+def _earned_one(key, answer):
+    """One answer's points. A long response's are what the teacher gave it —
+    0 until they have, and not capped at the question's points, the same as
+    a score (extra credit is a thing)."""
+    if key is None:
+        return 0.0
+    if key.kind == "long":
+        return answer.score or 0.0
+    return key.points if _mark(key, answer.response) else 0.0
+
+
+def _answer_reply(key, answer, **more):
+    """What the student's page is told about one of their answers."""
+    if key is not None and key.kind == "long":
+        out = {"kind": "long", "response": quiz.clean_html(answer.response),
+               "graded": answer.score is not None, "correct": None,
+               "points": key.points, "earned": answer.score or 0}
+    else:
+        right = key is not None and _mark(key, answer.response)
+        points = key.points if key is not None else 0
+        out = {"response": answer.response, "correct": right,
+               "points": points, "earned": points if right else 0}
+    out.update(more)
+    return out
+
+
+#: A long response is a few paragraphs of HTML; a short answer is a word.
+LONG_RESPONSE_MAX = 20000
+
+
+def _ungraded(db, assignment_ids):
+    """{assignment id: long responses waiting to be marked}, for the class
+    page's "needs grading". Only from students who have turned the work in:
+    a half-done lesson is not yet the teacher's to mark, and the page where
+    answers are marked lists turned-in work only — counting the others
+    would show a tag the teacher could never clear."""
+    if not assignment_ids:
+        return {}
+    Q, A, S = accounts.QuizQuestion, accounts.QuizAnswer, accounts.Submission
+    rows = (db.query(A.assignment_id, func.count(A.id))
+              .join(Q, (Q.assignment_id == A.assignment_id) & (Q.qid == A.qid))
+              .join(S, (S.assignment_id == A.assignment_id)
+                    & (S.student_id == A.student_id))
+              .filter(A.assignment_id.in_(list(assignment_ids)),
+                      Q.kind == "long", A.score.is_(None))
+              .group_by(A.assignment_id))
+    return dict(rows)
 
 
 def _total(score, earned):
@@ -1682,7 +1730,6 @@ def quiz_answer():
         response = data.get("response")
         if not isinstance(response, str) or not response.strip():
             return jsonify(error="Answer the question first."), 400
-        response = response.strip()[:2000]
 
         def find():
             return db.query(accounts.QuizQuestion).filter_by(
@@ -1697,10 +1744,22 @@ def quiz_answer():
             return jsonify(error="This question has changed since the page "
                                  "loaded. Reload to get the new one."), 404
 
+        if key.kind == "long":
+            # Cleaned here whatever the page did: it is drawn as markup on
+            # the teacher's screen (quiz.clean_html says why).
+            if len(response) > LONG_RESPONSE_MAX * 2:
+                return jsonify(error="That answer is too long to turn in."), 413
+            response = quiz.clean_html(response)
+            if not quiz.plain_text(response):
+                return jsonify(error="Answer the question first."), 400
+            if len(response) > LONG_RESPONSE_MAX:
+                return jsonify(error="That answer is too long to turn in."), 413
+        else:
+            response = response.strip()[:2000]
+
         if user.id == item.teacher_id:
-            right = _mark(key, response)
-            return jsonify(correct=right, earned=key.points if right else 0,
-                           points=key.points, response=response, practice=True)
+            return jsonify(_answer_reply(
+                key, accounts.QuizAnswer(response=response), practice=True))
 
         had = db.query(accounts.QuizAnswer).filter_by(
             assignment_id=item.id, student_id=user.id, qid=qid).first()
@@ -1720,10 +1779,7 @@ def quiz_answer():
                     assignment_id=item.id, student_id=user.id, qid=qid).first()
                 if had is None:
                     return jsonify(error="That answer wasn't saved. Try again."), 500
-        right = _mark(key, had.response)
-        return jsonify(correct=right, earned=key.points if right else 0,
-                       points=key.points, response=had.response,
-                       already=had.response != response)
+        return jsonify(_answer_reply(key, had, already=had.response != response))
     finally:
         db.close()
 
@@ -1742,15 +1798,49 @@ def quiz_mine(slug):
             return jsonify(error="No such assignment."), 404
         keys = {k.qid: k for k in db.query(accounts.QuizQuestion)
                 .filter_by(assignment_id=item.id).all()}
-        out = {}
-        for a in db.query(accounts.QuizAnswer).filter_by(
-                assignment_id=item.id, student_id=user.id).all():
-            key = keys.get(a.qid)
-            right = key is not None and _mark(key, a.response)
-            points = key.points if key is not None else 0
-            out[a.qid] = {"response": a.response, "correct": right,
-                          "points": points, "earned": points if right else 0}
+        out = {a.qid: _answer_reply(keys.get(a.qid), a)
+               for a in db.query(accounts.QuizAnswer).filter_by(
+                   assignment_id=item.id, student_id=user.id).all()}
         return jsonify(answers=out, closed=bool(item.closed))
+    finally:
+        db.close()
+
+
+@app.post("/api/quiz/grade")
+def quiz_grade():
+    """The teacher's points for one student's long response. Empty takes the
+    mark back to "not marked yet". Answers the student's new total, which is
+    what the assignment's page shows and Sync sends."""
+    db = SessionLocal()
+    try:
+        data = request.get_json(silent=True) or {}
+        user, item, bounce = _own_assignment(db, clean(data.get("assignment"), 16))
+        if bounce:
+            return bounce
+        try:
+            student_id = int(data.get("student"))
+        except (TypeError, ValueError):
+            return jsonify(error="No such answer."), 404
+        qid = str(data.get("question", ""))[:16]
+        key = db.query(accounts.QuizQuestion).filter_by(
+            assignment_id=item.id, qid=qid).first()
+        row = db.query(accounts.QuizAnswer).filter_by(
+            assignment_id=item.id, student_id=student_id, qid=qid).first()
+        if key is None or row is None or key.kind != "long":
+            return jsonify(error="No such answer."), 404
+        score, why = _parse_score(data.get("score"))
+        if why:
+            return jsonify(error=why), 400
+        row.score = score
+        db.commit()
+        earned = _quiz_earned(db, item.id).get(student_id)
+        sub = db.query(accounts.Submission).filter_by(
+            assignment_id=item.id, student_id=student_id).first()
+        total = _total(sub.score if sub else None, earned)
+        return jsonify(ok=True, score=_score_text(score), quiz=_score_text(earned),
+                       total=_score_text(total),
+                       synced=bool(sub and _is_synced(sub, total)),
+                       waiting=_ungraded(db, [item.id]).get(item.id, 0))
     finally:
         db.close()
 
@@ -1934,10 +2024,16 @@ def _lesson_page(db, item, user, live=None):
     return render_template("lesson.html", **ctx)
 
 
-def _lesson_answers(db, item):
-    """{student id: [(question, their answer, right?)]}, for the teacher's
-    page, which shows a lesson's answers where a coding assignment has an
-    Open link to the code."""
+def _answers_for_teacher(db, item):
+    """{student id: [answer, ...]} in the order given, for the teacher's page.
+
+    A lesson lists every answer, where a coding assignment has an Open link
+    to the code. Any assignment lists its long responses, because those are
+    marked there. Each is a dict: `prompt` (its first line), `response`,
+    `kind`, `right`, and for a long one its `points`, `score` and `html` —
+    the answer cleaned again on the way out, so a row stored before the
+    cleaning existed, or by some route that forgot it, still cannot put
+    markup of its own on the teacher's screen."""
     keys = {k.qid: k for k in db.query(accounts.QuizQuestion)
             .filter_by(assignment_id=item.id).all()}
     out = {}
@@ -1945,9 +2041,17 @@ def _lesson_answers(db, item):
                 .order_by(accounts.QuizAnswer.answered_at).all()):
         key = keys.get(a.qid)
         prompt = (key.prompt if key is not None else "A question since changed")
-        prompt = " ".join(prompt.split("\n")[0].split())[:120]
-        out.setdefault(a.student_id, []).append(
-            (prompt, a.response, key is not None and _mark(key, a.response)))
+        kind = key.kind if key is not None else ""
+        one = {"qid": a.qid, "kind": kind,
+               "prompt": " ".join(prompt.split("\n")[0].split())[:120]}
+        if kind == "long":
+            one.update(html=quiz.clean_html(a.response), points=_score_text(key.points),
+                       score=_score_text(a.score), right=False,
+                       response=quiz.plain_text(a.response))
+        else:
+            one.update(response=a.response,
+                       right=key is not None and _mark(key, a.response))
+        out.setdefault(a.student_id, []).append(one)
     return out
 
 
@@ -1972,6 +2076,10 @@ def teacher_home():
         # An assignment in a class is listed on the class's page, not here.
         in_class = {r.assignment_id for r in db.query(accounts.ClassItem.assignment_id)
                     .filter(accounts.ClassItem.assignment_id.isnot(None))}
+        # "To grade", on a class's card and on the rows below: long
+        # responses turned in and waiting for points, archived ones too —
+        # archiving hides an assignment, it doesn't mark it.
+        waiting = _ungraded(db, [a.id for a in items])
         items = [a for a in items if a.id not in in_class]
         live = [a for a in items if not a.archived]
         filed = [a for a in items if a.archived]
@@ -1986,6 +2094,11 @@ def teacher_home():
                        .filter(accounts.ClassItem.assignment_id.isnot(None),
                                accounts.ClassItem.class_id.in_([c.id for c in classes] or [0]))
                        .group_by(accounts.ClassItem.class_id).all())
+        class_waiting = {}
+        for cid, aid in (db.query(accounts.ClassItem.class_id, accounts.ClassItem.assignment_id)
+                           .filter(accounts.ClassItem.assignment_id.in_(list(waiting) or [0]))):
+            class_waiting[cid] = class_waiting.get(cid, 0) + waiting[aid]
+        ctx.update(waiting=waiting, class_waiting=class_waiting)
         ctx.update(assignments=live, archived=filed, counts=counts,
                    classes=classes, class_sizes=sizes,
                    show_archived=show_archived,
@@ -2219,7 +2332,7 @@ def teacher_assignment(slug):
                   .order_by(accounts.User.name).all())
         earned = _quiz_earned(db, item.id)
         possible = _quiz_possible(item)
-        answers = _lesson_answers(db, item) if _is_lesson(item) else {}
+        answers = _answers_for_teacher(db, item)
         handed_in = [{
             "name": student.display_name(),
             "email": student.email,
@@ -2229,7 +2342,9 @@ def teacher_assignment(slug):
             # listed instead.
             "url": (url_for("view_shared", slug=sub.snippet_slug)
                     if sub.snippet_slug else ""),
-            "answers": answers.get(student.id, []),
+            "answers": [a for a in answers.get(student.id, [])
+                        if _is_lesson(item) or a["kind"] == "long"],
+            "student_id": student.id,
             "id": sub.id,
             "feedback": sub.feedback or "",
             "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
@@ -2283,6 +2398,7 @@ def teacher_assignment(slug):
                    live_waiting=_waiting(lesson))
         ctx.update(quiz_count=len(possible),
                    quiz_points=_score_text(sum(q["points"] for q in possible)))
+        ctx.update(waiting=_ungraded(db, [item.id]).get(item.id, 0))
         ctx.update(assignment=item, handed_in=handed_in, not_yet=not_yet,
                    share_url=url_for("open_assignment", slug=item.slug,
                                      _external=True, _scheme=_scheme()))
@@ -3457,8 +3573,8 @@ def create_class():
 
 @app.post("/api/class/<int:class_id>")
 def update_class(class_id):
-    """Rename a class, or link it to a different Classroom course (which
-    fetches that course's roster)."""
+    """Rename a class, set the banner at the top of its page, or link it to a
+    different Classroom course (which fetches that course's roster)."""
     db = SessionLocal()
     try:
         user, course, bounce = _own_class(db, class_id)
@@ -3470,6 +3586,13 @@ def update_class(class_id):
             if not name:
                 return jsonify(error="Give the class a name."), 400
             course.name = name
+        if "banner" in data:
+            text = data.get("banner")
+            if not isinstance(text, str):
+                return jsonify(error="That isn't a banner."), 400
+            if len(text) > MAX_DESCRIPTION:
+                return jsonify(error="That banner is too long."), 413
+            course.banner = text.strip()
         roster_error = ""
         if "course" in data:
             error = _link_course(db, user, course, str(data.get("course") or ""))
@@ -3482,7 +3605,7 @@ def update_class(class_id):
                 db.query(accounts.Enrollment).filter_by(class_id=course.id).delete()
         db.commit()
         return jsonify(ok=True, name=course.name, course_name=course.course_name,
-                       roster_error=roster_error)
+                       banner=course.banner, roster_error=roster_error)
     finally:
         db.close()
 
@@ -3502,6 +3625,70 @@ def delete_class(class_id):
         db.delete(course)
         db.commit()
         return jsonify(ok=True)
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>/duplicate")
+def duplicate_class(class_id):
+    """A new class laid out exactly like this one, for next semester or next
+    year: its banner, groups, materials and descriptions, in the same order,
+    hidden ones still hidden, and a fresh copy of every assignment.
+
+    WHY NOT JUST RELINK THE OLD CLASS TO THE NEW ROSTER. Relinking swaps
+    who is enrolled, and nothing else: every assignment would still hold
+    last year's turned-in work, scores and question answers, its results
+    page would list both years mixed together, closed ones would stay
+    closed, and Sync would go on sending grades to coursework in last
+    year's Classroom course. A copy starts every assignment empty — its own
+    links, its own live lesson, nothing posted to Classroom — exactly as
+    Copy to another class does for one assignment, and leaves the old class
+    and everything students did in it untouched.
+
+    Archived assignments are left behind: archiving is how a teacher said
+    they are done with one. The new class has no Classroom course and no
+    students until one is chosen on its page."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        name = clean((request.get_json(silent=True) or {}).get("name"), 200)
+        if not name:
+            return jsonify(error="Give the new class a name."), 400
+        new = accounts.Course(app=APP_NAME, teacher_id=user.id, name=name,
+                              banner=course.banner or "")
+        db.add(new)
+        db.commit()
+        rows = (db.query(accounts.ClassItem).filter_by(class_id=course.id)
+                  .order_by(accounts.ClassItem.position, accounts.ClassItem.id).all())
+        ids = [r.assignment_id for r in rows if r.assignment_id]
+        items = ({a.id: a for a in db.query(accounts.Assignment)
+                  .filter(accounts.Assignment.id.in_(ids))} if ids else {})
+        copied = 0
+        for at, r in enumerate(rows):
+            row = accounts.ClassItem(class_id=new.id, kind=r.kind, title=r.title,
+                                     hidden=r.hidden, show_live=r.show_live,
+                                     description=r.description or "", position=at)
+            if r.assignment_id:
+                item = items.get(r.assignment_id)
+                if item is None or item.archived:
+                    continue
+                copy = accounts.Assignment(
+                    slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
+                    teacher_id=user.id, title=item.title, kind=item.kind,
+                    code=item.code, files=item.files, out_of=item.out_of)
+                db.add(copy)
+                db.commit()
+                _store_quiz_keys(db, copy.id, copy.file_map().values())
+                row.assignment_id = copy.id
+                copied += 1
+            db.add(row)
+            db.commit()
+            if row.assignment_id:
+                _lesson_for(db, user, copy)     # its live link, made ahead
+        return jsonify(ok=True, id=new.id, assignments=copied,
+                       url=url_for("teacher_class", class_id=new.id))
     finally:
         db.close()
 
@@ -3854,6 +4041,8 @@ def _class_rows(db, course, user=None, student=False):
                     .filter(accounts.ClassroomPost.assignment_id.in_(ids))
                     .order_by(accounts.ClassroomPost.id)):
             posted.setdefault(p.assignment_id, []).append(p.course_name or "a class")
+    # Long responses turned in and not marked: "needs grading" on the row.
+    waiting = _ungraded(db, ids) if not student else {}
     counts = {}
     if not student and ids:
         for aid, n in (db.query(accounts.Submission.assignment_id, func.count())
@@ -3889,6 +4078,7 @@ def _class_rows(db, course, user=None, student=False):
                "on_air": bool(live and not live.ended),
                "show_live": bool(r.show_live),
                "out_of": a.out_of or "", "count": counts.get(a.id, 0),
+               "waiting": waiting.get(a.id, 0),
                # A post from the first version still in the assignment's own
                # columns counts too; its page moves it into ClassroomPost.
                "posted": posted.get(a.id) or ([a.classroom_course_name or "a class"]

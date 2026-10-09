@@ -42,6 +42,13 @@
       assignments are left out, and grades are each student's own.</p>
   {% endif %}
 
+  {#  The banner the teacher pinned to the top: the class's name, and their
+      picture or welcome under it, rendered like a description below. #}
+  <section class="class-banner">
+    <h1 class="banner-title">{{ course.name }}</h1>
+    {% if course.banner %}<div class="md banner-body" data-md="{{ course.banner }}">{{ course.banner }}</div>{% endif %}
+  </section>
+
   {#  The class's page as the teacher arranged it: a group is a heading with
       its own words under it; an assignment is a card — its name (which opens
       what they last turned in, or their copy), where they stand, the

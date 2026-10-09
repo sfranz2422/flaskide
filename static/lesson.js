@@ -60,12 +60,21 @@
     });
   }
 
+  /* Whether a key is someone typing an answer, which the slide keys must
+     leave alone. A long response's box is a contenteditable <div>, not an
+     input: checking tag names alone, ← and → in the middle of a paragraph
+     turned the slide and took the half-written answer off the screen. */
+  function typing(e) {
+    var t = e.target || {};
+    return /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || !!t.isContentEditable;
+  }
+
   // ------------------------------------------------ at their own pace
   if (!L.live) {
     slides.show(L.notes);
     // ← and → move through the slides, unless they are typing an answer.
     document.addEventListener("keydown", function (e) {
-      if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target || {}).tagName || "")) return;
+      if (typing(e)) return;
       if (e.key === "ArrowRight") slides.go(slides.at() + 1);
       if (e.key === "ArrowLeft") slides.go(slides.at() - 1);
     });
@@ -94,7 +103,7 @@
     paintBack();
   });
   document.addEventListener("keydown", function (e) {
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target || {}).tagName || "")) return;
+    if (typing(e)) return;
     var was = slides.at();
     if (e.key === "ArrowRight") slides.go(was + 1);
     if (e.key === "ArrowLeft") slides.go(was - 1);

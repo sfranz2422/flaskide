@@ -15,9 +15,20 @@ A teacher writes a question in the markdown notes as a fenced block:
     answer: while
     ```
 
+    ```quiz
+    Explain, in a paragraph, why a while loop needs its condition to change.
+    type: long
+    points: 5
+    ```
+
 Choices make it multiple choice and `[x]` marks the right one (more than one
 `[x]` means any of them counts). No choices makes it short answer, and every
-`answer:` line is one accepted answer. `points:` defaults to 1. Code can go in
+`answer:` line is one accepted answer. `type: long` (or `type: essay`) makes
+it a long response: the student writes in a box with a small formatting
+toolbar, and the teacher marks it by hand on the assignment's page — there
+is no key, so choices and `answer:` lines in it are ignored. Until the
+teacher gives it a score it counts 0, and the class page says the
+assignment needs grading. `points:` defaults to 1. Code can go in
 the question inside a `~~~` fence, which the outer ``` fence leaves alone, and
 nothing inside that inner fence is read as a choice or an answer.
 
@@ -41,12 +52,15 @@ exactly as `parse` does; test_quiz.py runs both on the same blocks.
 """
 import hashlib
 import re
+from html import escape
+from html.parser import HTMLParser
 
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 CHOICE = re.compile(r"^[-*+]\s+\[([ xX])\]\s+(.*)$")
 ANSWER = re.compile(r"^answer\s*:\s*(.*)$", re.I)
 POINTS = re.compile(r"^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$", re.I)
 QID = re.compile(r"^id\s*:\s*([0-9a-f]{12})\s*$")
+LONG = re.compile(r"^type\s*:\s*(long|essay)\s*$", re.I)
 
 
 def parse(body):
@@ -62,7 +76,7 @@ def parse(body):
     """
     lines = str(body or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
     prompt, choices, correct, answers = [], [], [], []
-    points, given_id, inner = 1.0, "", None
+    points, given_id, inner, long_ = 1.0, "", None, False
     for ln in lines:
         s = ln.strip()
         f = FENCE.match(ln)
@@ -95,16 +109,24 @@ def parse(body):
         if m:
             given_id = m.group(1)
             continue
+        if LONG.match(s):
+            long_ = True
+            continue
         prompt.append(ln)
     while prompt and not prompt[0].strip():
         prompt.pop(0)
     while prompt and not prompt[-1].strip():
         prompt.pop()
-    kind = "choice" if choices else "text"
+    if long_:
+        # Marked by hand, so there is no key to keep — and a stray `[x]` or
+        # `answer:` must not become one, or redact would print it back out.
+        kind, choices, correct, answers = "long", [], [], []
+    else:
+        kind = "choice" if choices else "text"
     text = "\n".join(prompt)
     has_key = bool(correct) if kind == "choice" else bool(answers)
-    usable = bool(text.strip()) and has_key and points > 0 and (
-        kind == "text" or len(choices) >= 2)
+    usable = bool(text.strip()) and points > 0 and (
+        kind == "long" or (has_key and (kind == "text" or len(choices) >= 2)))
     qid = hashlib.sha1("\0".join([kind, text] + choices).encode("utf-8")
                        ).hexdigest()[:12]
     return {
@@ -163,6 +185,8 @@ def redact(md):
     A block that already has an `id:` and no key is one this has redacted
     before, and is left exactly as it is — otherwise the second pass, finding
     no key, would drop the id and the question would stop being answerable.
+    A long response never has a key, so this is the only thing telling the
+    teacher's copy (no id yet) from one already redacted.
     """
     if not md or "quiz" not in md:
         return md
@@ -180,6 +204,8 @@ def redact(md):
         if q["qid"]:
             lines.append("id: " + q["qid"])
         lines.append("points: " + _points_text(q["points"]))
+        if q["kind"] == "long":
+            lines.append("type: long")
         if q["prompt"]:
             lines.extend(q["prompt"].split("\n"))
         lines.extend("- [ ] " + c for c in q["choices"])
@@ -229,7 +255,80 @@ def normalize(text):
 
 
 def is_correct(kind, correct, answers, response):
+    """Right or wrong, for the kinds a machine can mark. A long response is
+    never "correct" here: its points are the teacher's score on the answer."""
+    if kind == "long":
+        return False
     if kind == "choice":
         return response in correct
     want = {normalize(a) for a in answers}
     return normalize(response) in want
+
+
+# ------------------------------------------------------------ long responses
+#
+# A long response arrives as HTML from the student's formatting toolbar, and
+# is shown to the teacher as HTML on the assignment's page. That makes it the
+# one place a student's text is drawn as markup on the teacher's screen, so
+# it is cut down to a handful of tags with NO attributes at all — no href, no
+# style, no on-anything — when it is saved AND again whenever it is shown.
+# The browser sanitises too (notes.js), but a request can be made without the
+# browser, and a missed step here would fail silently: the page would look
+# exactly the same with a script in it.
+
+LONG_TAGS = {"p", "div", "br", "b", "strong", "i", "em", "u", "ul", "ol", "li"}
+_DROP_WITH_CONTENT = {"script", "style", "template", "iframe", "object",
+                      "textarea", "title", "head"}
+_VOID = {"br"}
+
+
+class _Cleaner(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out, self.open, self.skip = [], [], 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _DROP_WITH_CONTENT:
+            self.skip += 1
+        elif not self.skip and tag in LONG_TAGS:
+            self.out.append("<%s>" % tag)
+            if tag not in _VOID:
+                self.open.append(tag)
+
+    def handle_startendtag(self, tag, attrs):
+        if not self.skip and tag in _VOID:
+            self.out.append("<br>")
+
+    def handle_endtag(self, tag):
+        if tag in _DROP_WITH_CONTENT:
+            self.skip = max(0, self.skip - 1)
+        elif not self.skip and tag in self.open:
+            # Close everything opened since, so the nesting stays whole.
+            while self.open:
+                t = self.open.pop()
+                self.out.append("</%s>" % t)
+                if t == tag:
+                    break
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.out.append(escape(data, quote=False))
+
+
+def clean_html(html):
+    """A long response as it may be stored and shown: only LONG_TAGS, no
+    attributes, every tag closed, text escaped."""
+    p = _Cleaner()
+    p.feed(str(html or ""))
+    p.close()
+    return "".join(p.out) + "".join("</%s>" % t for t in reversed(p.open))
+
+
+def plain_text(html):
+    """What a long response says, without its tags: for "is it empty?", and
+    for anywhere it is shown as a line of text."""
+    text = re.sub(r"<(br|/p|/div|/li)>", " ", clean_html(html))
+    text = re.sub(r"<[^>]*>", "", text)
+    for a, b in (("&lt;", "<"), ("&gt;", ">"), ("&amp;", "&")):
+        text = text.replace(a, b)
+    return " ".join(text.split())
