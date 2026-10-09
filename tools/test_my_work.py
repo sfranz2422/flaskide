@@ -249,7 +249,7 @@ check("a lesson with no assignment has Save",
 
 live_js = open(os.path.join(FLASKIDE, "static", "live.js")).read()
 check("an assignment lesson saves itself on the first keystroke",
-      re.search(r"function autosave\(\) \{\s*(if \(stale\) return;\s*)?"
+      re.search(r"function autosave\((turn)?\) \{\s*(if \(stale\) return;\s*)?"
                 r"if \(!draftSlug\) \{ keepQuietly\(\);",
                 live_js) is not None)
 check("  and Turn in does not wait for a Save that no longer exists",

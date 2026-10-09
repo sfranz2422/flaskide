@@ -42,6 +42,12 @@
 
   // ---------------------------------------------------------- turn in
   var turnBtn = $("lesson-turnin"), turned = $("lesson-turned");
+  // Answering a question turns the lesson in (notes.js, _auto_turn_in).
+  document.addEventListener("pyide:turnedin", function (e) {
+    if (!turnBtn) return;
+    turned.textContent = "Turned in " + ((e.detail && e.detail.when) || "");
+    turnBtn.textContent = "Turn in again";
+  });
   if (turnBtn) {
     turnBtn.addEventListener("click", function () {
       turnBtn.disabled = true;

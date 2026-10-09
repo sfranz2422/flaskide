@@ -363,9 +363,10 @@ check("the dashboard shows the questions' points beside the score",
       re.findall(r"Questions [^<]*", page))
 check("  and how many questions the notes have",
       "<strong>2 questions</strong>" in page and "<strong>3 points</strong>" in page)
-names = page.split("Started but not turned in")[-1].split("</section>")[0]
-check("  a student who only answered live is listed, with their points",
-      "B Student" in names and "questions 1/3" in names, names.strip()[:200])
+turned = page.split("Turned in <span")[1].split("</section>")[0]
+check("  a student who only answered live is turned in by answering, with their points",
+      "B Student" in turned and re.search(r"B Student.*?Questions 1/3", turned, re.S),
+      re.findall(r"Questions [^<]*", turned))
 
 my = kid.get("/my").get_data(as_text=True)
 check("My work shows the total and where it came from",
@@ -503,7 +504,17 @@ check("the page is told it is waiting for the teacher",
       mine.get(lq["qid"], {}).get("graded") is False, repr(mine))
 
 page = teacher.get("/teacher/class/%d" % CLASS).get_data(as_text=True)
-check("not turned in yet: no 'needs grading' (it's not the teacher's yet)",
+check("answering turned it in, so it needs grading straight away",
+      "Needs grading · 1" in page)
+# An answer from before answering turned work in, never turned in: not the
+# teacher's to mark yet, and not counted.
+db = P.SessionLocal()
+essay_id = db.query(accounts.Assignment).filter_by(slug=ESSAY).first().id
+db.query(accounts.Submission).filter_by(assignment_id=essay_id, student_id=KID).delete()
+db.commit()
+db.close()
+page = teacher.get("/teacher/class/%d" % CLASS).get_data(as_text=True)
+check("  but an answer never turned in (from before) doesn't count",
       "Needs grading" not in page)
 
 kid.get("/a/" + ESSAY)
@@ -654,6 +665,122 @@ listed = page.split("lesson-answers")[1].split("</ol>")[0] if "lesson-answers" i
 check("the teacher's list shows a part-right answer as part-right, readably",
       'class="is-partial"' in listed and "ocelot cat · papaya" in listed
       and "penguin → ICEFLOEHOME; camel → SKYHOME; otter → RIVERHOME" in listed)
+
+# ------------------------------------------------------- turned in for them
+print("\nTurned in for them")
+KID5 = add_user("s5", "kid5@example.org", "E Student")
+kid5 = client(KID5)
+r = teacher.post("/api/assignment", json={
+    "title": "Auto",
+    "files": {ENTRY: 'from flask import Flask\n', "notes.md": "```quiz\nPick b\n- [ ] a\n- [x] b\n```\n"}})
+AUTO = r.get_json()["slug"]
+pick = quiz.keys("```quiz\nPick b\n- [ ] a\n- [x] b\n```\n")[0]["qid"]
+kid5.get("/a/" + AUTO)
+
+
+def auto_state():
+    db = P.SessionLocal()
+    try:
+        a = db.query(accounts.Assignment).filter_by(slug=AUTO).first()
+        d = db.query(accounts.Draft).filter_by(owner_id=KID5, assignment_id=a.id).first()
+        sub = db.query(accounts.Submission).filter_by(assignment_id=a.id, student_id=KID5).first()
+        snap = (db.query(P.Project).filter_by(slug=sub.snippet_slug).first()
+                if sub and sub.snippet_slug else None)
+        return d, sub, snap
+    finally:
+        db.close()
+
+
+d, sub, _ = auto_state()
+check("opening the assignment turns nothing in", d is not None and sub is None)
+st, got = answer(kid5, pick, "b", slug=AUTO)
+d, sub, snap = auto_state()
+check("answering a question turns the work in", st == 200 and sub is not None
+      and got.get("turned_in_at"))
+check("  with their work as it stands", snap is not None and snap.file_map() == d.file_map())
+check("  and no attempt counted", sub is not None and sub.times_submitted == 0)
+
+
+def save(code, **more):
+    # This editor keeps the work in its entry file, not in a code field.
+    files = json.loads(d.files)
+    files[ENTRY] = code
+    body = {"files": files}
+    body.update(more)
+    return kid5.post("/api/draft/" + d.slug, json=body)
+
+
+first = sub.snippet_slug
+r = save("print('more')\n")
+_, sub, _ = auto_state()
+check("an ordinary autosave turns nothing in", r.status_code == 200
+      and sub.snippet_slug == first and not r.get_json().get("turned_in_at"))
+r = save("print('more')\n", turn_in=True)
+_, sub, snap = auto_state()
+check("the page's two-minute save turns the changed work in",
+      r.get_json().get("turned_in_at") and sub.snippet_slug != first
+      and snap.file_map().get(ENTRY) == "print('more')\n")
+check("  still no attempt counted", sub.times_submitted == 0)
+second, second_at = sub.snippet_slug, sub.submitted_at
+r = save("print('more')\n", turn_in=True)
+_, sub, _ = auto_state()
+check("  nothing changed: no new snapshot, and the time doesn't move",
+      sub.snippet_slug == second and sub.submitted_at == second_at,
+      "a moved time says 'turned in again since your feedback' about nothing")
+d, _, _ = auto_state()
+r = kid5.post("/api/submit", json={"draft": d.slug, "files": json.loads(d.files)})
+check("pressing Turn in afterwards is their first attempt",
+      r.status_code == 200 and r.get_json().get("again") is False, r.get_json())
+
+r = teacher.post("/api/assignment", json={
+    "title": "Mine", "files": {ENTRY: 'from flask import Flask\n', "notes.md": "```quiz\nPick b\n- [ ] a\n- [x] b\n```\n"}})
+MINE = r.get_json()["slug"]
+answer(teacher, pick, "b", slug=MINE)
+# Their own preview copy, autosaving with turn_in as a student's page would.
+teacher.get("/a/%s?preview=1" % MINE)
+db = P.SessionLocal()
+_tdraft = db.query(accounts.Draft).filter_by(owner_id=TEACHER).join(
+    accounts.Assignment, accounts.Assignment.id == accounts.Draft.assignment_id).filter(
+    accounts.Assignment.slug == MINE).first()
+db.close()
+r = teacher.post("/api/draft/" + _tdraft.slug, json={"files": {ENTRY: 'from flask import Flask\n'}, "turn_in": True})
+check("  (their preview copy saved, as a student's would)", r.status_code == 200, r.status_code)
+db = P.SessionLocal()
+_mine = db.query(accounts.Submission).join(
+    accounts.Assignment, accounts.Assignment.id == accounts.Submission.assignment_id).filter(
+    accounts.Assignment.slug == MINE).count()
+db.close()
+check("a teacher trying their own assignment turns nothing in", _mine == 0)
+
+db = P.SessionLocal()
+db.query(accounts.Assignment).filter_by(slug=AUTO).update({"closed": 1})
+db.commit()
+db.close()
+d, sub, _ = auto_state()
+before = (sub.snippet_slug, sub.submitted_at)
+r = save("print('after closing')\n", turn_in=True)
+_, sub, _ = auto_state()
+check("closed: the work still saves, and nothing is turned in",
+      r.status_code == 200 and not r.get_json().get("turned_in_at")
+      and (sub.snippet_slug, sub.submitted_at) == before)
+
+account_js = open(os.path.join(PYIDE, "static", "account.js")).read()
+lesson_js = open(os.path.join(PYIDE, "static", "lesson.js")).read()
+live_js = open(os.path.join(PYIDE, "static", "live.js")).read()
+check("the editor asks every two minutes, on an assignment, when the work changed",
+      re.search(r"if \(onAssignment\) \{\s*setInterval\(function \(\) \{\s*"
+                r"if \(stale \|\| !changedSinceTurnIn\) return;\s*wantTurnIn = true;", account_js)
+      and "var AUTO_TURN_IN = 120000;" in account_js)
+check("  and as the page closes", re.search(
+    r'addEventListener\("pagehide"[\s\S]{0,400}if \(turn\) payload\.turn_in = true;', account_js))
+check("the live page does both too",
+      re.search(r"setInterval\(function \(\) \{\s*if \(changedSinceTurnIn && canTurnIn", live_js)
+      and re.search(r'addEventListener\("pagehide"[\s\S]{0,300}autosaveBody\(true\)', live_js))
+check("an answer tells the page it was turned in, and every page listens",
+      notes_js.count("announceTurnIn(out.d);") == 2
+      and re.search(r"function announceTurnIn\(reply\) \{\s*if \(!reply \|\| !reply\.turned_in_at\) return;"
+                    r"\s*try \{\s*document\.dispatchEvent\(new CustomEvent\(\"pyide:turnedin\"", notes_js)
+      and all('addEventListener("pyide:turnedin"' in js for js in (account_js, lesson_js, live_js)))
 
 # ------------------------------------------------------------- the help
 print("\nThe help page")

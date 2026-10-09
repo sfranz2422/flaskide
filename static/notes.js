@@ -634,6 +634,7 @@ window.FlaskIDENotes = (function () {
         answered[q.id] = out.d;
         delete pending[q.id];
         paintAll(q.id);
+        announceTurnIn(out.d);
       }).catch(function () {
         send.disabled = false;
         note.textContent = "No connection — your answer wasn't sent. Try again.";
@@ -850,6 +851,7 @@ window.FlaskIDENotes = (function () {
         answered[q.id] = out.d;
         delete pending[q.id];
         paintAll(q.id);
+        announceTurnIn(out.d);
       }).catch(function () {
         send.disabled = false;
         note.textContent = "No connection — your answer wasn't sent. It's kept here; try again.";
@@ -858,6 +860,18 @@ window.FlaskIDENotes = (function () {
 
     loadMine().then(function () { box.paint(); });
     return box;
+  }
+
+  /* Answering a question turns the work in (the server's _auto_turn_in).
+     Each page has its own Turn in button and status — the editor's, the
+     lesson's, the live page's — so this only says it happened, and each
+     page listens for "pyide:turnedin" and updates its own. */
+  function announceTurnIn(reply) {
+    if (!reply || !reply.turned_in_at) return;
+    try {
+      document.dispatchEvent(new CustomEvent("pyide:turnedin",
+                                             { detail: { when: reply.turned_in_at } }));
+    } catch (e) { /* an old browser: the button just says what it said */ }
   }
 
   /* The same question can be on the page twice — the live page shows the

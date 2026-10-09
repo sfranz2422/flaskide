@@ -192,8 +192,17 @@ check("a question is marked", answer(kid, MC, "Condensation").get_json().get("co
 check("  once", answer(kid, MC, "Runoff").get_json().get("response") == "Condensation")
 answer(kid, SA, "oxygen")
 answer(kid2, SA, "Nitrogen")
+db = P.SessionLocal()
+_auto = db.query(accounts.Submission).filter_by(assignment_id=item(SLUG).id,
+                                                student_id=KID2).first()
+db.close()
+check("answering turns the lesson in for them, before any Turn in",
+      _auto is not None and _auto.snippet_slug == "")
+check("  without counting it as an attempt", _auto is not None and _auto.times_submitted == 0,
+      _auto.times_submitted if _auto else None)
 r = kid.post("/api/lesson/%s/turnin" % SLUG)
-check("Turn in records it", r.status_code == 200 and r.get_json().get("again") is False)
+check("Turn in records it, as their first attempt",
+      r.status_code == 200 and r.get_json().get("again") is False)
 check("  signed out cannot", stranger.post("/api/lesson/%s/turnin" % SLUG).status_code == 401)
 r = kid.post("/api/lesson/%s/turnin" % SLUG)
 check("  turning in again moves the time", r.get_json().get("again") is True)
@@ -221,9 +230,9 @@ db.close()
 check("saving a lesson with the [x] moved remarks answers already given",
       earned_now == 0, "kid's points %r, should be 0 now" % earned_now)
 teacher.post("/api/lesson/%s" % SLUG, json={"notes": NOTES})
-names = page.split("Started but not turned in")[-1].split("</section>")[0]
-check("one who answered but did not turn in is listed as not turned in",
-      "B Student" in names)
+turned = page.split("Turned in <span")[1].split("</section>")[0]
+check("one who answered and never pressed Turn in is turned in all the same",
+      "B Student" in turned and "Started but not turned in" not in page)
 my = kid.get("/my").get_data(as_text=True)
 check("My work shows the lesson, turned in, with no snapshot link",
       "Water" in my and "What I turned in" not in my)

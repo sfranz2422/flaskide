@@ -81,6 +81,17 @@ window.FlaskIDEAccount = (function () {
     var dirtyAgain = false;
     var lastSent = null;
 
+    /* TURNED IN FOR THEM. On an assignment, changed work is turned in every
+       AUTO_TURN_IN while they work, and once more as the page closes — the
+       teacher asked, because students answered and typed and never pressed
+       Turn in. It rides on an ordinary save (turn_in: true), so it is one
+       request, never a second copy of the work racing the first. The server
+       makes no snapshot of work that hasn't changed (_auto_turn_in). */
+    var AUTO_TURN_IN = 120000;
+    var onAssignment = !!$("turn-in");
+    var changedSinceTurnIn = false;
+    var wantTurnIn = false;
+
     function show(text, cls) {
       if (!stateEl) return;
       stateEl.textContent = text;
@@ -93,14 +104,18 @@ window.FlaskIDEAccount = (function () {
       // Compared unstamped: the version moves on every save, so a stamped
       // body would never match the last one and nothing would be skipped.
       var body = JSON.stringify(read());
-      if (body === lastSent) { show("Saved"); return; }
+      if (body === lastSent && !wantTurnIn) { show("Saved"); return; }
 
       inFlight = true;
       show("Saving…", "busy");
+      var payload = stamp(JSON.parse(body));
+      var turning = wantTurnIn;
+      if (turning) payload.turn_in = true;
+      wantTurnIn = false;
       fetch("/api/draft/" + encodeURIComponent(cfg.draftSlug), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(stamp(JSON.parse(body)))
+        body: JSON.stringify(payload)
       }).then(function (res) {
         return res.json().then(function (data) { return { res: res, data: data }; });
       }).then(function (out) {
@@ -115,9 +130,12 @@ window.FlaskIDEAccount = (function () {
               "\n", "err");
           return;
         }
+        if (body !== lastSent) changedSinceTurnIn = true;
         lastSent = body;
         saw(out.data);
         show("Saved " + (out.data.saved_at || ""));
+        if (out.data.turned_in_at) turnedIn(out.data.turned_in_at);
+        else if (turning) changedSinceTurnIn = true;   // closed, say: try later
         if (dirtyAgain) { dirtyAgain = false; schedule(); }
       }).catch(function () {
         inFlight = false;
@@ -131,15 +149,40 @@ window.FlaskIDEAccount = (function () {
       timer = setTimeout(save, SAVE_DELAY);
     }
 
+    function turnedIn(when) {
+      changedSinceTurnIn = false;
+      var btn = $("turn-in");
+      if (!btn) return;
+      btn.textContent = "Turn in again";
+      btn.title = "Turned in for you " + when + " — your work is turned in as you go. "
+                + "Press to turn it in right now.";
+    }
+    // An answer to a question in the notes turns the work in too (notes.js).
+    document.addEventListener("pyide:turnedin", function (e) {
+      turnedIn((e.detail && e.detail.when) || "");
+    });
+
+    if (onAssignment) {
+      setInterval(function () {
+        if (stale || !changedSinceTurnIn) return;
+        wantTurnIn = true;
+        save();
+      }, AUTO_TURN_IN);
+    }
+
     /* A tab closing takes any pending save with it, so push one last copy on
-       the way out. keepalive lets the request outlive the page. */
+       the way out — turned in, on an assignment, if it changed since the
+       last turn-in. keepalive lets the request outlive the page. */
     window.addEventListener("pagehide", function () {
-      if (stale || (!timer && !dirtyAgain)) return;
+      var turn = onAssignment && (changedSinceTurnIn || !!timer || dirtyAgain);
+      if (stale || (!timer && !dirtyAgain && !turn)) return;
+      var payload = stamp(read());
+      if (turn) payload.turn_in = true;
       try {
         fetch("/api/draft/" + encodeURIComponent(cfg.draftSlug), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(stamp(read())),
+          body: JSON.stringify(payload),
           keepalive: true
         });
       } catch (e) { /* nothing more we can do from here */ }

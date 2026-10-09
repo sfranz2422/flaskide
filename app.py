@@ -998,9 +998,77 @@ def _written(draft, data):
     draft.writer = tab[:24] if isinstance(tab, str) else ""
 
 
+#: How often a student's changed work is turned in for them while they
+#: work. The page asks (account.js, live.js); the server only checks that
+#: something changed. Two minutes: often enough that a forgotten Turn in
+#: loses little, rarely enough not to fill the snapshots table.
+AUTO_TURN_IN_SECONDS = 120
+
+
+def _auto_turn_in(db, item, user, draft=None):
+    """Turn a student's work in for them: after they answer a question, or
+    while they work (the page asks every AUTO_TURN_IN_SECONDS, and once more
+    as it closes). The teacher asked for this because students answered
+    questions and never pressed Turn in — and an answer only reaches the
+    teacher's Turned in list, and Classroom, with a Submission.
+
+    Unlike pressing Turn in it never counts an attempt (times_submitted),
+    and it never makes a snapshot of work that hasn't changed since the last
+    one, so a student who sits still makes nothing. A lesson has no snapshot
+    at all; neither does a coding assignment answered in a live lesson
+    before any code was saved — the teacher's list then simply has no Open
+    link until there is code to open.
+
+    Returns the Submission, or None when nothing was done (closed, or a
+    teacher trying their own assignment). Commits."""
+    if item is None or item.closed or user.id == item.teacher_id:
+        return None
+    row = db.query(accounts.Submission).filter_by(
+        assignment_id=item.id, student_id=user.id).first()
+    snap = None
+    if draft is not None and not _is_lesson(item):
+        had = (db.query(Project).filter_by(slug=row.snippet_slug).first()
+               if row is not None and row.snippet_slug else None)
+        if had is None or had.file_map() != draft.file_map():
+            snap = Project(slug=new_slug(db), title=draft.title or item.title,
+                           author=user.display_name(), files=draft.files)
+            db.add(snap)
+            db.flush()
+        elif row is not None:
+            return row                        # nothing new to hand in
+    if row is None:
+        # 0 attempts: pressing Turn in is an attempt, and this wasn't one.
+        # The student's first press then counts 1, not "turned in 2 times".
+        row = accounts.Submission(assignment_id=item.id, student_id=user.id,
+                                  snippet_slug=snap.slug if snap else "",
+                                  times_submitted=0)
+        db.add(row)
+    else:
+        if snap is not None:
+            row.snippet_slug = snap.slug
+        row.submitted_at = accounts.now()
+    try:
+        db.commit()
+    except Exception:
+        # The other worker made the row a moment ago (two quick answers).
+        # Theirs stands; this one's work will be in the next turn-in.
+        db.rollback()
+        row = db.query(accounts.Submission).filter_by(
+            assignment_id=item.id, student_id=user.id).first()
+    return row
+
+
+def _when(row):
+    return row.submitted_at.strftime("%b %d at %I:%M %p") if row is not None else ""
+
+
 @app.post("/api/draft/<slug>")
 def save_draft(slug):
-    """Autosave. Called a moment after the student stops typing."""
+    """Autosave. Called a moment after the student stops typing.
+
+    With `turn_in` (sent by the page every couple of minutes while the work
+    changes, and as it closes) the saved work is also turned in for them —
+    see _auto_turn_in."""
     db = SessionLocal()
     try:
         user = current_user(db)
@@ -1025,8 +1093,12 @@ def save_draft(slug):
         draft.updated_at = accounts.now()
         _written(draft, data)
         db.commit()
+        turned = None
+        if data.get("turn_in") and draft.assignment_id:
+            item = db.query(accounts.Assignment).filter_by(id=draft.assignment_id).first()
+            turned = _auto_turn_in(db, item, user, draft)
         return jsonify(saved_at=draft.updated_at.strftime("%I:%M %p"),
-                       version=draft.version)
+                       version=draft.version, turned_in_at=_when(turned))
     finally:
         db.close()
 
@@ -1554,7 +1626,7 @@ def turn_in():
         else:
             row.snippet_slug = snap.slug
             row.submitted_at = accounts.now()
-            row.times_submitted = (row.times_submitted or 1) + 1
+            row.times_submitted = (row.times_submitted or 0) + 1
         db.commit()
         return jsonify(ok=True,
                        submitted_at=row.submitted_at.strftime("%b %d at %I:%M %p"),
@@ -1795,6 +1867,13 @@ def quiz_answer():
                     assignment_id=item.id, student_id=user.id, qid=qid).first()
                 if had is None:
                     return jsonify(error="That answer wasn't saved. Try again."), 500
+            # Answering is turning in: the work as it stands goes to the
+            # teacher with the answer (_auto_turn_in says why).
+            draft = db.query(accounts.Draft).filter_by(
+                owner_id=user.id, assignment_id=item.id).first()
+            turned = _auto_turn_in(db, item, user, draft)
+            return jsonify(_answer_reply(key, had, already=had.response != response,
+                                         turned_in_at=_when(turned)))
         return jsonify(_answer_reply(key, had, already=had.response != response))
     finally:
         db.close()
@@ -2026,7 +2105,7 @@ def turn_in_lesson(slug):
             db.add(row)
         else:
             row.submitted_at = accounts.now()
-            row.times_submitted = (row.times_submitted or 1) + 1
+            row.times_submitted = (row.times_submitted or 0) + 1
         db.commit()
         return jsonify(ok=True, again=row.times_submitted > 1,
                        submitted_at=row.submitted_at.strftime("%b %d at %I:%M %p"))

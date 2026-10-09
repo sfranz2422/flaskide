@@ -255,6 +255,9 @@ const ctx = {
   document: { getElementById: (id) => (id === "save-state" || id === "turn-in") ? el(id) : null,
               addEventListener() {} },
   setTimeout: (f) => 0, clearTimeout() {},
+  // The auto turn-in's clock (account.js). Never fires here: these checks
+  // are about saves, and a turn-in is a save with one more key in it.
+  setInterval: (f) => 0,
   fetch: (url, opts) => {
     sent.push({ url, body: JSON.parse(opts.body) });
     const [status, data] = replies.shift() || [200, {}];
