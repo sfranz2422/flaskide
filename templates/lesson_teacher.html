@@ -61,7 +61,9 @@
     <div class="pane lesson-src-pane">
       <div class="pane-head"><span>Notes</span>
         <span class="hint">--- on its own line starts a slide · ```quiz for a question ·
-          <a href="{{ url_for('help_questions') }}" target="_blank" rel="noopener">Question formats</a></span></div>
+          <a href="{{ url_for('help_questions') }}" target="_blank" rel="noopener">Question formats</a></span>
+        <button id="lesson-pic" class="linkbtn" type="button"
+                title="Upload a picture into the notes at the cursor — or paste one, or drop it on the notes">Add picture</button></div>
       <div class="editor-wrap"><textarea id="lesson-src">{{ notes }}</textarea></div>
     </div>
     <div class="pane lesson-preview-pane">
@@ -90,6 +92,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='pictures.js') }}"></script>
 <script src="{{ url_for('static', filename='lesson_teacher.js') }}"></script>
 </body>
 </html>

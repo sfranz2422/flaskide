@@ -1,7 +1,8 @@
 {#  The description box, shared by the class page and a material's own page:
-    EasyMDE with its toolbar, pictures uploaded to /api/image, and the
+    EasyMDE with its toolbar, pictures uploaded to /api/image (pictures.js), and the
     description shown as students will see it. Anything holding a description
     is an element with data-item (its class item's id) around a .desc-box. #}
+<script src="{{ url_for('static', filename='pictures.js') }}"></script>
 <script>
   /* THE DESCRIPTION BOX. EasyMDE on top of the textarea — a toolbar for
      bold, headings, lists, links and pictures, and markdown typed by hand
@@ -20,7 +21,7 @@
       status: false,
       autoDownloadFontAwesome: true,
       uploadImage: true,
-      imageAccept: "image/png, image/jpeg, image/gif, image/webp",
+      imageAccept: window.FlaskIDEPictures.ACCEPT,
       imageUploadFunction: uploadImage,
       toolbar: [
         "bold", "italic", "heading", "|",
@@ -51,42 +52,11 @@
     area.value = area.value.slice(0, at) + text + area.value.slice(area.selectionEnd || at);
   }
 
-  /* A big photo is shrunk here, before it is sent: a phone's 4000-pixel
-     picture is several MB to show at the width of a card. 1600 across is
-     plenty, and a JPEG of that is a few hundred KB. A GIF is left alone, or
-     it would stop moving; the server refuses anything over 4 MB. */
-  var SHRINK_OVER = 1500000, MAX_SIDE = 1600;
-
-  function shrink(file) {
-    if (file.type === "image/gif" || file.size <= SHRINK_OVER || !window.createImageBitmap) {
-      return Promise.resolve(file);
-    }
-    return createImageBitmap(file).then(function (bmp) {
-      var scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-      var canvas = document.createElement("canvas");
-      canvas.width = Math.round(bmp.width * scale);
-      canvas.height = Math.round(bmp.height * scale);
-      canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
-      var type = file.type === "image/png" ? "image/png" : "image/jpeg";
-      return new Promise(function (resolve) {
-        canvas.toBlob(function (blob) { resolve(blob || file); }, type, 0.85);
-      });
-    }).catch(function () { return file; });
-  }
-
   // EasyMDE's upload hook, and the Add picture button's: the picture goes
-  // to /api/image, and its address comes back to go in as ![](...).
+  // to /api/image (pictures.js, which shrinks a big photo first), and its
+  // address comes back to go in as ![](...).
   function uploadImage(file, onSuccess, onError) {
-    shrink(file).then(function (blob) {
-      var form = new FormData();
-      form.append("image", blob, file.name || "picture");
-      return fetch("/api/image", { method: "POST", body: form });
-    }).then(function (r) {
-      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
-    }).then(function (out) {
-      if (!out.ok) { onError(out.d.error || "That picture didn't upload."); return; }
-      onSuccess(out.d.url);
-    }).catch(function () { onError("That picture didn't upload — check your connection."); });
+    window.FlaskIDEPictures.upload(file).then(onSuccess, function (e) { onError(e.message); });
   }
 
   document.addEventListener("change", function (e) {
@@ -95,7 +65,7 @@
     e.target.value = "";
     if (!row || !file) return;
     uploadImage(file, function (url) {
-      insertText(row, "![" + (file.name || "").replace(/\.[^.]+$/, "") + "](" + url + ")");
+      insertText(row, window.FlaskIDEPictures.markdown(file, url));
     }, function (msg) { alert(msg); });
   });
 

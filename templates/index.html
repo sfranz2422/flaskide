@@ -278,6 +278,12 @@
           {% if authoring %}
             <a class="linkbtn" href="{{ url_for('help_questions') }}" target="_blank" rel="noopener"
                title="How to write ```quiz questions in these notes">Question formats</a>
+            {#  Only a teacher may upload (/api/image); anyone else
+                authoring their own notes links to a picture by address. #}
+            {% if is_teacher %}
+              <button id="notes-pic" class="linkbtn" type="button"
+                      title="Upload a picture into the notes at the cursor — or paste one, or drop it on the source">Add picture</button>
+            {% endif %}
             <button id="notes-edit" class="linkbtn">Edit source</button>
           {% endif %}
           <span class="view-switch" role="group" aria-label="Show in this pane" hidden>
@@ -405,6 +411,7 @@
 <script src="{{ url_for('static', filename='flask.js') }}"></script>
 <script src="{{ url_for('static', filename='preview.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='pictures.js') }}"></script>
 <script src="{{ url_for('static', filename='syntax.js') }}"></script>
 <script src="{{ url_for('static', filename='complete.js') }}"></script>
 <script src="{{ url_for('static', filename='sighint.js') }}"></script>

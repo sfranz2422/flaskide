@@ -798,6 +798,28 @@
     paintTabs();
     if ($("notes-edit")) $("notes-edit").addEventListener("click", toggleSource);
 
+    /* PICTURES IN THE NOTES, for a teacher (pictures.js; the server refuses
+       anyone else). Add picture opens the source first, so the teacher sees
+       where it lands; paste and drop work only while the .md source is in
+       the editor. Here there is one doc and files are swapped into it with
+       setValue, so a picture still uploading when the teacher presses Done
+       loses its bookmark — pictures.js then hands the markdown over rather
+       than writing it into app.py. */
+    if ($("notes-pic")) {
+      window.FlaskIDEPictures.attach(editor, function () {
+        return mdSource && notesShown === current;
+      });
+      $("notes-pic").addEventListener("click", function () {
+        if (!notesShown) return;
+        if (!mdSource) toggleSource();
+        window.FlaskIDEPictures.choose(function (files) {
+          if (!(mdSource && notesShown === current)) return;
+          window.FlaskIDEPictures.insertInto(editor.getDoc(), files);
+          editor.focus();
+        });
+      });
+    }
+
     /* The syntax card, covering the preview and console — where Run's result
        would have gone. `reveal` opens the file the error is in, so an error
        in models.py is shown in models.py. */

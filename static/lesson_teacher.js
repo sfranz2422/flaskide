@@ -73,6 +73,17 @@
   function dirty() { return editor.getValue() !== saved || $("lesson-title").value !== savedTitle; }
   function paintSaved() { state.textContent = dirty() ? "Not saved" : "Saved"; }
 
+  /* Pictures: Add picture, or paste or drop one on the notes (pictures.js).
+     Each goes in as ![name](/img/...) where the cursor was, and reaches the
+     class like any other edit — on Save, or at once while live. */
+  window.FlaskIDEPictures.attach(editor);
+  $("lesson-pic").addEventListener("click", function () {
+    window.FlaskIDEPictures.choose(function (files) {
+      window.FlaskIDEPictures.insertInto(editor.getDoc(), files);
+      editor.focus();
+    });
+  });
+
   editor.on("change", function () { paintSaved(); redraw(); pushSoon(); });
   editor.on("cursorActivity", redraw);
   $("lesson-title").addEventListener("input", paintSaved);

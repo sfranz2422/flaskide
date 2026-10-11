@@ -604,9 +604,12 @@ page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
 check("the description box has the toolbar, as quickpulsepro's does",
       "easymde@2.18.0/dist/easymde.min.js" in page and "easymde@2.18.0/dist/easymde.min.css" in page
       and re.search(r'"link", "upload-image"', page) is not None and '"bold", "italic"' in page)
-check("  its picture button and drag-and-drop upload to /api/image",
+check("  its picture button and drag-and-drop upload to /api/image (pictures.js)",
       "uploadImage: true" in page and "imageUploadFunction: uploadImage" in page
-      and 'fetch("/api/image", { method: "POST", body: form })' in page)
+      and 'src="/static/pictures.js"' in page
+      and "window.FlaskIDEPictures.upload(file).then(onSuccess" in page
+      and 'fetch("/api/image", { method: "POST", body: form })'
+      in open(os.path.join(PYIDE, "static", "pictures.js")).read())
 check("  with Add picture for when the toolbar can't load",
       'class="js-pic" type="file"' in page)
 check("  and the preview is rendered the way students see it",
