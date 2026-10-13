@@ -11,6 +11,7 @@ Flask application, the one serving the editor. The student's Flask app is
 never imported, never executed and never reaches this machine.
 """
 
+import base64
 import json
 import os
 import pathlib
@@ -31,6 +32,7 @@ from flask import (
 )
 from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
+from werkzeug.exceptions import BadRequest
 
 import accounts
 import quiz
@@ -411,7 +413,41 @@ def validate_files(raw):
 # App
 # --------------------------------------------------------------------------
 
+class PackedRequest(Flask.request_class):
+    """Read a JSON body that static/pack.js sent as base64.
+
+    Render puts a firewall in front of the app, and it refuses requests whose
+    body *looks* like an attack. For a web programming class that is the
+    lesson itself: a teacher's notes full of HTML, Flask and f-strings were
+    turned away before they reached us, so nothing showed in our logs, and
+    the editor, handed the firewall's page instead of JSON, said "Couldn't
+    reach the server." The assignment silently never saved. No single line
+    was to blame — each pasted alone saved fine — so leaving out a pattern
+    is not a fix. pack.js sends every JSON body as
+    {"_packed": base64(utf-8 JSON)}, and this unwraps it before any route
+    sees it.
+
+    Every check still happens after this: sign-in, teacher, file names,
+    sizes. Only the shape on the wire changes. A plain JSON body is still
+    read as before, so an editor tab opened before a deploy keeps saving.
+    """
+
+    def get_json(self, force=False, silent=False, cache=True):
+        data = super().get_json(force=force, silent=silent, cache=cache)
+        if isinstance(data, dict) and set(data) == {"_packed"}:
+            try:
+                data = json.loads(base64.b64decode(data["_packed"],
+                                                   validate=True).decode("utf-8"))
+            except (ValueError, TypeError):
+                # binascii.Error and UnicodeDecodeError are both ValueErrors.
+                if not silent:
+                    raise BadRequest("That request could not be read.")
+                data = None
+        return data
+
+
 app = Flask(__name__)
+app.request_class = PackedRequest
 
 # Signed session cookies. Generated if unset so the app still boots locally,
 # but then every restart logs everyone out — set it properly on the server.
