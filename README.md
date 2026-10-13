@@ -10,6 +10,55 @@ It runs in their browser, and the pieces below say how.
 
 ---
 
+## For teachers: run your own copy
+
+If you teach and found this on GitHub, you're welcome to run it for your own
+classes. You get your own site, your own students' work in your own database,
+and nothing shared with anyone else's.
+
+1. **Make your own copy of the repository.** Fork it on GitHub, or clone it
+   and push it to a new repository of your own:
+
+   ```bash
+   git clone https://github.com/sfranz2422/flaskide.git
+   cd flaskide
+   git remote set-url origin https://github.com/YOUR-NAME/flaskide.git
+   git push -u origin main
+   ```
+
+2. **Have a Postgres database ready on [Render](https://render.com).** This
+   app doesn't create one. It is meant to share
+   [PyIDE](https://github.com/sfranz2422/pyide)'s, so one sign-in covers both.
+   If you run PyIDE, use its database. If not, make one with
+   **New → Postgres**.
+
+3. **Put it on Render.** Sign in with GitHub, choose **New → Blueprint** and
+   pick your repository. When it asks for `DATABASE_URL`, paste the
+   database's **Internal Connection String**. Render redeploys whenever you
+   push.
+
+4. **Set yourself as the teacher.** Add your email to `TEACHER_EMAILS`. Google
+   sign-in (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, with
+   `https://YOUR-SERVICE.onrender.com/auth/callback` as the redirect URI) is
+   optional. Without it, students can still open a link, write an app, run it
+   and share it. PyIDE's README has the full sign-in steps.
+
+5. **Use paid plans before students hand in real work.** Render's free
+   database is deleted after 30 days, and everything in it goes too.
+
+To pick up later improvements from this repository:
+
+```bash
+git remote add upstream https://github.com/sfranz2422/flaskide.git
+git pull upstream main
+git push                        # Render redeploys
+```
+
+After a deploy, do a hard refresh in the browser (Cmd+Shift+R or
+Ctrl+Shift+R) so it loads the new code.
+
+---
+
 ## The whole idea in one paragraph
 
 Flask is a *server* framework, so the obvious reading is that an IDE for it
