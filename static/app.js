@@ -873,6 +873,22 @@
       });
     }
 
+    /* THE LOGO GOES TO THE FRONT DOOR — a student's classes, a teacher's
+       dashboard. A saved project has lost nothing by leaving: it autosaves,
+       and pagehide sends whatever is pending (account.js). A project with
+       nowhere to save to — the blank editor, before Save — is the one case
+       where a click on the logo would throw work away without a word, so
+       that one asks, and only when it differs from what the page opened. */
+    var homeLink = $("home-link");
+    if (homeLink) {
+      homeLink.addEventListener("click", function (e) {
+        if (cfg.readonly || cfg.draftSlug || !changedFromStarter()) return;
+        if (!window.confirm("Leave this page? What you've typed here isn't saved.")) {
+          e.preventDefault();
+        }
+      });
+    }
+
     if ($("run")) $("run").addEventListener("click", run);
     if ($("run-tab")) $("run-tab").addEventListener("click", runInNewTab);
     if ($("preview-back")) $("preview-back").addEventListener("click", function () {

@@ -1652,6 +1652,23 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
   color: var(--text); text-decoration: none; }
 .class-card:hover { border-color: var(--accent); }
 .class-card strong { font-size: 16px; }
+/* A student's classes (classes.html): a heading that says what the list is,
+ * and one wide card per class with an Open button at its end — the whole
+ * card is the link. Bare names in thin boxes did not look clickable. */
+.enrolled-title { font-size: 24px; margin: 8px 0 4px; }
+.enrolled-sub { color: var(--muted); margin: 0 0 20px; }
+.enrolled { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.enrolled-card { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 18px 20px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--bg-panel); color: var(--text); text-decoration: none;
+  box-shadow: 0 1px 3px var(--shadow); transition: border-color .12s, transform .12s; }
+.enrolled-card:hover, .enrolled-card:focus-visible { border-color: var(--brand); transform: translateY(-1px); outline: none; }
+.enrolled-card:hover .enrolled-open { background: var(--brand-hover); border-color: var(--brand-hover); }
+.enrolled-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.enrolled-name { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.enrolled-teacher { color: var(--muted); font-size: 14px; }
+.enrolled-open { flex: none; white-space: nowrap; }
+
 .class-tools { margin-bottom: 18px; }
 .class-tools .grade-line { margin-bottom: 8px; }
 .class-line p { margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

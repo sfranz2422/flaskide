@@ -40,7 +40,11 @@
 <body{% if authoring %} class="is-authoring"{% endif %}>
 
 <header class="bar">
-  <div class="brand"><span class="logo">🧪</span> FlaskIDE</div>
+  {#  To the front door, which sends a student to their classes and a
+      teacher to the dashboard. It was not a link at all here, and on the
+      other pages it led back to this editor — url_for('index') is /new. #}
+  <div class="brand"><a id="home-link" class="brandlink" href="{{ url_for('home') }}"
+       title="Your classes"><span class="logo">🧪</span> FlaskIDE</a></div>
 
   <div class="meta">
     <input id="title" class="field field-title" type="text"

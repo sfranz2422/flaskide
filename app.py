@@ -531,7 +531,15 @@ def my_classes():
             return redirect(url_for("login", next=request.path))
         if accounts.is_teacher(user.email):
             return redirect(url_for("teacher_home"))
-        return render_template("classes.html", **user_context(db))
+        # Each with its teacher's name, so two periods of the same course —
+        # or two teachers' classes called "Programming 1" — can be told apart.
+        courses = _my_classes(db, user)
+        teachers = {u.id: u.display_name() for u in db.query(accounts.User).filter(
+            accounts.User.id.in_([c.teacher_id for c in courses] or [0]))}
+        enrolled = [{"name": c.name, "teacher": teachers.get(c.teacher_id, ""),
+                     "url": url_for("student_class", class_id=c.id)}
+                    for c in courses]
+        return render_template("classes.html", enrolled=enrolled, **user_context(db))
     finally:
         db.close()
 

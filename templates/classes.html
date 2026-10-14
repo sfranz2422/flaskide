@@ -23,7 +23,7 @@
 <body class="class-page">
 
 <header class="bar">
-  <div class="brand"><a class="brandlink" href="{{ url_for('index') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="brand"><a class="brandlink" href="{{ url_for('home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
   <div class="meta"><span class="pagetitle">My classes</span></div>
   <div class="actions">
     <a class="btn" href="{{ url_for('index') }}">Open the editor</a>
@@ -33,12 +33,27 @@
 </header>
 
 {#  Where a student lands after signing in. The classes are the ones whose
-    Classroom roster has their email on it (Enrollment). #}
+    Classroom roster has their email on it (Enrollment).
+
+    It was a grid of bare names once, and a name in a thin box did not read
+    as something to click: students sat on this page not knowing it was the
+    way in. So it says what the list is, what to do with it, and each class
+    is a card with its teacher and an Open button that looks like one. The
+    whole card is the link — the button is how it looks, not the only place
+    that works. #}
 <main class="sheet">
-  {% if my_classes %}
-    <ul class="class-cards">
-      {% for c in my_classes %}
-        <li><a class="class-card" href="{{ c.url }}"><strong>{{ c.name }}</strong></a></li>
+  {% if enrolled %}
+    <h1 class="enrolled-title">Currently enrolled classes</h1>
+    <p class="enrolled-sub">Choose a class to see its assignments and lessons.</p>
+    <ul class="enrolled">
+      {% for c in enrolled %}
+        <li><a class="enrolled-card" href="{{ c.url }}">
+          <span class="enrolled-text">
+            <span class="enrolled-name">{{ c.name }}</span>
+            {% if c.teacher %}<span class="enrolled-teacher">{{ c.teacher }}</span>{% endif %}
+          </span>
+          <span class="btn btn-primary enrolled-open" aria-hidden="true">Open class →</span>
+        </a></li>
       {% endfor %}
     </ul>
   {% else %}

@@ -363,6 +363,31 @@ check("a student goes on to their classes",
 check("  which lists the ones they're on the roster of",
       'href="/class/%d"' % C4 in kid1.get("/classes").get_data(as_text=True)
       and 'href="/class/%d"' % C4 not in kid2.get("/classes").get_data(as_text=True))
+# A grid of bare names did not read as something to click, and students sat
+# on this page. It says what the list is, names each class's teacher, and
+# each card has an Open button.
+_mine = kid1.get("/classes").get_data(as_text=True)
+_card = _mine[_mine.find('href="/class/%d"' % C4):]
+_card = _card[:_card.find("</a>")]
+check("  under a heading that says what they are",
+      "Currently enrolled classes" in _mine and 'class="enrolled-card"' in _mine)
+check("  each with its teacher and an Open button",
+      'class="enrolled-teacher">Mr Franz<' in _card and "Open class" in _card, _card[:200])
+# The logo is the way back here. On most pages it was url_for('index'), which
+# is the editor (/new), and in the editor it was not a link at all.
+import glob                                                  # noqa: E402
+_brands = {os.path.basename(f): re.search(r'<div class="brand">(.*?)</div>', open(f).read(), re.S)
+           for f in glob.glob(os.path.join(HERE, "..", "templates", "*.html"))}
+_to_editor = sorted(n for n, m in _brands.items()
+                    if m and "url_for('index')" in m.group(1))
+_not_link = sorted(n for n, m in _brands.items()
+                   if m and "<a " not in m.group(1) and n != "play.html")
+check("every page's logo leads to the front door, not the editor",
+      not _to_editor and not _not_link, (_to_editor, _not_link))
+check("  and the editor's asks before leaving unsaved typing",
+      'id="home-link"' in open(os.path.join(HERE, "..", "templates", "index.html")).read()
+      and re.search(r'homeLink\.addEventListener\("click"[\s\S]{0,200}draftSlug[\s\S]{0,40}changedFromStarter',
+                    open(os.path.join(HERE, "..", "static", "app.js")).read()) is not None)
 _ghost = client(add_user("k9", "nobody@school.org", "Nobody"))
 check("  or says they're not in any yet, and how that changes",
       "not in any classes yet" in _ghost.get("/classes").get_data(as_text=True))
