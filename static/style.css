@@ -1959,6 +1959,20 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
 .live-right .live-console.is-folded { flex: 0 0 auto !important; }
 .resizer:has(+ .live-console.is-folded) { display: none; }
 
+/* THE PANE AFTER A SIZED ONE TAKES WHAT IS LEFT, not a share of its own.
+ * The student's editor is `1 1 55%`: with a basis of its own it shrank
+ * alongside the pane being dragged, so the teacher's code dragged 100px
+ * taller grew 48, and the left column dragged 100px wider grew 38. Only the
+ * first drag, before anything was sized, so it looked like a stiff handle
+ * rather than a bug. Found in WebIDE first. */
+.is-sized + .resizer:not([data-size="next"]) + * { flex-basis: 0; }
+/* The editor's console is sized from ABOVE (data-pane="output"), so the
+ * pane taking what is left is the one before it: the preview, `1 1 62%`, or
+ * the SQL results. With their own basis they kept a share, and the console
+ * asked for 358px got 301. */
+#preview-view:has(> #output.is-sized) > .preview-frame,
+#preview-view:has(> #output.is-sized) > .sql-pane { flex-basis: 0; }
+
 @media (min-width: 861px) {
   /* The handles take the place of these borders. */
   .split > .pane-editor { border-right: 0; }
