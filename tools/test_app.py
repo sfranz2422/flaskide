@@ -395,6 +395,9 @@ check("  the mode chip is a span, not a button",
       '<span id="mode-chip"' in template)
 
 check("  there is a button to the other kind", 'id="switch-kind"' in template)
+# "/" is the front door now, and sends a signed-in teacher to the dashboard.
+check("    and + Flask app goes to the editor, not the front door",
+      'sql ? "/new" : "/sql"' in js, "switch-kind's href is not /new")
 check("    and it asks before throwing unsaved work away",
       "changedFromStarter" in js and "preventDefault" in js)
 

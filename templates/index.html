@@ -69,12 +69,18 @@
         a SQL project has no pages. #}
     <button id="run-tab" class="btn" type="button"
             title="Open your app's pages in a new tab">↗ New tab</button>
-    {% if not readonly %}
-      <!-- Goes to a NEW project of the other kind. It does not convert this
-           one: the two kinds have different entry files, so converting would
-           either throw this project away or leave it holding both app.py and
-           query.sql with nothing to say which Run should run. app.js sets the
-           text and the address, and asks before leaving unsaved work. -->
+    {#  Goes to a NEW project of the other kind. It does not convert this
+        one: the two kinds have different entry files, so converting would
+        either throw this project away or leave it holding both app.py and
+        query.sql with nothing to say which Run should run. app.js sets the
+        text and the address, and asks before leaving unsaved work.
+
+        Never on an assignment — a student's draft, the class's copy, or the
+        teacher editing it. There it read as "make this a SQL assignment",
+        and pressing it left the assignment for a blank project: Turn in
+        gone, Publish in its place, and nothing saying why. An assignment's
+        kind is set by its files when it is made. #}
+    {% if not readonly and not assignment_title %}
       <a id="switch-kind" class="btn" href="/sql">+ SQL</a>
     {% endif %}
     {% if not readonly %}

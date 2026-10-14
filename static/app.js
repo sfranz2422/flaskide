@@ -676,7 +676,10 @@
     var swap = $("switch-kind");
     if (swap) {
       swap.textContent = sql ? "+ Flask app" : "+ SQL";
-      swap.href = sql ? "/" : "/sql";
+      /* /new, not "/": "/" became the front door, which sends a signed-in
+         teacher to the dashboard -- so "+ Flask app" quietly left the
+         editor altogether instead of opening a Flask project. */
+      swap.href = sql ? "/new" : "/sql";
       swap.title = "Start a new " + (sql ? "Flask app" : "SQL project") +
         ". This one stays where it is.";
     }

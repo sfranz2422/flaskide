@@ -195,8 +195,22 @@ check("  and no Save or Share beside it",
       not has_id(page, "save-project") and not has_id(page, "share")
       and not has_id(page, "share-menu"))
 
+# + SQL / + Flask app opens a NEW blank project. On an assignment it read as
+# "switch this one", and pressing it dropped the student (or the teacher)
+# out of the assignment with Publish showing where Turn in had been.
+check("  and no button off to a new project of the other kind",
+      not has_id(page, "switch-kind"))
+page = student.get("/a/%s" % sql_hw, follow_redirects=True).get_data(as_text=True)
+check("    nor on a SQL assignment", not has_id(page, "switch-kind"))
+page = client(None).get("/a/%s" % hw).get_data(as_text=True)
+check("    nor on one opened signed out", not has_id(page, "switch-kind"))
+page = teacher.get("/teacher/%s/edit" % sql_hw).get_data(as_text=True)
+check("    nor while the teacher edits it",
+      "Update assignment" in page and not has_id(page, "switch-kind"))
+
 page = student.get("/new").get_data(as_text=True)
 check("signed in, a new project: Save", has_id(page, "save-project"))
+check("  and the button to the other kind", has_id(page, "switch-kind"))
 check("  and no Share or Turn in on the bar",
       not has_id(page, "share") and not has_id(page, "turn-in"))
 check("  Share is still there, in the account menu", has_id(page, "share-menu"))
