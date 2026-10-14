@@ -435,8 +435,13 @@
       moving = null;
       if (ids() !== start) saveOrder();
     }
+    /* Every way a drag can end, ends it — the body's class otherwise keeps
+       the grabbing cursor and no text selection on the whole page (split.js
+       says how that went on the live page). */
     body.addEventListener("pointerup", drop);
     body.addEventListener("pointercancel", drop);
+    body.addEventListener("lostpointercapture", drop);
+    window.addEventListener("blur", drop);
 
     /* The handle focused: ↑ and ↓ move what it carries one place — a row
        past a row, a group past a whole group — and keep the focus. */

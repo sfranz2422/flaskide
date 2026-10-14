@@ -1321,6 +1321,11 @@ check("  and a handle beside a hidden pane goes with it",
 check("  the pane after a sized one takes what is left",
       '.is-sized + .resizer:not([data-size="next"]) + * { flex-basis: 0; }' in css,
       "the teacher's code dragged 100px taller grew 48")
+check("    and keeps a floor, however big a size kept from another window",
+      '.is-sized + .resizer-y:not([data-size="next"]) + :not(.is-folded) { min-height: 80px; }' in css
+      and '.is-sized + .resizer-x:not([data-size="next"]) + * { min-width: 80px; }' in css
+      and ':not(.is-folded):not(.resizer):has(~ .resizer-y[data-size="next"] + .is-sized) { min-height: 80px; }' in css,
+      "a pane beside a size bigger than the column went to 0px, and stayed that way after closing the tab")
 check("  and the preview takes what is left above a sized console",
       "#preview-view:has(> #output.is-sized) > .preview-frame," in css
       and "#preview-view:has(> #output.is-sized) > .sql-pane { flex-basis: 0; }" in css,
@@ -1448,9 +1453,13 @@ check("  and loading the starter is a separate, confirmed step",
       and re.search(r"offerStarter[\s\S]{0,800}window\.confirm", app_code)
       is not None,
       "it replaces the editor, so it cannot be silent")
+# resumeLive, one level in like teachAgain, so found by its indent.
+_m_resume_src = re.search(r"function resumeLive\(code\) \{[\s\S]*?\n    \}\n", app_code)
+_resume_src = _m_resume_src.group(0) if _m_resume_src else ""
 check("  which the reload-resume path never takes",
-      re.search(r'if \(resumeCode\) startLive\(undefined, resumeCode\);',
-                app_code) is not None,
+      re.search(r'if \(editor\) resumeLive\(resumeCode\);\s*else document\.addEventListener\("DOMContentLoaded", function \(\) \{ resumeLive\(resumeCode\); \}\);', app_code) is not None
+      and bool(_resume_src)
+      and "offerStarter" not in _resume_src and "confirm" not in _resume_src,
       "resuming a broadcast must not wipe what is being demonstrated")
 
 check("the live page saves through the lesson, not as a loose project",
@@ -1537,7 +1546,8 @@ check("the Run button comes back when the request is answered",
 # Resuming (see "Resuming after a reload" above): the editor's half.
 _app_code = code_only(open(os.path.join(HERE, "..", "static", "app.js")).read())
 check("the editor sends the remembered code when it resumes",
-      re.search(r"startLive\(undefined, resumeCode\)", _app_code) is not None
+      re.search(r'if \(editor\) resumeLive\(resumeCode\);\s*else document\.addEventListener\("DOMContentLoaded", function \(\) \{ resumeLive\(resumeCode\); \}\);', _app_code) is not None
+      and "if (resuming) startLive(undefined, code);" in _app_code
       and "resume: resume" in _app_code)
 check("  and forgets it when the server says that lesson is over",
       re.search(r"data\.resumed === false\)\s*\{[^}]*forgetLive\(\);", _app_code) is not None)
@@ -1549,8 +1559,8 @@ check("  and forgets it on any page with no Go live button",
 # while live took over the broadcast with its own file — the class watched
 # an untitled default template while the teacher typed in another tab.
 check("the lesson is remembered per tab, not for the whole browser",
-      'sessionStorage.setItem(HOST_KEY, JSON.stringify({ code: code, path: location.pathname }));'
-      in _app_code and "localStorage.setItem(HOST_KEY" not in _app_code
+      re.search(r'sessionStorage\.setItem\(HOST_KEY, JSON\.stringify\(\{ code: code, '
+                r'path: location\.pathname,', _app_code) is not None and "localStorage.setItem(HOST_KEY" not in _app_code
       and 'localStorage.setItem("flaskide-live-host"' not in _app_code,
       "any editor tab would take over the class's screens")
 check("  and rejoined only on the page it went live from",
@@ -1949,7 +1959,7 @@ print("\nReopening, in the browsers")
 _app_now = code_only(open(os.path.join(FLASKIDE, "static", "app.js")).read())
 # This file's fn_body finds a function's end by its indent, which suits the
 # top-level ones it was written for; teachAgain sits one level in.
-_m_teach = re.search(r"function teachAgain\(code, slug\) \{[\s\S]*?\n    \}\n", _app_now)
+_m_teach = re.search(r"function teachAgain\(code, slug, resuming\) \{[\s\S]*?\n    \}\n", _app_now)
 _teach_fn = _m_teach.group(0) if _m_teach else ""
 check("app.js reopens only from Teach this lesson again",
       'startLive(undefined, "", code);' in _teach_fn
@@ -1960,8 +1970,21 @@ check("  and only when the link asked for it",
       re.search(r'if \(teach\) \{[\s\S]{0,200}?history\.replaceState\([\s\S]{0,120}?teachAgain\(teach, teachFor\);',
                 _app_now) is not None,
       "left in the address bar, a reload would load the starter over the lesson")
+# A reopen is the third argument; the reload path (resumeLive, and
+# teachAgain when it is called from there) passes two.
+_m_resume = re.search(r"function resumeLive\(code\) \{[\s\S]*?\n    \}\n", _app_now)
+_resume_fn = _m_resume.group(0) if _m_resume else ""
+# Resumed only once the editor exists: this runs before DOMContentLoaded,
+# where the editor is made, and the first editor.getValue() threw into a
+# catch that took it for blocked storage — a reload left the teacher
+# silently off the air.
+check("a reload waits for the editor before it resumes",
+      re.search(r'if \(editor\) resumeLive\(resumeCode\);\s*else document\.addEventListener\("DOMContentLoaded", function \(\) \{ resumeLive\(resumeCode\); \}\);', _app_now) is not None,
+      "the button said Go live and the class sat on the last push")
 check("  and the reload path never asks for one",
-      'startLive(undefined, resumeCode);' in _app_now)
+      re.search(r'if \(editor\) resumeLive\(resumeCode\);\s*else document\.addEventListener\("DOMContentLoaded", function \(\) \{ resumeLive\(resumeCode\); \}\);', _app_now) is not None and _resume_fn
+      and not re.search(r'startLive\([^)]*,[^)]*,', _resume_fn)
+      and "if (resuming) startLive(undefined, code);" in _teach_fn)
 
 # What it does, run for real: the project goes into the editor BEFORE the
 # lesson reopens, so the first push the class sees is the lesson's code and
@@ -2002,6 +2025,64 @@ setTimeout(function () { console.log(JSON.stringify(log)); }, 50);
           got == ["live abc x = 1 -"], got)
 else:
     check("node is available to run teachAgain", False, "brew install node")
+
+# A RELOAD MID-LESSON, run for real. Go live from the class page teaches on
+# /new and clears the lesson out of the address bar, so a reload came back
+# as the default template — and resumed, sending that template to the class
+# over the lesson's last code (found in PyIDE, mid-lesson). Now the tab
+# keeps its files as it unloads (pagehide) and puts them back BEFORE it goes
+# back on the air.
+check("the tab keeps its files as it unloads, while live, in this tab only",
+      re.search(r'addEventListener\("pagehide", function \(\) \{\s*if \(!liveCode\) return;'
+                r'[\s\S]{0,200}?sessionStorage\.setItem\(FILES_KEY', _app_now) is not None
+      and "localStorage.setItem(FILES_KEY" not in _app_now.replace("sessionStorage.setItem(FILES_KEY", ""),
+      "a reload put the default template on the class's screens")
+if shutil.which("node") and _resume_fn:
+    harness = """
+var log = [], files = {"app.py": 1, "notes.md": 1}, current = "app.py";
+function loadStarter(f) { log.push("files " + Object.keys(f).join()); }
+function openFile(n) { log.push("switch " + n); }
+var c = %s, location = {pathname: c.path};
+function keptFiles(code) { return c.kept; }
+function liveSlug() { return "hw1"; }
+function $(id) { return id === "title" ? title : null; }
+var title = {value: "Untitled"};
+function teachAgain(code, slug, resuming) { log.push("rebuild " + code + " " + slug + " " + resuming); }
+function startLive(a, r, reopen) { log.push("resume " + r + (reopen ? " REOPEN" : "")); }
+%s
+resumeLive("abc");
+log.push("title " + title.value);
+console.log(JSON.stringify(log));
+"""
+    def run_resume(case):
+        res = subprocess.run(["node", "-e", harness % (json.dumps(case), _resume_fn)],
+                             capture_output=True, text=True)
+        return json.loads(res.stdout) if res.returncode == 0 else [res.stderr[-200:]]
+    got = run_resume({"path": "/new", "kept": {"files": {"app.py": "mine", "notes.md": "n"},
+                                               "active": "notes.md", "title": "Loops"}})
+    check("a reload puts the tab's own files back, then goes back on the air",
+          got == ["files app.py,notes.md", "switch notes.md", "resume abc", "title Loops"], got)
+    got = run_resume({"path": "/new", "kept": None})
+    check("  kept nothing (too big for storage): /new rebuilds the lesson from the server",
+          got == ["rebuild abc hw1 true", "title Untitled"], got)
+    got = run_resume({"path": "/teacher/hw1/edit", "kept": None})
+    check("  any other page loaded its own project, and simply resumes",
+          got == ["resume abc", "title Untitled"], got)
+else:
+    check("resumeLive is there to run, and so is node", False, "no resumeLive in app.js, or brew install node")
+
+# A drag that never hears its end leaves the body's class on: the resize
+# cursor everywhere and user-select: none, so the editor took no keys. It
+# happened mid-lesson in PyIDE; pointerup alone can be swallowed, and a
+# button let go over the preview's iframe is heard only by the iframe.
+_split_code = code_only(open(os.path.join(FLASKIDE, "static", "split.js")).read())
+check("a handle's drag ends however the pointer goes, not only on pointerup",
+      all('addEventListener("%s", up)' % ev in _split_code
+          for ev in ("pointerup", "pointercancel", "lostpointercapture"))
+      and 'window.addEventListener("blur", up)' in _split_code
+      and 'document.addEventListener("pointermove", stray, true)' in _split_code
+      and re.search(r"function up\(\) \{\s*if \(done\) return;", _split_code) is not None,
+      "the cursor stayed a resize arrow and the editor refused every key")
 
 _live_now_js = code_only(open(os.path.join(FLASKIDE, "static", "live.js")).read())
 # THE BUG: one `seen` for both the draft's version and the lesson's, so the

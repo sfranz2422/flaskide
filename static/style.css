@@ -1971,6 +1971,16 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
  * first drag, before anything was sized, so it looked like a stiff handle
  * rather than a bug. Found in WebIDE first. */
 .is-sized + .resizer:not([data-size="next"]) + * { flex-basis: 0; }
+/* And keeps a floor. A size is kept per browser and can be bigger than the
+ * room there is now — split.js only clamps it while it is being dragged —
+ * and the pane beside it, with no basis of its own, then got nothing at
+ * all: a student's own editor, the whole right column, or the page preview
+ * above a notes pane sized from below, gone until the size was cleared, and
+ * still gone after closing the tab. Found in PyIDE, where it was the
+ * class's notes. A folded console is only its head, so not that. */
+.is-sized + .resizer-y:not([data-size="next"]) + :not(.is-folded) { min-height: 80px; }
+.is-sized + .resizer-x:not([data-size="next"]) + * { min-width: 80px; }
+:not(.is-folded):not(.resizer):has(~ .resizer-y[data-size="next"] + .is-sized) { min-height: 80px; }
 /* The editor's console is sized from ABOVE (data-pane="output"), so the
  * pane taking what is left is the one before it: the preview, `1 1 62%`, or
  * the SQL results. With their own basis they kept a share, and the console

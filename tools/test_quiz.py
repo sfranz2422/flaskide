@@ -299,8 +299,11 @@ st, d = answer(kid, mc["qid"], "4")
 check("a wrong answer is marked wrong, at once",
       st == 200 and d["correct"] is False and d["earned"] == 0 and d["points"] == 2,
       repr(d))
+# Not the points (2.0) and not the time: "turned in at 03:55 PM" has a 5 in
+# it, and this check failed whenever the clock did.
 check("  and the reply does not say what was right",
-      "5" not in json.dumps({k: v for k, v in d.items() if k != "points"}),
+      "5" not in json.dumps({k: v for k, v in d.items()
+                             if k not in ("points", "turned_in_at")}),
       repr(d))
 st, d = answer(kid, mc["qid"], "5")
 check("a second try is not taken", st == 200 and d["correct"] is False
