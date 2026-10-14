@@ -160,6 +160,18 @@ check("  starting as the editor's own starter project",
       a.file_map() == P.STARTER and a.kind == "code", list(a.file_map()))
 check("  with its live link made already",
       len(q(accounts.LiveSession, assignment_id=a.id)) == 1)
+# The only way to make a SQL assignment: the editor's + SQL button is kept
+# off assignments. Made in Scratch so this class's order below is untouched.
+SQLHW = teacher.post("/api/class/%d/new" % CX,
+                     json={"title": "Intro to SQL", "kind": "sql"}).get_json()
+sql_a = q(accounts.Assignment, slug=SQLHW["slug"])[0]
+check("New SQL assignment starts as the SQL starter, opened in the editor",
+      sql_a.file_map() == P.SQL_STARTER and P.kind_of(sql_a.file_map()) == "sql"
+      and SQLHW["url"] == "/teacher/%s/edit" % SQLHW["slug"], list(sql_a.file_map()))
+check("  and is still kind code, so everything else treats it as one",
+      sql_a.kind == "code", sql_a.kind)
+check("  and the class page offers it",
+      '<option value="sql">' in teacher.get("/teacher/class/%d" % C4).get_data(as_text=True))
 LISTS = teacher.post(NEW, json={"title": "Lists"}).get_json()["slug"]
 QUIZ = teacher.post(NEW, json={"title": "Lists quiz", "kind": "lesson"}).get_json()
 check("New lesson makes a lesson, opened in the lesson editor",
@@ -243,8 +255,9 @@ check("  with Describe on an assignment's row and a heading's",
       and 'js-describe">Describe' in _row_html(group_row))
 
 # What each is, and whether it is in Google Classroom.
-check("the Add form's kinds are Code, Lesson and Material",
-      re.search(r'<option value="code">Code</option>\s*<option value="lesson">Lesson</option>'
+check("the Add form's kinds are Code, SQL, Lesson and Material",
+      re.search(r'<option value="code">Code</option>\s*<option value="sql">SQL</option>'
+                r'\s*<option value="lesson">Lesson</option>'
                 r'\s*<option value="material">Material</option>', page) is not None)
 _quiz_row = [int(i) for i, s_, _ in order() if s_ == QUIZ][0]
 check("a code assignment is tagged code, a lesson lesson",

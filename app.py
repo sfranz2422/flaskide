@@ -3867,9 +3867,12 @@ def class_new_assignment(class_id):
     """New assignment (or lesson) straight into a class: on top, with its
     assignment link and its live link made now, then opened to write.
 
-    An assignment starts as the editor's own starter project (STARTER) —
-    the editor is where the teacher makes it theirs, the same as editing
-    any assignment."""
+    An assignment starts as the editor's own starter project (STARTER, or
+    SQL_STARTER for kind "sql") — the editor is where the teacher makes it
+    theirs, the same as editing any assignment. "sql" is not stored: the
+    files decide the kind (kind_of), so it only picks the starter. It is the
+    one way to make a SQL assignment, because the editor's + SQL button is
+    kept off assignments."""
     db = SessionLocal()
     try:
         user, course, bounce = _own_class(db, class_id)
@@ -3888,7 +3891,8 @@ def class_new_assignment(class_id):
             item = accounts.Assignment(
                 slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
                 teacher_id=user.id, title=title, code="",
-                files=json.dumps(STARTER))
+                files=json.dumps(SQL_STARTER if data.get("kind") == "sql"
+                                 else STARTER))
         db.add(item)
         db.commit()
         _store_quiz_keys(db, item.id, item.file_map().values())

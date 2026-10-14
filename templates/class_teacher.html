@@ -93,8 +93,12 @@
       <input id="new-title" class="field" type="text" maxlength="200"
              placeholder="Name of the new assignment or material" aria-label="New item's name">
       <select id="new-kind" class="field" aria-label="Kind"
-              title="Code: a project students write in the editor. Lesson: slides and questions. Material: text, links and pictures, nothing to open.">
+              title="Code: a Flask app students write in the editor. SQL: queries against a database. Lesson: slides and questions. Material: text, links and pictures, nothing to open.">
+        {#  SQL is the only way to start a SQL assignment. The editor's + SQL
+            button is not shown on an assignment (it opens a new blank
+            project, and there it threw the teacher out of the assignment). #}
         <option value="code">Code</option>
+        <option value="sql">SQL</option>
         <option value="lesson">Lesson</option>
         <option value="material">Material</option>
       </select>
