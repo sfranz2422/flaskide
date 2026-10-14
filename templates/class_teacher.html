@@ -110,7 +110,7 @@
       <input id="group-title" class="field" type="text" maxlength="200"
              placeholder="New group, e.g. Topic 2: Lists" aria-label="New group's name">
       <button class="btn" type="submit">Add group</button>
-      <span class="dim small">Groups are only headings on this page — drag things under them.</span>
+      <span class="dim small">Groups are only headings on this page — drag things under them, or drag a heading to move its whole group.</span>
     </form>
   </section>
 
@@ -330,34 +330,73 @@
 
   /* Dragging a row by its handle. Pointer events rather than HTML5
      drag-and-drop: those never fire for a finger, and a <tr> dragged that way
-     shows as a ghost of one cell. The row itself moves as the pointer goes —
-     past the middle of the row under it, it takes that row's place — so what
-     is on screen when the button comes up is exactly the order sent. Nothing
-     is sent for a drag that ends where it began. */
+     shows as a ghost of one cell. The rows themselves move as the pointer
+     goes — past the middle of what is under it, they take its place — so
+     what is on screen when the button comes up is exactly the order sent.
+     Nothing is sent for a drag that ends where it began.
+
+     A group's handle carries the group: its heading and every row under it,
+     up to the next heading. It moves between whole groups only, never into
+     the middle of one — dropped there, the rows below the drop point would
+     silently become part of the group being moved, since "under a heading"
+     is all a group is. For the same reason no group goes above the rows
+     before the first heading: they would quietly join it. Those rows count
+     as one group that only ever has groups after it. */
   (function () {
     var body = document.querySelector(".class-list tbody");
     if (!body) return;
-    var row = null, start = "", lastY = 0, scroller = 0;
+    var moving = null, start = "", lastY = 0, scroller = 0;
 
-    function ids() {
-      return Array.prototype.map.call(body.querySelectorAll("tr[data-item]"),
-                                      function (el) { return el.dataset.item; }).join();
+    function rows() { return Array.prototype.slice.call(body.querySelectorAll("tr[data-item]")); }
+    function ids() { return rows().map(function (el) { return el.dataset.item; }).join(); }
+
+    // The page in groups: a run of rows starting at each heading.
+    function groups() {
+      var out = [];
+      rows().forEach(function (r) {
+        if (!out.length || isGroup(r)) out.push([]);
+        out[out.length - 1].push(r);
+      });
+      return out;
+    }
+
+    /* What a handle moves, and what it moves among: a row among rows, or a
+       group among groups. */
+    function unitsFor(r) {
+      return isGroup(r) ? groups()
+        : rows().map(function (x) { return [x]; });
+    }
+    function sameUnit(a, b) { return a[0] === b[0]; }
+    function isGroup(r) { return r.classList.contains("group-row"); }
+    // Only a heading can have a group put in front of it (see above).
+    function roomBefore(u) { return !isGroup(moving[0]) || isGroup(u[0]); }
+
+    function putBefore(ref) { moving.forEach(function (m) { body.insertBefore(m, ref); }); }
+    function putAfter(unit) {
+      var ref = unit[unit.length - 1].nextElementSibling;
+      moving.forEach(function (m) { body.insertBefore(m, ref); });
     }
 
     function place(y) {
-      var rows = body.querySelectorAll("tr[data-item]");
-      for (var i = 0; i < rows.length; i++) {
-        var r = rows[i];
-        if (r === row) continue;
-        var box = r.getBoundingClientRect();
-        if (y < box.top || y > box.bottom) continue;
-        if (y < box.top + box.height / 2) {
-          if (r.previousElementSibling !== row) body.insertBefore(row, r);
-        } else if (r.nextElementSibling !== row) {
-          body.insertBefore(row, r.nextElementSibling);
+      var units = unitsFor(moving[0]);
+      for (var i = 0; i < units.length; i++) {
+        var u = units[i];
+        if (sameUnit(u, moving)) continue;
+        var top = u[0].getBoundingClientRect().top;
+        var bottom = u[u.length - 1].getBoundingClientRect().bottom;
+        if (y < top || y > bottom) continue;
+        if (y < (top + bottom) / 2 && roomBefore(u)) {
+          if (u[0].previousElementSibling !== moving[moving.length - 1]) putBefore(u[0]);
+        } else if (u[u.length - 1].nextElementSibling !== moving[0]) {
+          putAfter(u);
         }
         return;
       }
+    }
+
+    function unitOf(r) {
+      var units = unitsFor(r);
+      for (var i = 0; i < units.length; i++) if (units[i].indexOf(r) >= 0) return units[i];
     }
 
     /* Near the top or bottom of the window the page scrolls by itself, so a
@@ -375,40 +414,46 @@
       var grip = e.target.closest(".js-grip");
       if (!grip || e.button !== 0) return;
       e.preventDefault();                       // no text selected on the way
-      row = grip.closest("tr[data-item]");
+      moving = unitOf(grip.closest("tr[data-item]"));
       start = ids();
       lastY = e.clientY;
       grip.setPointerCapture(e.pointerId);
-      row.classList.add("is-dragging");
+      moving.forEach(function (m) { m.classList.add("is-dragging"); });
       document.body.classList.add("is-sorting");
       scroller = requestAnimationFrame(edgeScroll);
     });
     body.addEventListener("pointermove", function (e) {
-      if (!row) return;
+      if (!moving) return;
       lastY = e.clientY;
       place(lastY);
     });
     function drop() {
-      if (!row) return;
+      if (!moving) return;
       cancelAnimationFrame(scroller);
-      row.classList.remove("is-dragging");
+      moving.forEach(function (m) { m.classList.remove("is-dragging"); });
       document.body.classList.remove("is-sorting");
-      row = null;
+      moving = null;
       if (ids() !== start) saveOrder();
     }
     body.addEventListener("pointerup", drop);
     body.addEventListener("pointercancel", drop);
 
-    // The handle focused: ↑ and ↓ move its row one place, and keep the focus.
+    /* The handle focused: ↑ and ↓ move what it carries one place — a row
+       past a row, a group past a whole group — and keep the focus. */
     body.addEventListener("keydown", function (e) {
       var grip = e.target.closest(".js-grip");
       if (!grip || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
       e.preventDefault();
       var r = grip.closest("tr[data-item]");
-      var sib = e.key === "ArrowUp" ? r.previousElementSibling : r.nextElementSibling;
-      if (!sib) return;
-      if (e.key === "ArrowUp") body.insertBefore(r, sib);
-      else body.insertBefore(sib, r);
+      var units = unitsFor(r), at = -1;
+      units.forEach(function (u, i) { if (u.indexOf(r) >= 0) at = i; });
+      var next = units[at + (e.key === "ArrowUp" ? -1 : 1)];
+      moving = units[at];
+      if (next && (e.key === "ArrowDown" || roomBefore(next))) {
+        if (e.key === "ArrowUp") putBefore(next[0]); else putAfter(next);
+      } else next = null;
+      moving = null;
+      if (!next) return;
       grip.focus();
       saveOrder();
     });
