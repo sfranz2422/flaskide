@@ -345,7 +345,7 @@
   (function () {
     var body = document.querySelector(".class-list tbody");
     if (!body) return;
-    var moving = null, start = "", lastY = 0, scroller = 0;
+    var moving = null, start = "", lastY = 0, scroller = 0, grip = null, pointer = 0;
 
     function rows() { return Array.prototype.slice.call(body.querySelectorAll("tr[data-item]")); }
     function ids() { return rows().map(function (el) { return el.dataset.item; }).join(); }
@@ -390,8 +390,20 @@
         } else if (u[u.length - 1].nextElementSibling !== moving[0]) {
           putAfter(u);
         }
+        hold();
         return;
       }
+    }
+
+    /* Moving a row takes it out of the page and puts it back, and Chrome
+       lets go of the handle's pointer capture the moment it leaves — which
+       ends the drag (lostpointercapture, below) after its first step. So
+       every drag moved a row one place and stopped, silently, and nothing
+       could be dragged into another group. Taking the capture straight
+       back keeps the drag going until the button comes up. */
+    function hold() {
+      if (!grip) return;                       // the arrow keys: no pointer
+      try { grip.setPointerCapture(pointer); } catch (err) { drop(); }
     }
 
     function unitOf(r) {
@@ -411,13 +423,15 @@
     }
 
     body.addEventListener("pointerdown", function (e) {
-      var grip = e.target.closest(".js-grip");
-      if (!grip || e.button !== 0) return;
+      var g = e.target.closest(".js-grip");
+      if (!g || e.button !== 0) return;
       e.preventDefault();                       // no text selected on the way
+      grip = g;
+      pointer = e.pointerId;
       moving = unitOf(grip.closest("tr[data-item]"));
       start = ids();
       lastY = e.clientY;
-      grip.setPointerCapture(e.pointerId);
+      grip.setPointerCapture(pointer);
       moving.forEach(function (m) { m.classList.add("is-dragging"); });
       document.body.classList.add("is-sorting");
       scroller = requestAnimationFrame(edgeScroll);
@@ -433,6 +447,7 @@
       moving.forEach(function (m) { m.classList.remove("is-dragging"); });
       document.body.classList.remove("is-sorting");
       moving = null;
+      grip = null;
       if (ids() !== start) saveOrder();
     }
     /* Every way a drag can end, ends it — the body's class otherwise keeps
