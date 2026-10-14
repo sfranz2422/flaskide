@@ -233,6 +233,13 @@
     <div class="editor-wrap"><textarea id="editor"></textarea></div>
   </section>
 
+  {#  Handles (split.js), as on the class's live page: beside the code,
+      above the console, and above the teacher's "Class sees". The last two
+      size the pane BELOW them (data-size="next"): the console because the
+      pane above it is the preview or the SQL results, whichever is shown,
+      and "Class sees" because the preview and the notes take turns above. #}
+  <div class="resizer resizer-x" data-split="editor-left"></div>
+
   <section class="pane pane-right">
     <div id="preview-view" class="subpane">
       {#  The notes and the preview take turns in this pane — there is no
@@ -274,6 +281,7 @@
         <iframe id="preview" title="Page preview"
                 sandbox="allow-scripts allow-forms"></iframe>
       </div>
+      <div class="resizer resizer-y" data-split="editor-console" data-size="next" data-pane="output"></div>
       <div class="pane-head console-head">
         <span>Console</span>
         <button id="clear" class="linkbtn">Clear</button>
@@ -311,6 +319,7 @@
         way to know what the class was reading was to walk over and look at
         a student's screen. Same place as on theirs, under the right pane. #}
     {% if is_teacher %}
+      <div class="resizer resizer-y" data-split="editor-class" data-size="next"></div>
       <div id="class-view" class="subpane class-view" hidden>
         <div class="pane-head"><span>Class sees</span>
           {#  Only when the notes have two or more slides, divided by `---`.
@@ -429,6 +438,7 @@
 <script src="{{ url_for('static', filename='tabstops.js') }}"></script>
 <script src="{{ url_for('static', filename='rescue.js') }}"></script>
 <script src="{{ url_for('static', filename='account.js') }}"></script>
+<script src="{{ url_for('static', filename='split.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

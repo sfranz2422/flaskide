@@ -194,6 +194,11 @@
       <div id="mirror-notes" class="notes-body prose" hidden></div>
     </div>
 
+    {#  Handles (split.js): each sizes the pane before it, and the pane
+        after takes the rest. Students drag them; the sizes are kept in
+        their browser. A handle beside a hidden pane is hidden with it. #}
+    <div class="resizer resizer-y" data-split="live-mirror"></div>
+
     <div class="live-pane live-mine">
       {#  Tabs, like the editor's: the entry file and every other file in
           their project — templates/, static/, schema.sql. The pane was the
@@ -215,6 +220,8 @@
       <div class="editor-wrap"><textarea id="mine"></textarea></div>
     </div>
   </section>
+
+  <div class="resizer resizer-x" data-split="live-left"></div>
 
   <section class="pane pane-right live-right">
     {#  The student's own page, rendered. Same sandboxed frame the editor
@@ -256,6 +263,11 @@
         <iframe id="teacher-page" title="Your teacher's page" sandbox=""></iframe>
       </div>
     </div>
+    {#  The right-hand column's two handles size the pane BELOW them
+        (data-size="next"): the preview is what is left, as it always was
+        here, so a folded console or a lesson without notes simply loses
+        its handle and nothing else has to change. #}
+    <div class="resizer resizer-y" data-split="live-console" data-size="next"></div>
 
     <div id="output-view" class="subpane live-console is-folded">
       {#  Same arrangement for the console: theirs and the teacher's, two
@@ -276,6 +288,7 @@
 </pre>
       <pre id="teacher-output" class="output" hidden></pre>
     </div>
+    <div class="resizer resizer-y" data-split="live-notes" data-size="next"></div>
 
     {#  The project's notes, always in view — not only while the teacher has
         the .md tab open. Rendered by notes.js, which sanitises the HTML and
@@ -349,6 +362,7 @@
 <script src="{{ url_for('static', filename='complete.js') }}"></script>
 <script src="{{ url_for('static', filename='sighint.js') }}"></script>
 <script src="{{ url_for('static', filename='tabstops.js') }}"></script>
+<script src="{{ url_for('static', filename='split.js') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='live.js') }}"></script>
 

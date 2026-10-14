@@ -1903,3 +1903,74 @@ pre .quiz-blank, code .quiz-blank { font-family: inherit; }
    assignment's page. Any link with a class keeps the colour it sets. */
 a:not([class]), a:not([class]):visited { color: var(--accent); }
 a:not([class]):hover { color: var(--accent-hover); }
+
+/* ------------------------------------------------------------- handles */
+/* Ported from PyIDE (split.js). `.resizer`, NOT `.split`: `.split` is the
+ * editor's own <main>. PyIDE's were written as `.split` once, and every
+ * editor page went blank below the toolbar — the whole editor became a 7px
+ * bar, and on a narrow screen it was display: none.
+ *
+ * A bar between two panes, with a grip in the middle. It replaces the
+ * border that used to be there, so the page has one line between panes and
+ * not two. touch-action: none, or a finger on a touch screen scrolls the
+ * page instead of dragging. */
+.resizer {
+  flex: 0 0 7px;
+  position: relative;
+  background: var(--bg-head);
+  touch-action: none;
+}
+.resizer-x { cursor: col-resize; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+.resizer-y { cursor: row-resize; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.resizer::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 2px;
+  background: var(--muted);
+  opacity: .6;
+}
+.resizer-x::after { width: 3px; height: 28px; }
+.resizer-y::after { width: 28px; height: 3px; }
+.resizer:hover, .resizer:focus-visible, .resizer.is-dragging { background: var(--accent); outline: none; }
+.resizer:hover::after, .resizer:focus-visible::after, .resizer.is-dragging::after { background: #fff; opacity: 1; }
+/* While dragging, the cursor stays a resize arrow over whatever it crosses —
+ * CodeMirror, the preview's iframe — and nothing gets selected on the way. */
+body.is-resizing-x, body.is-resizing-x * { cursor: col-resize !important; user-select: none !important; }
+body.is-resizing-y, body.is-resizing-y * { cursor: row-resize !important; user-select: none !important; }
+/* An iframe swallows the pointer, and the drag would stop dead the moment
+ * it crossed the preview. Capture should prevent that; this makes sure. */
+body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
+
+/* A handle beside a hidden pane goes with it. One that sizes the pane
+ * after it only goes with THAT pane: "Class sees" sits under the preview
+ * and the notes, which take turns being hidden. */
+.resizer:has(+ [hidden]), [hidden] + .resizer:not([data-size="next"]) { display: none; }
+
+/* THE CLASS'S RIGHT-HAND COLUMN: PREVIEW, CONSOLE, NOTES. The preview is
+ * what is left, as it was before there were handles; the two handles size
+ * the console and the notes from above. Folded, the console is its head
+ * and nothing more, whatever size it was dragged to — split.js puts the
+ * stored size on it inline, which would otherwise beat .is-folded and
+ * leave an empty strip — and its handle goes, since there is nothing in
+ * it to size. */
+.live-right .live-console.is-folded { flex: 0 0 auto !important; }
+.resizer:has(+ .live-console.is-folded) { display: none; }
+
+@media (min-width: 861px) {
+  /* The handles take the place of these borders. */
+  .split > .pane-editor { border-right: 0; }
+  .split .resizer + .console-head { border-top: 0; }
+  .split .pane-right .class-view { border-top: 0; }
+  .live-left { border-right: 0; }
+  .live-mirror { border-bottom: 0; }
+  .live-right .live-notes { border-top: 0; }
+}
+
+/* Stacked, the page scrolls and there is nothing to share; split.js takes
+ * the dragged sizes off at the same width. */
+@media (max-width: 860px) {
+  .resizer { display: none; }
+}

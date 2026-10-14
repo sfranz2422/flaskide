@@ -873,6 +873,14 @@
       });
     }
 
+    /* The handles between the panes (split.js), the same ones the class's
+       live page has. The editor is told, because CodeMirror measures itself
+       only on a window resize. */
+    window.FlaskIDESplit.attachAll(document, {
+      wide: window.matchMedia ? window.matchMedia("(min-width: 861px)") : null,
+      onResize: function () { editor.refresh(); }
+    });
+
     /* THE LOGO GOES TO THE FRONT DOOR — a student's classes, a teacher's
        dashboard. A saved project has lost nothing by leaving: it autosaves,
        and pagehide sends whatever is pending (account.js). A project with

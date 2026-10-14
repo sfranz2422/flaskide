@@ -106,6 +106,17 @@ filename being taught — so nothing needs switching by hand.
 There is no Stop button, deliberately: a Flask request runs to completion on
 this thread and there is nothing to interrupt. The editor has none either.
 
+**Handles between the panes** (`static/split.js`, ported from PyIDE), on
+the class's live page and in the editor. A handle sizes the pane before it,
+or with `data-size="next"` the one after it, or with `data-pane` the one it
+names (the editor's console, whose neighbour above is the preview or the
+SQL results, whichever is shown). On the live page the preview is what's
+left; the handles size the console and the notes from above, so a folded
+console or a lesson without notes only loses its own handle. Sizes are kept
+per browser in localStorage and dropped while the page is stacked. The
+class is `.resizer`, never `.split`: that is the editor's own `<main>`, and
+in PyIDE handle rules written as `.split` blanked every editor page.
+
 **Name completion** (`static/complete.js`) is a JavaScript scanner, not
 Python's `ast` as in PyIDE, because Pyodide is not loaded until the first
 Run. `test_complete.py` holds it to the same answers as `ast` on real

@@ -1263,6 +1263,114 @@ check("  and the console is a strip, smaller than the notes under it",
       and int(_con.group(1)) < int(_notes.group(1)),
       "console %s, notes %s" % (_con and _con.group(1), _notes and _notes.group(1)))
 
+# HANDLES BETWEEN THE PANES (split.js), ported from PyIDE. Every fixed split
+# of the class's page was wrong for somebody, so the students choose.
+import shutil as _shutil, subprocess as _subprocess          # noqa: E402
+_live_tpl = open(os.path.join(FLASKIDE, "templates", "live.html")).read()
+_editor_tpl = open(os.path.join(FLASKIDE, "templates", "index.html")).read()
+_handle_re = r'<div class="resizer resizer-([xy])" data-split="([\w-]+)"((?: data-[\w-]+="[\w-]+")*)></div>'
+_live_handles = re.findall(_handle_re, _live_tpl)
+check("every pane on the class's page has a handle",
+      sorted(n for _, n, _ in _live_handles) == ["live-console", "live-left",
+                                                 "live-mirror", "live-notes"],
+      _live_handles)
+# The preview is what is left over in that column, as it always was: the
+# handles size the console and the notes from above, so a folded console or
+# a lesson with no notes only loses its own handle.
+check("  the right-hand column's size the pane below them",
+      ("y", "live-console", ' data-size="next"') in _live_handles
+      and ("y", "live-notes", ' data-size="next"') in _live_handles,
+      _live_handles)
+_joined = _live_tpl[_live_tpl.rindex("{% if joined and not is_host %}"):]
+check("  with split.js loaded for a student, before live.js",
+      -1 < _joined.find("filename='split.js'") < _joined.find("{% endif %}")
+      < _joined.find("filename='live.js'"))
+check("  which tell both editors when a size changes",
+      re.search(r"FlaskIDESplit\.attachAll\(document, \{[^}]*onResize: function \(\) "
+                r"\{ mirror\.refresh\(\); mine\.refresh\(\); \}", code_only(live_js)) is not None,
+      "CodeMirror measures itself only on a window resize")
+# A stored size is put on the pane inline, which beats .is-folded: a folded
+# console would be its head over an empty strip.
+check("  and a folded console is still only its head",
+      "flex: 0 0 auto !important" in rule(".live-right .live-console.is-folded")
+      and ".resizer:has(+ .live-console.is-folded) { display: none; }" in css)
+
+_ed_handles = re.findall(_handle_re, _editor_tpl)
+check("the editor has handles too",
+      sorted(n for _, n, _ in _ed_handles) == ["editor-class", "editor-console", "editor-left"]
+      and ("y", "editor-class", ' data-size="next"') in _ed_handles
+      and -1 < _editor_tpl.find("filename='split.js'") < _editor_tpl.find("filename='app.js'"),
+      _ed_handles)
+# The pane above the console is the preview in a Flask app and the results
+# grid in a SQL one, so the console's handle names its pane instead.
+check("  the console's sizing the console itself, in either kind of project",
+      ("y", "editor-console", ' data-size="next" data-pane="output"') in _ed_handles
+      and 'id="output"' in _editor_tpl[_editor_tpl.index('data-split="editor-console"'):][:400])
+check("  which tell the editor when a size changes",
+      re.search(r"FlaskIDESplit\.attachAll\(document, \{[^}]*onResize: function \(\) "
+                r"\{ editor\.refresh\(\); \}", code_only(app_js)) is not None)
+
+# PyIDE's handles were `.split` once, which is the editor's <main>: every
+# editor page went blank under the toolbar. Only the editor's rules may name
+# it; rules for what is inside it (.split > .pane-editor) are fine.
+_split_rules = re.findall(r"(?m)^[^/*\n]*\.split\b(?!-)\s*[,{][^\n]*", css)
+check("  without touching the editor, whose <main> is .split",
+      len(_split_rules) == 3 and '<main class="split">' in _editor_tpl, _split_rules)
+check("  and a handle beside a hidden pane goes with it",
+      '.resizer:has(+ [hidden]), [hidden] + .resizer:not([data-size="next"]) { display: none; }' in css)
+check("  and none of them on a narrow screen, where the page stacks",
+      re.search(r"@media \(max-width: 860px\) \{\s*\.resizer \{ display: none; \}", css) is not None)
+
+# split.js itself, run: a size kept in this browser is put back on the right
+# pane — the one before, the one after, or the one named by data-pane — and
+# taken off again on a narrow screen.
+if _shutil.which("node"):
+    _split_js = open(os.path.join(FLASKIDE, "static", "split.js")).read()
+    _harness = r"""
+    function El(id) { this.id = id; this.style = {}; this.dataset = {}; this.attrs = {};
+      this.cls = {}; var self = this;
+      this.classList = { contains: function (c) { return !!self.cls[c]; },
+        toggle: function (c, on) { self.cls[c] = on; }, add: function (c) { self.cls[c] = true; },
+        remove: function () {} }; }
+    El.prototype.setAttribute = function (k, v) { this.attrs[k] = v; };
+    El.prototype.addEventListener = function () {};
+    var before = new El("before"), after = new El("after"), output = new El("output");
+    function handle(name, extra) { var h = new El("h-" + name); h.dataset.split = name;
+      for (var k in extra) h.dataset[k] = extra[k];
+      h.cls["resizer-y"] = true; h.previousElementSibling = before; h.nextElementSibling = after;
+      return h; }
+    var hs = [handle("a", {}), handle("b", {size: "next"}), handle("c", {size: "next", pane: "output"})];
+    var store = {"flaskide-split:a": "200", "flaskide-split:b": "150", "flaskide-split:c": "120"};
+    global.localStorage = { getItem: function (k) { return k in store ? store[k] : null; },
+      setItem: function () {}, removeItem: function () {} };
+    global.requestAnimationFrame = function (f) { f(); };
+    global.document = { getElementById: function (id) { return id === "output" ? output : null; } };
+    global.window = {};
+    eval(require("fs").readFileSync(process.argv[1], "utf8"));
+    var listeners = [];
+    var wide = { matches: true, addEventListener: function (e, f) { listeners.push(f); } };
+    window.FlaskIDESplit.attachAll({ querySelectorAll: function () { return hs; } }, { wide: wide });
+    var out = [before.style.flex, after.style.flex, output.style.flex];
+    wide.matches = false; listeners.forEach(function (f) { f(); });
+    out.push(before.style.flex, after.style.flex, output.style.flex);
+    console.log(JSON.stringify(out));
+    """
+    _res = _subprocess.run(["node", "-e", _harness, os.path.join(FLASKIDE, "static", "split.js")],
+                           capture_output=True, text=True)
+    try:
+        _got = json.loads(_res.stdout.strip().splitlines()[-1])
+    except Exception:
+        _got = None
+    check("split.js puts a kept size back on the pane before, after, or named",
+          _got is not None and _got[:3] == ["0 1 200px", "0 1 150px", "0 1 120px"],
+          _got or _res.stderr[-300:])
+    check("  from this app's own key in the browser's storage",
+          "flaskide-split:" in _split_js and "pyide-split:" not in _split_js)
+    check("  and takes them off when the page stacks",
+          _got is not None and _got[3:] == ["", "", ""], _got)
+else:
+    check("split.js is run (needs node)", False, "brew install node")
+
 
 check("the teacher's code cannot be selected",
       declares(mirror_css, "user-select", "none"),
