@@ -11,7 +11,7 @@ WHAT IS BEING GUARDED
       and hidden or archived assignments must not reach the ones who are.
 
   The page is the teacher's arrangement.
-      New things go on top; the arrows' order is kept exactly, or refused
+      New things go on top; a dragged order is kept exactly, or refused
       whole when the page is out of date; a group is only a heading.
 
   Nothing a student did is ever lost by tidying the class.
@@ -195,10 +195,17 @@ check("the page is newest on top", titles == ["Topic 1: Getting started", "Lists
 check("the dashboard's own list leaves out what is in a class",
       'data-slug="%s"' % HELLO not in teacher.get("/teacher").get_data(as_text=True))
 
+# Every row is moved by dragging its handle; the old ▲▼ buttons are gone.
+page = teacher.get("/teacher/class/%d" % C4).get_data(as_text=True)
+rows_html = re.findall(r'<tr class="[^"]*" data-item="\d+".*?</tr>', page, re.S)
+check("every row of the class has a drag handle, and none has the old arrows",
+      len(rows_html) == 4 and all(h.count("js-grip") == 1 for h in rows_html)
+      and "js-up" not in page and "js-down" not in page, len(rows_html))
+
 ids = [int(i) for i, _, _ in order()]
 want = [ids[0], ids[3], ids[1], ids[2]]        # heading, Hello World, then the rest
 r = teacher.post("/api/class/%d/order" % C4, json={"items": want})
-check("the arrows' order is kept exactly",
+check("a dragged order is kept exactly",
       r.status_code == 200 and [int(i) for i, _, _ in order()] == want)
 check("an order missing an item is refused whole, not half applied",
       teacher.post("/api/class/%d/order" % C4, json={"items": want[:-1]}).status_code == 409

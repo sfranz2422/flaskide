@@ -38,7 +38,7 @@
 <main class="sheet">
   {#  A row's description: its preview (rendered below by notes.js, as the
       class sees it) and the box to write it in, both inside the title's cell
-      so a row stays one <tr> for the arrows to move. #}
+      so a row stays one <tr> to drag. #}
   {% macro describe(r) -%}
     <div class="md desc-preview {{ 'is-empty' if not r.description }}" data-md="{{ r.description }}">{{ r.description }}</div>
     <div class="desc-edit" hidden>
@@ -54,9 +54,11 @@
     </div>
   {%- endmacro %}
 
-  {% macro arrows() -%}
-    <button class="arrow js-up" title="Move up" aria-label="Move up">▲</button><button
-      class="arrow js-down" title="Move down" aria-label="Move down">▼</button>
+  {#  A row's handle: drag it anywhere in the list. A button, so it can be
+      focused and moved with the arrow keys too. #}
+  {% macro grip() -%}
+    <button class="grip js-grip" type="button" title="Drag to move (or ↑ ↓ on the keyboard)"
+            aria-label="Move: drag, or use the up and down arrow keys">⠿</button>
   {%- endmacro %}
 
 
@@ -108,12 +110,12 @@
       <input id="group-title" class="field" type="text" maxlength="200"
              placeholder="New group, e.g. Topic 2: Lists" aria-label="New group's name">
       <button class="btn" type="submit">Add group</button>
-      <span class="dim small">Groups are only headings on this page — move things under them with the arrows.</span>
+      <span class="dim small">Groups are only headings on this page — drag things under them.</span>
     </form>
   </section>
 
-  {#  The page, top to bottom. Every row carries its item id; the arrows move
-      a row and send the whole order. A group is a heading row; what is under
+  {#  The page, top to bottom. Every row carries its item id; dragging a row
+      sends the whole order. A group is a heading row; what is under
       it, until the next heading, is "in" it, and nothing else means so. #}
   {% if rows %}
     <table class="listing class-list">
@@ -126,7 +128,7 @@
           {% if r.material %}
             <tr class="material-row {{ 'is-hidden' if r.hidden }}" data-item="{{ r.id }}" data-title="{{ r.title }}"
                 data-hidden="{{ 1 if r.hidden else 0 }}">
-              <td class="order">{{ arrows() }}</td>
+              <td class="order">{{ grip() }}</td>
               <td colspan="3">
                 <span aria-hidden="true">📎</span>
                 <a href="{{ url_for('teacher_material', class_id=course.id, item_id=r.id) }}"><strong>{{ r.title }}</strong></a>
@@ -143,7 +145,7 @@
             </tr>
           {% elif r.group %}
             <tr class="group-row" data-item="{{ r.id }}" data-title="{{ r.title }}">
-              <td class="order">{{ arrows() }}</td>
+              <td class="order">{{ grip() }}</td>
               <td colspan="3"><strong class="group-title">{{ r.title }}</strong>{{ describe(r) }}</td>
               <td class="right rowactions">
                 <button class="linkbtn js-describe">Describe</button>
@@ -154,7 +156,7 @@
           {% else %}
             <tr class="{{ 'is-hidden' if r.hidden }}" data-item="{{ r.id }}" data-slug="{{ r.slug }}"
                 data-title="{{ r.title }}" data-hidden="{{ 1 if r.hidden else 0 }}">
-              <td class="order">{{ arrows() }}</td>
+              <td class="order">{{ grip() }}</td>
               <td>
                 <a href="{{ url_for('teacher_assignment', slug=r.slug) }}">{{ r.title }}</a>
                 {#  Long responses turned in and waiting for points; marked on
@@ -326,19 +328,97 @@
     });
   }
 
+  /* Dragging a row by its handle. Pointer events rather than HTML5
+     drag-and-drop: those never fire for a finger, and a <tr> dragged that way
+     shows as a ghost of one cell. The row itself moves as the pointer goes —
+     past the middle of the row under it, it takes that row's place — so what
+     is on screen when the button comes up is exactly the order sent. Nothing
+     is sent for a drag that ends where it began. */
+  (function () {
+    var body = document.querySelector(".class-list tbody");
+    if (!body) return;
+    var row = null, start = "", lastY = 0, scroller = 0;
+
+    function ids() {
+      return Array.prototype.map.call(body.querySelectorAll("tr[data-item]"),
+                                      function (el) { return el.dataset.item; }).join();
+    }
+
+    function place(y) {
+      var rows = body.querySelectorAll("tr[data-item]");
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (r === row) continue;
+        var box = r.getBoundingClientRect();
+        if (y < box.top || y > box.bottom) continue;
+        if (y < box.top + box.height / 2) {
+          if (r.previousElementSibling !== row) body.insertBefore(row, r);
+        } else if (r.nextElementSibling !== row) {
+          body.insertBefore(row, r.nextElementSibling);
+        }
+        return;
+      }
+    }
+
+    /* Near the top or bottom of the window the page scrolls by itself, so a
+       long class can be dragged end to end. A pointer held still sends no
+       events, hence the loop rather than doing it in pointermove. */
+    function edgeScroll() {
+      var edge = 50, step = 0;
+      if (lastY < edge) step = -Math.ceil((edge - lastY) / 4);
+      else if (lastY > innerHeight - edge) step = Math.ceil((lastY - innerHeight + edge) / 4);
+      if (step) { scrollBy(0, step); place(lastY); }
+      scroller = requestAnimationFrame(edgeScroll);
+    }
+
+    body.addEventListener("pointerdown", function (e) {
+      var grip = e.target.closest(".js-grip");
+      if (!grip || e.button !== 0) return;
+      e.preventDefault();                       // no text selected on the way
+      row = grip.closest("tr[data-item]");
+      start = ids();
+      lastY = e.clientY;
+      grip.setPointerCapture(e.pointerId);
+      row.classList.add("is-dragging");
+      document.body.classList.add("is-sorting");
+      scroller = requestAnimationFrame(edgeScroll);
+    });
+    body.addEventListener("pointermove", function (e) {
+      if (!row) return;
+      lastY = e.clientY;
+      place(lastY);
+    });
+    function drop() {
+      if (!row) return;
+      cancelAnimationFrame(scroller);
+      row.classList.remove("is-dragging");
+      document.body.classList.remove("is-sorting");
+      row = null;
+      if (ids() !== start) saveOrder();
+    }
+    body.addEventListener("pointerup", drop);
+    body.addEventListener("pointercancel", drop);
+
+    // The handle focused: ↑ and ↓ move its row one place, and keep the focus.
+    body.addEventListener("keydown", function (e) {
+      var grip = e.target.closest(".js-grip");
+      if (!grip || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+      e.preventDefault();
+      var r = grip.closest("tr[data-item]");
+      var sib = e.key === "ArrowUp" ? r.previousElementSibling : r.nextElementSibling;
+      if (!sib) return;
+      if (e.key === "ArrowUp") body.insertBefore(r, sib);
+      else body.insertBefore(sib, r);
+      grip.focus();
+      saveOrder();
+    });
+  })();
+
   document.addEventListener("click", function (e) {
     var row = e.target.closest("tr[data-item]");
     if (!row) return;
     var t = e.target.classList;
 
-    if (t.contains("js-up") || t.contains("js-down")) {
-      var sib = t.contains("js-up") ? row.previousElementSibling : row.nextElementSibling;
-      if (!sib) return;
-      if (t.contains("js-up")) row.parentNode.insertBefore(row, sib);
-      else row.parentNode.insertBefore(sib, row);
-      saveOrder();
-      return;
-    }
     if (t.contains("js-describe") || t.contains("js-desc-cancel")) {
       var box = row.querySelector(".desc-edit");
       box.hidden = !box.hidden;

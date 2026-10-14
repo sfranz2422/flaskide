@@ -1677,9 +1677,14 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .class-list .group-title { font-size: 15px; }
 .class-list tr.is-hidden td { opacity: .6; }
 .class-list th.order, .class-list td.order { width: 44px; padding-right: 0; white-space: nowrap; }
-.arrow { border: 0; background: none; color: var(--muted, #888); cursor: pointer;
-  font-size: 11px; padding: 2px 3px; line-height: 1; }
-.arrow:hover { color: var(--accent); }
+/* A row's drag handle. touch-action: none, or a finger on it scrolls the
+   page instead of dragging the row. */
+.grip { border: 0; background: none; color: var(--muted, #888); cursor: grab;
+  font-size: 16px; padding: 2px 6px; line-height: 1; touch-action: none; }
+.grip:hover, .grip:focus-visible { color: var(--accent); }
+.class-list tr.is-dragging td { background: var(--bg-panel); }
+.class-list tr.is-dragging { outline: 2px solid var(--accent); outline-offset: -2px; }
+body.is-sorting, body.is-sorting * { cursor: grabbing !important; user-select: none; }
 .live-pill { color: #fff !important; background: #d64541; border-radius: 999px;
   padding: 1px 9px; font-size: 12px; font-weight: 600; margin-left: 6px; text-decoration: none !important; }
 /* A phone: each row wraps, its buttons under its name, rather than the
