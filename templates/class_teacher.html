@@ -30,6 +30,8 @@
   <div class="actions">
     <a class="btn" href="{{ url_for('student_class', class_id=course.id) }}"
        title="This page as the class sees it: hidden ones left out">Student view</a>
+    <a class="btn" href="{{ url_for('class_attendance', class_id=course.id) }}"
+       title="Who came into this class, day by day">Attendance</a>
     <a class="btn" href="{{ url_for('teacher_home') }}">All classes</a>
     <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
   </div>

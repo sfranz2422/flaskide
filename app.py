@@ -17,6 +17,7 @@ import os
 import pathlib
 import re
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 
 from flask import (
@@ -742,6 +743,11 @@ def user_context(db):
         "my_classes": [{"id": c.id, "name": c.name, "url": url_for(
             "teacher_class" if user and c.teacher_id == user.id else "student_class",
             class_id=c.id)} for c in _my_classes(db, user)],
+        # _idle.html: whether this page signs its student out when idle,
+        # after how long, and which class's sitting its beat keeps open.
+        "idle_seconds": (STUDENT_IDLE_SECONDS if user and not accounts.is_teacher(user.email)
+                         else 0),
+        "attend_class": None,
     }
 
 
@@ -838,6 +844,10 @@ def auth_callback():
         user.last_name = (info.get("family_name") or user.last_name or "")[:80]
         db.commit()
         session["uid"] = user.id
+        # Fresh for this sign-in (_sign_out_idle_student): the idle clock,
+        # and whether they teach, which TEACHER_EMAILS may have changed.
+        session["teacher"] = accounts.is_teacher(user.email)
+        session["act"] = int(time.time())
     finally:
         db.close()
 
@@ -871,6 +881,103 @@ def logout():
             db.close()
     session.clear()
     return redirect(request.args.get("next") or url_for("home"))
+
+# --------------------------------------------------------------------------
+# Signing a student out after two idle hours
+# --------------------------------------------------------------------------
+# Students left tabs open for days and came back to a project in a page from
+# last week, with last week's JavaScript, while the app changed under them.
+# So a signed-in student who has done nothing for STUDENT_IDLE_SECONDS is
+# signed out, and must sign in again — which also reloads the page.
+#
+# TWO HALVES, AND THEY HAVE TO AGREE.
+#
+# The server: the session holds `act`, when this student last did anything,
+# and a request that finds it too old empties the session. "Did anything"
+# is any request except a GET to /api/: the live page polls once a second
+# and the editor fetches in the background, and if those counted, an open
+# tab would keep itself signed in forever, which is the whole problem.
+#
+# The page (templates/_idle.html): it watches the keyboard and the mouse and
+# POSTs /api/alive at most every five minutes while they are used. That is
+# what makes reading the notes or typing count as being here, since neither
+# reaches the server on its own. After the idle time it covers the page with
+# a Sign in again card and swallows keys, so nothing typed after the server
+# let go can be lost to a save that silently fails.
+#
+# The page gives up two minutes before the server does. `act` is only
+# rewritten once a minute, and the beat is sent at most every five, so the
+# server's clock can be slightly behind the page's. Were it the other way
+# round, a student could come back in that gap, type, and have the save
+# refused with nothing on screen to say why.
+#
+# Teachers are never signed out: signing out ends a live lesson (logout),
+# and a teacher presenting for two hours from one tab is not a stale tab.
+# Signed-out students have nothing to sign out of.
+
+STUDENT_IDLE_SECONDS = 2 * 60 * 60
+
+
+def _counts_as_activity():
+    if request.endpoint in ("static", "healthz", "serve_image"):
+        return False
+    return request.method != "GET" or not request.path.startswith("/api/")
+
+
+@app.before_request
+def _sign_out_idle_student():
+    uid = session.get("uid")
+    if not uid:
+        return
+    # Whether they teach, kept in the session so this is not a database
+    # query on every poll. Sessions from before this existed look it up once.
+    if "teacher" not in session:
+        db = SessionLocal()
+        try:
+            user = db.query(accounts.User).filter_by(id=uid).first()
+            session["teacher"] = bool(user and accounts.is_teacher(user.email))
+        finally:
+            db.close()
+    if session["teacher"]:
+        return
+    t = int(time.time())
+    last = session.get("act")
+    if last is not None and t - last > STUDENT_IDLE_SECONDS:
+        session.clear()
+        return
+    # A session from before this existed starts its clock now, rather than
+    # signing out every student in the room on the deploy. Once a minute at
+    # most, so a busy student is not sent a new cookie on every request.
+    if last is None or (_counts_as_activity() and t - last >= 60):
+        session["act"] = t
+
+
+@app.post("/api/alive")
+def alive():
+    """The page's "still here", sent while a student is using it. Being a
+    POST, it has already moved the idle clock by the time it gets here;
+    what is left is telling the page whether it is still signed in, and
+    keeping the student's sitting in the class open (attendance)."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(signed_in=False)
+        data = request.get_json(silent=True) or {}
+        try:
+            class_id = int(data.get("class") or 0)
+        except (TypeError, ValueError):
+            class_id = 0
+        # Only a class they have already come into by opening one of its
+        # pages. The number comes from the page, and a beat must not be a way
+        # to put yourself on another class's register.
+        if class_id and db.query(accounts.Visit.id).filter_by(
+                class_id=class_id, user_id=user.id).first():
+            course = db.query(accounts.Course).filter_by(id=class_id).first()
+            _attend(db, user, course, "")
+        return jsonify(signed_in=True)
+    finally:
+        db.close()
 
 
 def _require_teacher(db):
@@ -960,6 +1067,7 @@ def open_draft(slug):
                 assignment_id=assignment.id, student_id=user.id).first()
 
         return render_template("index.html", **_draft_payload(db, draft, {
+            "attend_class": _attend_item(db, user, assignment),
             "assignment_title": assignment.title if assignment else "",
             "assignment_slug": assignment.slug if assignment else "",
             "submitted_at": submitted.submitted_at.strftime("%b %d at %I:%M %p")
@@ -2179,7 +2287,8 @@ def _lesson_page(db, item, user, live=None):
                submitted_at=submitted_at, live=live,
                waiting=_waiting(live) if live is not None else False,
                is_host=bool(live is not None and user is not None
-                            and user.id == live.host_id))
+                            and user.id == live.host_id),
+               attend_class=_attend_item(db, user, item, live=live is not None))
     return render_template("lesson.html", **ctx)
 
 
@@ -4344,8 +4453,116 @@ def student_class(class_id):
             return render_template("404.html", message="That isn't one of your classes."), 404
         rows, _ = _class_rows(db, course, user=user, student=True)
         ctx = user_context(db)
-        ctx.update(course=course, rows=rows, preview=teacher)
+        ctx.update(course=course, rows=rows, preview=teacher,
+                   attend_class=_attend(db, user, course, "Class page"))
         return render_template("class_student.html", **ctx)
+    finally:
+        db.close()
+
+# --------------------------------------------------------------------------
+# Attendance
+# --------------------------------------------------------------------------
+# Who came into a class, when, and for how long (accounts.Visit). Recorded
+# when a signed-in student opens the class's page, one of its assignments
+# or its live lesson, and kept going by the page's beat (/api/alive).
+# Anyone signed in who opens the class's work is recorded, not only the
+# roster: a student missing from an unsynced roster still came, and the
+# teacher's page marks them as not on it.
+
+def _attend(db, user, course, place):
+    """Note that `user` is in `course` now, at `place` (what they opened,
+    for the time log; "" adds nothing). The class's id if it was noted —
+    which is what the page's beat should carry — else None.
+
+    Never raises: a student opening their work must not fail because the
+    register could not be written."""
+    if user is None or course is None:
+        return None
+    if course.teacher_id == user.id or accounts.is_teacher(user.email):
+        return None
+    try:
+        t = accounts.now()
+        cutoff = t - timedelta(minutes=accounts.VISIT_GAP_MINUTES)
+        row = (db.query(accounts.Visit)
+                 .filter(accounts.Visit.class_id == course.id,
+                         accounts.Visit.user_id == user.id,
+                         accounts.Visit.last_at >= cutoff)
+                 .order_by(accounts.Visit.last_at.desc()).first())
+        if row is None:
+            # The roster's name first: it is the one the teacher knows.
+            on = db.query(accounts.Enrollment).filter_by(
+                class_id=course.id, email=(user.email or "").lower()).first()
+            row = accounts.Visit(
+                class_id=course.id, user_id=user.id,
+                email=(user.email or "")[:320],
+                name=((on.name if on is not None and on.name else "")
+                      or user.display_name())[:200],
+                places="", started_at=t)
+            db.add(row)
+        row.last_at = t
+        place = (place or "").replace("\n", " ").strip()[:200]
+        had = [p for p in (row.places or "").split("\n") if p]
+        # Past 500 characters the rest of the sitting's places are dropped:
+        # the time log keeps the first ones rather than the column refusing.
+        if place and place not in had and len(row.places or "") + len(place) + 1 <= 500:
+            row.places = "\n".join(had + [place])
+        db.commit()
+        return course.id
+    except Exception:
+        db.rollback()
+        return None
+
+
+def _attend_item(db, user, item, live=False):
+    """_attend for an assignment, in whatever class it is placed in."""
+    if item is None:
+        return None
+    _, course = _class_of(db, item)
+    return _attend(db, user, course, item.title + (" (live)" if live else ""))
+
+
+def _utc_iso(t):
+    """A stored time for the browser, which puts it in the teacher's zone.
+    SQLite hands back naive datetimes; every one stored here is UTC."""
+    if t is None:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+@app.get("/teacher/class/<int:class_id>/attendance")
+def class_attendance(class_id):
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        course = db.query(accounts.Course).filter_by(id=class_id, app=APP_NAME).first()
+        if course is None or course.teacher_id != user.id:
+            abort(404)
+        # 45 days by default: a grading period, with room. The page is built
+        # in the browser from all of it, so "all" on a class that has run
+        # for years is a longer wait, not a different page.
+        days = request.args.get("days", "45")
+        q = db.query(accounts.Visit).filter_by(class_id=course.id)
+        if days != "all":
+            try:
+                days = max(1, min(int(days), 3650))
+            except ValueError:
+                days = 45
+            q = q.filter(accounts.Visit.started_at
+                         >= accounts.now() - timedelta(days=days))
+        visits = [{"email": v.email, "name": v.name,
+                   "start": _utc_iso(v.started_at), "end": _utc_iso(v.last_at),
+                   "places": [p for p in (v.places or "").split("\n") if p]}
+                  for v in q.order_by(accounts.Visit.started_at).all()]
+        roster = [{"email": e.email, "name": e.name} for e in
+                  db.query(accounts.Enrollment).filter_by(class_id=course.id)
+                    .order_by(accounts.Enrollment.name, accounts.Enrollment.email)]
+        ctx = user_context(db)
+        ctx.update(course=course, visits=visits, roster=roster, days=days)
+        return render_template("attendance.html", **ctx)
     finally:
         db.close()
 
@@ -5243,6 +5460,7 @@ def live_page(code):
             entry=entry,
             sql_entry=SQL_ENTRY,
             error="",
+            attend_class=_attend_item(db, user, item, live=True),
         )
         return render_template("live.html", **ctx)
     finally:

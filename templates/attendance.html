@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance · {{ course.name }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page class-teacher attendance-page">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">{{ course.name }} · Attendance</span></div>
+  <div class="actions">
+    <button class="btn" type="button" id="csv" title="Every day below, one row per student, for a spreadsheet">Download CSV</button>
+    <a class="btn" href="{{ url_for('teacher_class', class_id=course.id) }}">Back to the class</a>
+  </div>
+</header>
+
+<main class="sheet">
+  <h1 class="att-title">Attendance</h1>
+  <p class="dim">
+    A student is counted when they open anything of this class's while signed
+    in: its page, one of its assignments, or its live lesson. A sitting runs
+    while they keep working, and a 20-minute gap starts a new one.
+    {% if days == "all" %}Showing everything.
+      <a href="{{ url_for('class_attendance', class_id=course.id) }}">Only recent days</a>
+    {% else %}Showing the last {{ days }} days.
+      <a href="{{ url_for('class_attendance', class_id=course.id, days='all') }}">Show all</a>
+    {% endif %}
+  </p>
+  {% if not roster %}
+    <p class="dim small">This class has no roster yet, so nobody can be listed
+      as absent. Sync it from Google Classroom on the class's page.</p>
+  {% endif %}
+  <div id="days"></div>
+</main>
+
+<script type="application/json" id="att-data">{{ {"visits": visits, "roster": roster}|tojson }}</script>
+<script>
+(function () {
+  "use strict";
+
+  // Grouped by day HERE, in the teacher's browser, because which day 11:30
+  // at night belongs to depends on the time zone, and only the browser knows
+  // the school's. The server sends UTC.
+  var data = JSON.parse(document.getElementById("att-data").textContent);
+  var roster = data.roster || [];
+  var onRoster = {};
+  roster.forEach(function (r) { onRoster[r.email.toLowerCase()] = r; });
+
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function dayKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function clock(d) { return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+  function dayName(d) {
+    return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }
+  function minutes(ms) { return Math.round(ms / 60000); }
+  function howLong(ms) {
+    var m = minutes(ms);
+    if (m < 1) return "under a minute";
+    if (m < 60) return m + " min";
+    return Math.floor(m / 60) + " h " + pad(m % 60) + " min";
+  }
+
+  // days[key] = { date, people: { email: { name, email, sittings: [] } } }
+  var days = {};
+  (data.visits || []).forEach(function (v) {
+    var start = new Date(v.start), end = new Date(v.end);
+    var key = dayKey(start);
+    var day = days[key] || (days[key] = { date: start, people: {} });
+    var email = (v.email || "").toLowerCase();
+    var who = day.people[email] || (day.people[email] = {
+      name: (onRoster[email] && onRoster[email].name) || v.name || email,
+      email: v.email, sittings: []
+    });
+    who.sittings.push({ start: start, end: end, places: v.places || [] });
+  });
+
+  // One student's day, worked out once, for the table and the CSV alike.
+  function summary(who) {
+    var s = who.sittings.slice().sort(function (a, b) { return a.start - b.start; });
+    var spent = 0;
+    s.forEach(function (x) { spent += x.end - x.start; });
+    return {
+      first: s[0].start,
+      last: s.reduce(function (m, x) { return x.end > m ? x.end : m; }, s[0].end),
+      spent: spent,
+      log: s.map(function (x) {
+        var span = clock(x.start) + (minutes(x.end - x.start) >= 1 ? "–" + clock(x.end) : "");
+        return { span: span, places: x.places };
+      })
+    };
+  }
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function byName(a, b) { return a.name.localeCompare(b.name) || a.email.localeCompare(b.email); }
+
+  function absent(day) {
+    return roster.filter(function (r) { return !day.people[r.email.toLowerCase()]; });
+  }
+
+  var keys = Object.keys(days).sort().reverse();
+  var root = document.getElementById("days");
+  if (!keys.length) {
+    root.appendChild(el("p", "dim", "Nobody has come in yet. Students show here " +
+      "once they open this class's page, an assignment in it, or its live lesson."));
+  }
+
+  keys.forEach(function (key, i) {
+    var day = days[key];
+    var people = Object.keys(day.people).map(function (e) { return day.people[e]; }).sort(byName);
+    var missing = absent(day);
+
+    var box = el("details", "att-day");
+    box.open = i === 0;                       // the latest day, open
+    var head = el("summary", "att-head");
+    head.appendChild(el("strong", null, dayName(day.date)));
+    var here = people.filter(function (p) { return onRoster[(p.email || "").toLowerCase()]; }).length;
+    head.appendChild(el("span", "att-count", roster.length
+      ? here + " of " + roster.length + " came" + (missing.length ? " · " + missing.length + " absent" : "")
+      : people.length + (people.length === 1 ? " student" : " students")));
+    box.appendChild(head);
+
+    var table = el("table", "listing att-table");
+    var thead = el("thead"), tr = el("tr");
+    ["Name", "Email", "First in", "Last seen", "Time", "Time log"].forEach(function (h) {
+      tr.appendChild(el("th", null, h));
+    });
+    thead.appendChild(tr);
+    table.appendChild(thead);
+    var body = el("tbody");
+    people.forEach(function (p) {
+      var s = summary(p);
+      var row = el("tr");
+      var name = el("td");
+      name.appendChild(document.createTextNode(p.name));
+      if (roster.length && !onRoster[(p.email || "").toLowerCase()]) {
+        name.appendChild(el("span", "att-pill", "not on roster"));
+      }
+      row.appendChild(name);
+      row.appendChild(el("td", "dim", p.email));
+      row.appendChild(el("td", "att-time", clock(s.first)));
+      row.appendChild(el("td", "att-time", clock(s.last)));
+      row.appendChild(el("td", "att-time", howLong(s.spent)));
+      var log = el("td", "att-log");
+      s.log.forEach(function (x) {
+        var line = el("div");
+        line.appendChild(el("span", "att-span", x.span));
+        if (x.places.length) line.appendChild(el("span", "dim", " " + x.places.join(", ")));
+        log.appendChild(line);
+      });
+      row.appendChild(log);
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    box.appendChild(table);
+
+    if (missing.length) {
+      var gone = el("p", "att-absent");
+      gone.appendChild(el("strong", null, "Absent: "));
+      gone.appendChild(document.createTextNode(missing.map(function (r) {
+        return r.name || r.email;
+      }).join(", ")));
+      box.appendChild(gone);
+    }
+    root.appendChild(box);
+  });
+
+  // One row per student per day, present or absent, oldest day first, so it
+  // sorts and filters in a spreadsheet the way a register reads.
+  document.getElementById("csv").addEventListener("click", function () {
+    function cell(v) {
+      v = String(v == null ? "" : v);
+      return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    }
+    var lines = [["Date", "Name", "Email", "Status", "First in", "Last seen", "Minutes", "Time log"]];
+    keys.slice().reverse().forEach(function (key) {
+      var day = days[key];
+      Object.keys(day.people).map(function (e) { return day.people[e]; }).sort(byName)
+        .forEach(function (p) {
+          var s = summary(p);
+          lines.push([key, p.name, p.email,
+                      onRoster[(p.email || "").toLowerCase()] || !roster.length ? "Present" : "Present (not on roster)",
+                      clock(s.first), clock(s.last), minutes(s.spent),
+                      s.log.map(function (x) {
+                        return x.span + (x.places.length ? " " + x.places.join(", ") : "");
+                      }).join("; ")]);
+        });
+      absent(day).forEach(function (r) {
+        lines.push([key, r.name, r.email, "Absent", "", "", "", ""]);
+      });
+    });
+    var csv = lines.map(function (l) { return l.map(cell).join(","); }).join("\r\n");
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = {{ (course.name ~ " attendance.csv")|tojson }};
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  });
+})();
+</script>
+</body>
+</html>

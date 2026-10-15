@@ -2003,3 +2003,21 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
 @media (max-width: 860px) {
   .resizer { display: none; }
 }
+
+/* ATTENDANCE (attendance.html): one box per day, the latest open, each a
+   table of who came and a line of who did not. */
+.attendance-page .sheet { max-width: 1200px; }
+.att-title { margin: 0 0 6px; font-size: 22px; }
+.att-day { border: 1px solid var(--line); border-radius: 10px; margin: 0 0 12px;
+           background: var(--bg-panel); overflow: hidden; }
+.att-head { cursor: pointer; padding: 12px 16px; }
+.att-head strong { margin-right: 10px; }
+.att-day[open] .att-head { border-bottom: 1px solid var(--line); }
+.att-count { color: var(--muted); font-size: 13px; }
+.att-table { background: var(--bg); }
+.att-time, .att-span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.att-log { font-size: 13px; }
+.att-pill { margin-left: 8px; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+            border: 1px solid var(--amber); color: var(--amber); white-space: nowrap; }
+.att-absent { margin: 0; padding: 12px 16px; font-size: 13.5px; border-top: 1px solid var(--line); }
+@media (max-width: 760px) { .att-table { display: block; overflow-x: auto; } }
