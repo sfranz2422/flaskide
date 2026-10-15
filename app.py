@@ -5553,6 +5553,23 @@ QUESTION_EXAMPLES = [
 ]
 
 
+@app.get("/notes/present")
+def notes_present():
+    """The editor's notes, popped out into a tab of their own (static/
+    present.js). Holds nothing: everything it shows comes from the editor
+    tab that opened it, over a BroadcastChannel in the browser, so nothing
+    here could leak an answer key. Teachers only all the same, because the
+    button is theirs and a student has no editor tab to drive it."""
+    db = SessionLocal()
+    try:
+        _, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        return render_template("notes_present.html", **user_context(db))
+    finally:
+        db.close()
+
+
 @app.get("/help/questions")
 def help_questions():
     """How to write questions in notes. Open to anyone: it is the format,

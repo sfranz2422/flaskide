@@ -2153,3 +2153,9 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
 .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .theme-grid .help-src { margin: 0 0 6px; }
 .theme-sample { border: 1px solid var(--line); border-radius: 8px; min-height: 200px; }
+
+/* The notes popped out (notes_present.html): on a projector, read from the
+   back of the room, so bigger than a lesson's 19px and growing with the
+   window — a full-screen projector is far wider than the editor's pane. */
+.present-page .lesson-body { font-size: clamp(20px, 1.9vw, 34px); }
+.present-page .lesson-body > * { max-width: 46em; }

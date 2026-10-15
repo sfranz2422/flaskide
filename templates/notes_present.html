@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+{#  The editor's notes, popped out (Pop out, in the editor). Everything on
+    it comes from the editor tab, over a BroadcastChannel — see present.js
+    and "notes, popped out" in app.js. #}
+<body class="lesson-page present-page">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle" id="present-title">Notes</span></div>
+  <div class="actions">
+    <span id="present-state" class="chip" aria-live="polite">Connecting…</span>
+    <button id="present-full" class="btn" type="button" title="Fill the screen (Esc to leave)">Full screen</button>
+  </div>
+</header>
+
+<main class="lesson-main">
+  <div class="lesson-pane subpane">
+    <div id="present-body" class="notes-body prose lesson-body"></div>
+  </div>
+</main>
+
+<div id="present-lost" class="modal" hidden>
+  <div class="modal-card" role="alertdialog" aria-labelledby="present-lost-title">
+    <h2 id="present-lost-title">Lost the editor</h2>
+    <p class="modal-sub">This tab follows the editor that opened it, and that tab has closed
+      or reloaded. Press Pop out in the editor again to carry on.</p>
+  </div>
+</div>
+
+<script>window.PRESENT = { ns: "FlaskIDE", channel: "flaskide-notes-" };</script>
+<script src="{{ url_for('static', filename='pack.js') }}"></script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='present.js') }}"></script>
+</body>
+</html>

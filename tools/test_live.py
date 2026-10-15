@@ -1417,7 +1417,7 @@ check("  rendering through the same sanitiser the editor uses",
 # somewhere passed happily when the condition it guards was replaced by
 # `true` — the name was still in the file, doing nothing.
 check("  and re-renders only when the text changed",
-      re.search(r"data\.body\s*!==\s*lastNotes", live_code) is not None,
+      re.search(r'data\.body \+ "\\u0000" \+ theme\s*!==\s*lastNotes', live_code) is not None,
       "re-parsing every second replaces the link under the cursor, so a "
       "click that lands mid-poll hits a dead element")
 # CodeMirror measures itself on build. Measured while display:none it
@@ -1857,15 +1857,15 @@ check("  the arrows' [hidden] really hides them",
       ".btn sets display, so [hidden] alone shows them anyway")
 # The teacher sees what the class's Notes pane shows, fed from what is sent.
 check("the teacher sees the slide the class is sent to",
-      "paintClassView(onSlide, slide);" in _push_fn
+      "paintClassView(onSlide, slide," in _push_fn
       and _push_fn.index("onSlide = cut[slideAt];")
-          < _push_fn.index("paintClassView(onSlide, slide);")
+          < _push_fn.index("paintClassView(onSlide, slide,")
           < _push_fn.index("if (stamp === lastSent) return;"),
       "fed anything but what is sent, it can show a slide the class is not on")
 _class_fn = fn_body(_push, "paintClassView")
 check("  re-rendered only when it changes",
-      "if (notes === classShownNotes && slide === classShownSlide) return;"
-      in _class_fn,
+      "if (notes === classShownNotes && slide === classShownSlide\n"
+      "          && theme === classShownTheme) return;" in _class_fn,
       "pushNow runs every tick; re-rendering resets the teacher's scroll")
 check("  and put away when the lesson ends",
       re.search(r"function paintLive\(\)[\s\S]*?\} else \{[\s\S]*?paintClassView\(null, \"\"\);",

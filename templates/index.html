@@ -302,6 +302,8 @@
             {#  Only a teacher may upload (/api/image); anyone else
                 authoring their own notes links to a picture by address. #}
             {% if is_teacher %}
+              <button class="linkbtn js-popout" type="button"
+                      title="The notes as big slides in a tab of their own, for the projector. While you're live, moving there moves the class.">Pop out</button>
               <button id="notes-pic" class="linkbtn" type="button"
                       title="Upload a picture into the notes at the cursor — or paste one, or drop it on the source">Add picture</button>
             {% endif %}
@@ -333,6 +335,8 @@
             <button id="slide-prev" class="btn" title="Previous slide — moves the class with you">◀</button>
             <span id="slide-at" class="slide-at" title="The slide your class is on"></span>
             <button id="slide-next" class="btn" title="Next slide — moves the class with you">▶</button>
+            <button class="linkbtn js-popout" type="button"
+                    title="These slides in a tab of their own, for the projector. Moving there moves the class.">Pop out</button>
           </span></div>
         <div id="class-notes" class="notes-body prose"></div>
       </div>

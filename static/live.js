@@ -706,6 +706,7 @@
 
   var mirrorWrap = $("mirror-wrap");
   var mirrorNotes = $("mirror-notes");
+  var mirrorDeck = "";        // the whole notes, for their theme (below)
 
   function showMirror(data) {
     /* A .md file is class notes, not code. Rendering it is what makes a link
@@ -718,9 +719,17 @@
     if (asNotes) {
       mirrorWrap.hidden = true;
       mirrorNotes.hidden = false;
-      if (typeof data.body === "string" && data.body !== lastNotes) {
-        lastNotes = data.body;
-        window.FlaskIDENotes.render(mirrorNotes, data.body);
+      /* With the notes' slides, the teacher's editor sends the slide it
+         is on, which no longer has the deck's theme: line. The theme comes
+         from the whole notes, which come with every update that has them
+         (kept from the last one that did, as showNotes keeps them). */
+      if (typeof data.notes === "string") mirrorDeck = data.notes;
+      var theme = data.slide ? window.FlaskIDENotes.takeTheme(mirrorDeck).name : null;
+      if (typeof data.body === "string"
+          && data.body + "\u0000" + theme !== lastNotes) {
+        lastNotes = data.body + "\u0000" + theme;
+        window.FlaskIDENotes.render(mirrorNotes, data.body,
+                                     theme === null ? undefined : { theme: theme });
       }
     } else {
       mirrorNotes.hidden = true;

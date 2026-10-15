@@ -181,6 +181,24 @@ check("the help page shows exactly these themes",
       listed and json.loads(listed.group(1)) == got["themes"],
       listed and listed.group(1))
 
+# One slide drawn on its own has lost the deck's theme: line, which sits
+# above the first slide. The teacher's "Class sees" pane and the class's
+# mirror (when the teacher has the notes open) each draw one slide, and
+# both showed a themed deck plain until they were handed the theme.
+print("one slide on its own still has the deck's theme")
+app_js = open(os.path.join(PYIDE, "static", "app.js")).read()
+live_js = open(os.path.join(PYIDE, "static", "live.js")).read()
+check("Class sees is drawn with the deck's theme",
+      re.search(r"paintClassView\(onSlide, slide, window\.\w+Notes\.takeTheme\(notes\)\.name\)",
+                app_js) is not None
+      and "slide ? { theme: theme } : undefined" in app_js)
+check("  and redrawn when only the theme changes", "theme === classShownTheme" in app_js)
+check("the class's mirror draws the teacher's slide with the deck's theme",
+      "mirrorDeck = data.notes" in live_js
+      and "theme === null ? undefined : { theme: theme }" in live_js)
+check("  and redraws when only the theme changes",
+      'data.body + "\\u0000" + theme !== lastNotes' in live_js)
+
 print()
 print("%d/%d ok" % (sum(results), len(results)))
 sys.exit(0 if all(results) else 1)

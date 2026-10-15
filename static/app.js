@@ -1205,15 +1205,24 @@
     var classNotes = $("class-notes");
     var classShownNotes = null, classShownSlide = null;
 
-    function paintClassView(notes, slide) {
+    /* `theme` is the deck's (notes.js, takeTheme). One slide on its own no
+       longer has the theme: line, which sits above the first slide, and
+       rendered without it this pane showed the deck plain while the class
+       saw it themed. Part of what is compared, so changing only the theme
+       line redraws. */
+    var classShownTheme = null;
+    function paintClassView(notes, slide, theme) {
       if (!classView) return;
-      if (notes === classShownNotes && slide === classShownSlide) return;
+      if (notes === classShownNotes && slide === classShownSlide
+          && theme === classShownTheme) return;
+      classShownTheme = theme;
       var moved = slide !== classShownSlide;
       classShownNotes = notes;
       classShownSlide = slide;
       classView.hidden = !(notes && notes.trim());
       if (classView.hidden) return;
-      window.FlaskIDENotes.render(classNotes, notes).then(function () {
+      window.FlaskIDENotes.render(classNotes, notes,
+                                 slide ? { theme: theme } : undefined).then(function () {
         if (moved) classNotes.scrollTop = 0;
       });
     }
@@ -1303,7 +1312,7 @@
         }
       }
       paintSlides(cut);
-      paintClassView(onSlide, slide);
+      paintClassView(onSlide, slide, window.FlaskIDENotes.takeTheme(notes).name);
       var output = liveOutput();
       var page = livePage();
       var stamp = [name, text, notes, slide, output, page, cursor].join("\u0000");
@@ -1618,6 +1627,100 @@
         }
       } catch (e) { /* storage blocked: press Go live again */ }
     }
+
+    // ------------------------------------------------- notes, popped out
+    /* Pop out: the notes as big slides in a tab of their own
+       (templates/notes_present.html, static/present.js), for the projector
+       while this tab stays on the teacher's laptop.
+
+       THIS TAB STAYS IN CHARGE. Everything the class is sent still goes
+       out from pushNow here; the pop-out has no lesson code and never
+       talks to the server. It asks this tab to move ("go"), and this tab
+       tells it what to show ("state") — the notes, the slide, whether it
+       is live. When live, a move there is a move of slideAt, the very one
+       the ◀ ▶ under "Class sees" make, so the class follows exactly as if
+       those had been pressed. When not live it moves this page's own
+       notes, which is only presenting.
+
+       A BroadcastChannel, named by an id made when the button is pressed,
+       so two editors open on two lessons each drive only their own. Same
+       browser only: it is a channel between tabs, which is also why the
+       pop-out says so the moment this tab goes quiet (closed, reloaded,
+       crashed) rather than freezing on a slide that looks live. */
+    var popChan = null, popId = null, popSent = null;
+    // This page's own notes viewer (the one the pop-out moves when not
+    // live). A function, because FlaskIDE makes its viewer on first use.
+    function popNotes() { return slidesView(); }
+
+    function popState() {
+      var cut = currentSlides();
+      var live = !!(liveCode && cut);
+      return { type: "state", notes: liveNotes(), live: !!liveCode,
+               slide: live ? Math.min(slideAt, cut.length - 1)
+                           : (popNotes() ? popNotes().at() : 0),
+               title: ($("title") && $("title").value) || document.title };
+    }
+
+    /* Sent when anything in it changed. Checked twice a second rather than
+       hooked into every way the notes or the slide can change (typing in
+       the .md, either set of arrows, a push, Teach again): a hook missed
+       would be a projector quietly showing the wrong slide. */
+    function tellPopout(force) {
+      if (!popChan) return;
+      var state = popState();
+      var stamp = JSON.stringify(state);
+      if (!force && stamp === popSent) return;
+      popSent = stamp;
+      popChan.postMessage(state);
+    }
+
+    function popoutGo(i) {
+      var cut = currentSlides();
+      if (liveCode && cut) {
+        slideAt = Math.max(0, Math.min(cut.length - 1, i));
+        pushNow();                     // the class moves now, not next tick
+      } else if (popNotes()) {
+        popNotes().go(i);
+      }
+      tellPopout(true);
+    }
+
+    function openPopout() {
+      if (!popChan) {
+        popId = Math.random().toString(36).slice(2, 10);
+        popChan = new BroadcastChannel("flaskide-notes-" + popId);
+        popChan.onmessage = function (e) {
+          var d = e.data || {};
+          if (d.type === "go" && typeof d.slide === "number") popoutGo(d.slide);
+          else if (d.type === "hello") tellPopout(true);
+        };
+        setInterval(function () { tellPopout(false); }, 500);
+        window.addEventListener("pagehide", function () {
+          popChan.postMessage({ type: "bye" });
+        });
+      }
+      // The same name each time, so pressing it again brings that tab
+      // forward instead of opening another.
+      window.open("/notes/present?ch=" + popId, "flaskide-notes-" + popId);
+    }
+
+    // No BroadcastChannel (Safari before 15.4): no button, rather than a
+    // pop-out that would never hear from this tab. The click is listened
+    // for on the document, so a button that is not on the page yet when
+    // this runs still works when it is.
+    function hidePopoutButtons() {
+      if ("BroadcastChannel" in window) return;
+      document.querySelectorAll(".js-popout").forEach(function (b) { b.hidden = true; });
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", hidePopoutButtons);
+    } else {
+      hidePopoutButtons();
+    }
+    document.addEventListener("click", function (e) {
+      var b = e.target && e.target.closest && e.target.closest(".js-popout");
+      if (b && "BroadcastChannel" in window) openPopout();
+    });
   } else {
     /* No Go live button: signed out, or not a teacher. Whatever lesson this
        browser remembers is not one this person can resume, so forget it
