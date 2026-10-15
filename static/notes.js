@@ -105,7 +105,11 @@ window.FlaskIDENotes = (function () {
      differently. A name not on the list is left in, as text, so a typo
      shows on the slide instead of silently doing nothing. */
   var THEMES = ["ocean", "sunset", "forest", "chalkboard", "arcade",
-                "notebook", "space"];
+                "notebook", "space",
+                // The seasons, for the year's calendar.
+                "halloween", "fall", "winter", "christmas", "spring", "summer"];
+  // The ones whose headings use a display face (themeFonts).
+  var FONT_THEMES = ["chalkboard", "arcade", "notebook", "halloween", "christmas"];
   var THEME_LINE = /^[ \t]*theme[ \t]*:[ \t]*([a-z]+)[ \t]*$/i;
 
   /* {name, body}: the theme the notes ask for ("" for none), and the notes
@@ -130,7 +134,8 @@ window.FlaskIDENotes = (function () {
     var link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = "https://fonts.googleapis.com/css2?family=Caveat:wght@600;700" +
-                "&family=Patrick+Hand&family=Press+Start+2P&display=swap";
+                "&family=Patrick+Hand&family=Press+Start+2P&family=Creepster" +
+                "&family=Mountains+of+Christmas:wght@700&display=swap";
     document.head.appendChild(link);
   }
 
@@ -140,7 +145,7 @@ window.FlaskIDENotes = (function () {
                                    .replace(/\s+/g, " ").trim();
     if (!name) return;
     node.className = (node.className + " slide-themed slide-theme-" + name).trim();
-    if (name === "chalkboard" || name === "arcade" || name === "notebook") themeFonts();
+    if (FONT_THEMES.indexOf(name) >= 0) themeFonts();
   }
 
   /* options.theme, when given, is the deck's theme for a slide that no

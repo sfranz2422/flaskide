@@ -2159,3 +2159,97 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
    window — a full-screen projector is far wider than the editor's pane. */
 .present-page .lesson-body { font-size: clamp(20px, 1.9vw, 34px); }
 .present-page .lesson-body > * { max-width: 46em; }
+
+/* SEASONAL THEMES: the same variables as the themes above, one per season
+   of the school year. halloween and christmas use a display face for their
+   headings (notes.js, FONT_THEMES); the rest keep the page's own. */
+
+/* Pumpkin orange on night purple, with a moon rising top right. */
+.slide-theme-halloween {
+  --theme-bg: radial-gradient(circle at 88% 10%, #fde68a 0 30px, rgba(253, 230, 138, .3) 32px, rgba(255, 180, 80, .1) 80px, transparent 150px),
+              linear-gradient(170deg, #1a0b2e 0%, #24103a 55%, #2d1240 100%);
+  --nav-bg: #1a0b2e;
+  --text: #f3e8ff; --muted: #c4b5d9; --heading: #ff7518; --heading-2: #a3e635;
+  --accent: #ff9a3c; --accent-hover: #ffc078; --strong: #ffd8a8;
+  --line: rgba(255, 117, 24, .3); --bg: rgba(0, 0, 0, .4);
+  --bg-panel: rgba(255, 117, 24, .07); --bg-head: rgba(255, 117, 24, .14);
+  --hover-bg: rgba(255, 117, 24, .14); color-scheme: dark;
+}
+.slide-theme-halloween h1, .slide-theme-halloween h2, .slide-theme-halloween h3 {
+  font-family: "Creepster", var(--sans); font-weight: 400; letter-spacing: .04em;
+  text-shadow: 0 0 12px rgba(255, 117, 24, .45);
+}
+.slide-theme-halloween h1 { font-size: 2.3em; }
+.slide-theme-halloween h2 { font-size: 1.8em; }
+.slide-theme-halloween h3 { font-size: 1.4em; }
+
+/* Harvest: warm cream into amber, rust and maple headings. */
+.slide-theme-fall {
+  --theme-bg: radial-gradient(ellipse at 100% 0%, rgba(234, 88, 12, .18), transparent 45%),
+              radial-gradient(ellipse at 0% 100%, rgba(180, 83, 9, .16), transparent 50%),
+              linear-gradient(165deg, #fffaf0 0%, #fdebd0 60%, #f9d9b0 100%);
+  --nav-bg: #f6dfbf;
+  --text: #3a2414; --muted: #7c5a3f; --heading: #b45309; --heading-2: #9a3412;
+  --accent: #c2410c; --accent-hover: #9a3412; --strong: #7c2d12;
+  --line: rgba(124, 45, 18, .2); --bg: rgba(255, 255, 255, .65);
+  --bg-panel: rgba(255, 255, 255, .5); --bg-head: rgba(255, 255, 255, .75);
+  --hover-bg: rgba(255, 255, 255, .6); color-scheme: light;
+}
+
+/* Frost: pale ice blue, with snow falling (a tiled field, as space's stars). */
+.slide-theme-winter {
+  --theme-bg: radial-gradient(4px 4px at 30px 40px, #ffffff 55%, transparent) 0 0 / 200px 180px,
+              radial-gradient(3px 3px at 130px 110px, #ffffff 55%, transparent) 0 0 / 200px 180px,
+              radial-gradient(3.5px 3.5px at 80px 150px, #ffffff 55%, transparent) 0 0 / 160px 220px,
+              linear-gradient(175deg, #dcebfb 0%, #c7ddf5 55%, #b2cfee 100%);
+  --nav-bg: #d6e9fb;
+  --text: #0f2a47; --muted: #47617d; --heading: #1d4ed8; --heading-2: #0e7490;
+  --accent: #0369a1; --accent-hover: #075985; --strong: #0c1f36;
+  --line: rgba(15, 42, 71, .16); --bg: rgba(255, 255, 255, .78);
+  --bg-panel: rgba(255, 255, 255, .6); --bg-head: rgba(255, 255, 255, .85);
+  --hover-bg: rgba(255, 255, 255, .7); color-scheme: light;
+}
+
+/* Evergreen, red and gold, with a candy-cane stripe along the top. */
+.slide-theme-christmas {
+  --theme-bg: repeating-linear-gradient(-45deg, #dc2626 0 12px, #fff7ed 12px 24px) 0 0 / 100% 8px no-repeat,
+              radial-gradient(ellipse at 50% 0%, rgba(252, 211, 77, .12), transparent 60%),
+              linear-gradient(175deg, #0f3d24 0%, #14532d 60%, #166534 100%);
+  --nav-bg: #0f3d24;
+  --text: #f0fdf4; --muted: #bbdcc5; --heading: #fcd34d; --heading-2: #fca5a5;
+  --accent: #f87171; --accent-hover: #fecaca; --strong: #ffffff;
+  --line: rgba(252, 211, 77, .28); --bg: rgba(0, 0, 0, .28);
+  --bg-panel: rgba(255, 255, 255, .07); --bg-head: rgba(255, 255, 255, .12);
+  --hover-bg: rgba(255, 255, 255, .12); color-scheme: dark;
+}
+.slide-theme-christmas h1, .slide-theme-christmas h2, .slide-theme-christmas h3 {
+  font-family: "Mountains of Christmas", var(--sans); font-weight: 700;
+}
+.slide-theme-christmas h1 { font-size: 2.2em; }
+.slide-theme-christmas h2 { font-size: 1.75em; }
+.slide-theme-christmas h3 { font-size: 1.4em; }
+
+/* Blossom pink and new-leaf green on a soft pastel wash. */
+.slide-theme-spring {
+  --theme-bg: radial-gradient(ellipse at 0% 0%, rgba(244, 114, 182, .18), transparent 45%),
+              radial-gradient(ellipse at 100% 100%, rgba(74, 222, 128, .18), transparent 50%),
+              linear-gradient(160deg, #fdf2f8 0%, #f7fbf2 55%, #ecfdf3 100%);
+  --nav-bg: #f6eef3;
+  --text: #2a1f2d; --muted: #6b5a6e; --heading: #be185d; --heading-2: #15803d;
+  --accent: #db2777; --accent-hover: #9d174d; --strong: #500724;
+  --line: rgba(190, 24, 93, .16); --bg: rgba(255, 255, 255, .75);
+  --bg-panel: rgba(255, 255, 255, .6); --bg-head: rgba(255, 255, 255, .85);
+  --hover-bg: rgba(255, 255, 255, .7); color-scheme: light;
+}
+
+/* Sky above, sand below, and the sun in the corner. */
+.slide-theme-summer {
+  --theme-bg: radial-gradient(circle at 92% 8%, rgba(253, 224, 71, .7) 0, rgba(253, 186, 116, .35) 60px, transparent 130px),
+              linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 45%, #fef3c7 100%);
+  --nav-bg: #fdf0c4;
+  --text: #13293d; --muted: #4f6478; --heading: #0369a1; --heading-2: #ea580c;
+  --accent: #ea580c; --accent-hover: #c2410c; --strong: #0c4a6e;
+  --line: rgba(3, 105, 161, .18); --bg: rgba(255, 255, 255, .75);
+  --bg-panel: rgba(255, 255, 255, .6); --bg-head: rgba(255, 255, 255, .85);
+  --hover-bg: rgba(255, 255, 255, .7); color-scheme: light;
+}

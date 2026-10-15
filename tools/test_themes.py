@@ -175,6 +175,20 @@ for name in got["themes"]:
     missing = [v for v in needed if v not in body]
     check("  %s sets every colour it is drawn with" % name, not missing, missing)
 
+# A theme whose headings name a display face must be one the fonts are
+# fetched for, or its headings fall back to the page's font with nothing
+# to say so — the look is simply not there.
+font_themes = json.loads(re.search(r"var FONT_THEMES = (\[[^\]]*\]);", notes_js).group(1))
+url = re.search(r'link\.href = ((?:"[^"]*"\s*\+?\s*)+);', notes_js).group(1)
+fetched = re.findall(r"family=([A-Za-z0-9+]+)", url)
+fetched = {f.replace("+", " ") for f in fetched}
+needs = {}
+for name, fam in re.findall(r"\.slide-theme-([a-z]+) h1[^{]*\{[^}]*font-family:\s*\"([^\"]+)\"", css):
+    needs[name] = fam
+check("every theme with a display face fetches it",
+      needs and all(n in font_themes and f in fetched for n, f in needs.items()),
+      {n: (n in font_themes, f in fetched) for n, f in needs.items()})
+
 help_page = open(os.path.join(PYIDE, "templates", "help_questions.html")).read()
 listed = re.search(r'\{% for name in (\[.*?\]) %\}', help_page)
 check("the help page shows exactly these themes",
