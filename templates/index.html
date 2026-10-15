@@ -141,6 +141,10 @@
             (…/live/<code>) to paste into the class's chat, so nobody has to
             find /live and type the code by hand. #}
         <button id="live-code" class="chip live-code" type="button" hidden></button>
+        {#  Shows while a snippet is out on the class's screens. Clicking it
+            takes the snippet back, which removes their Insert button. #}
+        <button id="live-sent" class="chip live-sent" hidden
+                title="Your class can insert what you sent. Click to take it back.">Sent ✕</button>
       {% endif %}
 
       {#  A signed-in student has Save or Turn in instead, and Share in the

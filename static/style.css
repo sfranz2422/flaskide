@@ -2261,3 +2261,52 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
                          padding: 0 8px; border: 1px solid var(--line); border-radius: 999px;
                          color: var(--muted); font-weight: 600; }
 .quiz-head .quiz-count.all-in { border-color: var(--green); color: var(--green); }
+
+/* Code the teacher sent. Sits between the "Your turn" header and the
+ * student's editor, and takes only the room its lines need — capped, so a
+ * long send cannot push the editor itself off the bottom of the pane. */
+.snippet-card {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--banner-bg);
+}
+.snippet-card[hidden] { display: none; }
+.snippet-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--banner-text);
+}
+.snippet-head span { flex: 1; font-weight: 600; }
+.snippet-head .btn { padding: 4px 12px; font-size: 13px; }
+.snippet-code {
+  margin: 0;
+  padding: 4px 12px 10px;
+  max-height: 9.5em;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: var(--code-size);
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre;
+}
+
+/* The teacher's "Send to students" menu. Positioned from the click, so it
+ * overrides .menu's anchoring to a button. */
+.ctx-menu {
+  position: fixed;
+  right: auto;
+  top: 0;
+  left: 0;
+  z-index: 200;
+}
+
+/* On the teacher's bar while something is out; clicking takes it back. */
+.live-sent {
+  border-color: var(--green);
+  color: var(--green);
+  cursor: pointer;
+}
+.live-sent[hidden] { display: none; }

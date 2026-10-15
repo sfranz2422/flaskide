@@ -1325,10 +1325,119 @@
                                slide: slide, output: output, page: page,
                                cursor: cursor, seq: nextSeq() })
       }).then(function (res) {
-        if (res.status === 403 || res.status === 409) stopLive(true);
+        if (res.status === 403 || res.status === 409) { stopLive(true); return; }
+        return res.json().then(function (data) {
+          /* Lost the race — most likely to a snippet sent a moment later,
+             which moves the same version. Without forgetting what was sent,
+             the check above would call this file "already pushed" and the
+             class would sit on the old one until the next keystroke. */
+          if (data && data.stale) lastSent = null;
+        });
       }).catch(function () {
         // A dropped push is fine: the next one carries the whole file.
       });
+    }
+
+    // ------------------------------------------------ send to students
+    /* Highlight, right-click, Send to students. The class gets a card above
+       their own editor with an Insert button — for THIS code only. The mirror
+       still cannot be copied, because typing the lesson is the exercise; this
+       is for the bits that are not (a data list, a helper the lesson uses).
+
+       Only while live and only with something selected. Any other
+       right-click is left entirely to the browser, so the menu a teacher
+       knows is still there the rest of the time. */
+    var sentChip = $("live-sent");
+    var ctxMenu = null;
+
+    function paintSent(out) {
+      if (sentChip) sentChip.hidden = !(liveCode && out);
+    }
+
+    function sendSnippet(text, tries) {
+      if (!liveCode) return;
+      tries = tries || 0;
+      fetch("/api/live/" + encodeURIComponent(liveCode) + "/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snippet: text, seq: nextSeq() })
+      }).then(function (res) {
+        if (res.status === 403 || res.status === 409) { stopLive(true); return; }
+        return res.json().then(function (data) {
+          if (data.error) { window.alert(data.error); return; }
+          /* A push overtook it. Silently dropping it would leave the teacher
+             believing the class had the code; the new stamp is higher than
+             anything already sent, so one more try goes through. */
+          if (data.stale) {
+            if (tries < 3) sendSnippet(text, tries + 1);
+            else window.alert("Could not send that. Try again.");
+            return;
+          }
+          paintSent(!!text);
+        });
+      }).catch(function () {
+        window.alert("Could not send that. Check your connection.");
+      });
+    }
+
+    function closeCtxMenu() {
+      if (ctxMenu) ctxMenu.hidden = true;
+    }
+
+    function openCtxMenu(x, y, text) {
+      if (!ctxMenu) {
+        ctxMenu = document.createElement("div");
+        ctxMenu.className = "menu ctx-menu";
+        ctxMenu.setAttribute("role", "menu");
+        var item = document.createElement("button");
+        item.className = "menu-item";
+        item.textContent = "Send to students";
+        item.addEventListener("click", function () {
+          closeCtxMenu();
+          sendSnippet(ctxMenu.dataset.text || "");
+        });
+        ctxMenu.appendChild(item);
+        document.body.appendChild(ctxMenu);
+        document.addEventListener("mousedown", function (e) {
+          if (!ctxMenu.contains(e.target)) closeCtxMenu();
+        });
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") closeCtxMenu();
+        });
+        window.addEventListener("blur", closeCtxMenu);
+        window.addEventListener("resize", closeCtxMenu);
+      }
+      ctxMenu.dataset.text = text;
+      ctxMenu.hidden = false;
+      // Kept on screen: opened near the right or bottom edge it would
+      // otherwise hang off it, half unclickable.
+      var w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+      ctxMenu.style.left = Math.min(x, window.innerWidth - w - 8) + "px";
+      ctxMenu.style.top = Math.min(y, window.innerHeight - h - 8) + "px";
+    }
+
+    /* CodeMirror's own "contextmenu" event: preventDefault there is what
+       stops both the browser's menu and CodeMirror's handling of the click.
+       The selection survives a right-click in CodeMirror 5, which is what
+       makes highlight-then-right-click work at all. */
+    function hookSend() {
+      editor.on("contextmenu", function (cm, e) {
+        if (!liveCode || !cm.somethingSelected()) return;
+        var text = cm.getSelection();
+        if (!text.trim()) return;
+        e.preventDefault();
+        openCtxMenu(e.clientX, e.clientY, text);
+      });
+      editor.on("scroll", closeCtxMenu);
+    }
+    // The editor is made on DOMContentLoaded, which has not happened yet
+    // when this runs; the boot listener was added first, so it is there by
+    // the time this one is called.
+    if (editor) hookSend();
+    else document.addEventListener("DOMContentLoaded", hookSend);
+
+    if (sentChip) {
+      sentChip.addEventListener("click", function () { sendSnippet(""); });
     }
 
     function liveLink() {
@@ -1373,8 +1482,10 @@
         liveBtn.textContent = "Go live";
         liveBtn.classList.remove("btn-live-on");
         liveChip.hidden = true;
+        paintSent(false);
         paintSlides(null);
         paintClassView(null, "");
+        closeCtxMenu();
       }
     }
 
@@ -1504,6 +1615,7 @@
           lastSent = null;
           rememberLive(liveCode, data.assignment);
           paintLive();
+          paintSent(!!data.snippet_out);
           pushNow();
           liveTimer = setInterval(pushNow, PUSH_MS);
         })

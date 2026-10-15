@@ -5061,6 +5061,9 @@ def live_start():
                                    _slug_of_assignment(db, live.assignment_id)),
                        assignment_title=(item.title if item else
                                          _title_of_assignment(db, live.assignment_id)),
+                       # so a teacher who reloads mid-lesson is shown that
+                       # something is still out, and can take it back
+                       snippet_out=bool(live.snippet),
                        # so a reload carries on from the same slide rather
                        # than sending the class back to the title
                        slide=live.slide or "",
@@ -5211,6 +5214,64 @@ def live_push(code):
         db.close()
 
 
+@app.post("/api/live/<code>/send")
+def live_send(code):
+    """A snippet the teacher highlighted and sent, or "" to take it back.
+
+    WHY THIS EXISTS WHEN THE MIRROR CANNOT BE COPIED. Typing the lesson is
+    the exercise, so the mirror refuses copy and there is no button that
+    brings the teacher's file down. But some code is not the exercise — a
+    long list of data, a helper the lesson uses but does not teach — and
+    making thirty people type it out is lost time. This is the teacher saying
+    "this bit, you may have". What goes out is only what they highlighted,
+    and it only reaches a student's editor when that student presses Insert.
+
+    Stamped exactly like a push, through the same `version < seq` guard,
+    because it has to move `version` to reach anyone: students poll against
+    `version` and are answered 304 otherwise. The consequence is that a push
+    and a send can overtake each other and one of them lose — app.js retries
+    a losing send, and forgets what it last pushed so the file goes again.
+    """
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Not signed in."), 403
+        live = _find_live(db, code)
+        if live is None:
+            return jsonify(error="No such live lesson."), 404
+        # The host, checked against the row: another teacher must not be able
+        # to put code on somebody else's class's screens.
+        if live.host_id != user.id:
+            return jsonify(error="This is not your live lesson."), 403
+        if live.ended:
+            return jsonify(error="That live lesson has ended.", ended=True), 409
+
+        data = request.get_json(silent=True) or {}
+        snippet = data.get("snippet")
+        if not isinstance(snippet, str):
+            return jsonify(error="Nothing to send."), 400
+        if len(snippet.encode("utf-8")) > MAX_FILE_BYTES:
+            return jsonify(error="That is too much to send."), 413
+        try:
+            seq = int(data.get("seq", 0))
+        except (TypeError, ValueError):
+            return jsonify(error="Bad sequence number."), 400
+
+        changed = (db.query(accounts.LiveSession)
+                     .filter(accounts.LiveSession.id == live.id,
+                             accounts.LiveSession.version < seq)
+                     .update({"snippet": snippet, "snippet_seq": seq,
+                              "version": seq, "updated_at": _live_now()},
+                             synchronize_session=False))
+        db.commit()
+        if not changed:
+            return jsonify(stale=True, version=live.version)
+        return jsonify(version=seq, sent=bool(snippet))
+    finally:
+        db.close()
+
+
 @app.post("/api/live/<code>/stop")
 def live_stop(code):
     db = SessionLocal()
@@ -5268,6 +5329,8 @@ def live_poll(code):
             host=live.host_name,
             ended=bool(live.ended),
             waiting=_waiting(live),
+            snippet=live.snippet or "",
+            snippet_seq=live.snippet_seq or 0,
             notes=live.notes or "",
             slide=live.slide or "",
             output=live.output or "",

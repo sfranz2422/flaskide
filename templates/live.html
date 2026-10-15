@@ -217,6 +217,19 @@
           <span class="dim" title="Kept in this browser — sign in to save it properly">Kept in this browser — sign in to save it properly</span>
         {% endif %}
       </div>
+      {#  Code the teacher chose to hand out: highlighted in their editor and
+          sent. Hidden until something is sent, and gone again when they
+          take it back — Insert exists only for what they picked, never for
+          the whole lesson. The mirror above still cannot be copied. #}
+      <div id="snippet" class="snippet-card" hidden>
+        <div class="snippet-head">
+          <span>From {{ live.host_name or "your teacher" }}</span>
+          <button id="snippet-insert" class="btn btn-primary"
+                  title="Put this where your cursor is">Insert</button>
+          <button id="snippet-close" class="linkbtn" title="Hide this">Close</button>
+        </div>
+        <pre id="snippet-code" class="snippet-code"></pre>
+      </div>
       <div class="editor-wrap"><textarea id="mine"></textarea></div>
     </div>
   </section>
@@ -316,6 +329,8 @@
     filename: {{ (live.filename if live else 'main.py') | tojson }},
     ended: {{ 'true' if (live and live.ended) else 'false' }},
     waiting: {{ 'true' if waiting else 'false' }},
+    snippet: {{ (live.snippet if live else '') | tojson }},
+    snippetSeq: {{ (live.snippet_seq if live else 0) | tojson }},
     notes: {{ (live.notes if live else '') | tojson }},
     slide: {{ (live.slide if live else '') | tojson }},
     output: {{ (live.output if live else '') | tojson }},
