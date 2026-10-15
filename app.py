@@ -996,6 +996,48 @@ def _require_teacher(db):
 # again by who they are, not by a link they have to keep. Exactly one per
 # student per assignment, so opening the link a week later returns them to
 # their own work rather than to a fresh starter.
+#
+# THE NOTES ARE THE ASSIGNMENT'S, NOT THE DRAFT'S. A draft is made by copying
+# the assignment's files, notes included, and for a long time the student was
+# shown that copy forever after: a teacher who fixed a typo or added a slide
+# reached only students who had not opened the link yet, with nothing on
+# either screen to say so. Now every page that shows a student their draft
+# swaps the assignment's notes in as they are now (_current_notes).
+#
+# The copy in the draft is kept exactly as it was, whatever the browser
+# sends back (_keep_notes). The automatic turn-in compares the draft with
+# what was last handed in, so if saving wrote the new notes into it,
+# fixing a typo in the notes would hand in every student's work again, and
+# "turned in again since your feedback" would appear about nothing.
+#
+# Every .md file counts as notes. A student can make one, but on an
+# assignment it opens read-only, so it never holds anything they wrote.
+
+
+def _is_notes(name):
+    return name.lower().endswith((".md", ".markdown"))
+
+
+def _current_notes(item, files):
+    """A draft's `files` as its student should see them: the assignment's
+    notes as they are now, answer keys out, in place of the draft's copy."""
+    if item is None:
+        return files
+    out = {k: v for k, v in files.items() if not _is_notes(k)}
+    out.update({k: v for k, v in quiz.redact_files(item.file_map()).items()
+                if _is_notes(k)})
+    return out
+
+
+def _keep_notes(draft, files):
+    """`files` as sent by the browser, with the draft's stored notes kept in
+    place of any it sent (see above)."""
+    if not draft.assignment_id:
+        return files
+    out = {k: v for k, v in files.items() if not _is_notes(k)}
+    out.update({k: v for k, v in draft.file_map().items() if _is_notes(k)})
+    return out
+
 
 def _draft_payload(db, draft, extra=None):
     ctx = user_context(db)
@@ -1003,8 +1045,10 @@ def _draft_payload(db, draft, extra=None):
     # whether the notes pane can be selected at all. You own the notes in your
     # own project; on an assignment they belong to whoever set it.
     owns_notes = ctx["is_teacher"] or draft.assignment_id is None
+    item = (db.query(accounts.Assignment).filter_by(id=draft.assignment_id).first()
+            if draft.assignment_id else None)
     ctx.update(
-        files=draft.file_map(),
+        files=_current_notes(item, draft.file_map()),
         title=draft.title,
         author=ctx["user_name"],
         readonly=False,
@@ -1033,9 +1077,12 @@ def _draft_payload(db, draft, extra=None):
             # answer keys taken out of its notes. Compared with the teacher's
             # copy, no draft of an assignment with questions would ever look
             # untouched, and every sign-in would ask about restoring work.
+            # The notes as shown, so a teacher editing them does not make
+            # every untouched draft look worked on.
             ctx["draft_fresh"] = (
                 draft.code == starter.code
-                and draft.file_map() == quiz.redact_files(starter.file_map()))
+                and _current_notes(starter, draft.file_map())
+                == quiz.redact_files(starter.file_map()))
     ctx.update(extra or {})
     return ctx
 
@@ -1244,7 +1291,7 @@ def save_draft(slug):
         if stale:
             return stale
 
-        draft.files = json.dumps(files)
+        draft.files = json.dumps(_keep_notes(draft, files))
         draft.title = clean(data.get("title"), 200) or draft.title
         draft.updated_at = accounts.now()
         _written(draft, data)
@@ -1760,6 +1807,7 @@ def turn_in():
             return stale
 
         # keep the draft in step, so the saved copy matches what was submitted
+        files = _keep_notes(draft, files)
         draft.files = json.dumps(files)
         draft.updated_at = accounts.now()
         _written(draft, data)
@@ -5335,7 +5383,7 @@ def live_keep(code):
             stale = _stale(draft, data)
             if stale:
                 return stale
-            draft.files = json.dumps(project)
+            draft.files = json.dumps(_keep_notes(draft, project))
             draft.updated_at = accounts.now()
         _written(draft, data)
 
@@ -5351,7 +5399,9 @@ def live_keep(code):
             # replaces a draft's files with what is posted, so a live page
             # that sent only its one editor would drop a style.css the
             # assignment shipped — silently, at the moment it was handed in.
-            files=draft.file_map(),
+            # With the notes as they are now, or the page would put the old
+            # ones back.
+            files=_current_notes(item, draft.file_map()),
         )
     finally:
         db.close()
@@ -5439,7 +5489,7 @@ def live_page(code):
                 mine = db.query(accounts.Draft).filter_by(
                     owner_id=user.id, assignment_id=item.id).first()
                 if mine is not None:
-                    source = mine.file_map()
+                    source = _current_notes(item, mine.file_map())
                     draft_version = mine.version or 0
             entry = SQL_ENTRY if SQL_ENTRY in source else ENTRY
             starter = source.get(entry, "")
