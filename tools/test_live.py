@@ -1594,7 +1594,7 @@ _notes_fn = live_code[live_code.index("function showNotes"):]
 _notes_fn = _notes_fn[:_notes_fn.index("\n  }\n")]
 check("  through the slide viewer, which re-renders only when the slide changes",
       "notesSlides.show(data.notes, jump);" in _notes_fn
-      and "if (text === drawn) return Promise.resolve(true);"
+      and "if (key === drawn) return Promise.resolve(true);"
       in open(os.path.join(HERE, "..", "static", "notes.js")).read(),
       "a re-render every second replaces the link a student is clicking")
 check("  and jumps to the teacher's slide only when the teacher moves",

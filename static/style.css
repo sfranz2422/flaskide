@@ -2021,3 +2021,135 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
             border: 1px solid var(--amber); color: var(--amber); white-space: nowrap; }
 .att-absent { margin: 0; padding: 12px 16px; font-size: 13.5px; border-top: 1px solid var(--line); }
 @media (max-width: 760px) { .att-table { display: block; overflow-x: auto; } }
+
+/* SLIDE THEMES (notes.js, takeTheme): `theme: <name>` as the first line of
+   the notes. Each theme only sets variables — the page's own names, so
+   headings, code, quiz cards, tables and links all follow it — plus its
+   background (--theme-bg) and the bar under the slides (--nav-bg). A theme
+   is its own background and ignores the page's light or dark setting, so a
+   projected deck looks the same on every laptop.
+
+   The class is on the notes element itself, which is also what scrolls, so
+   the background is the whole pane. Its children keep .prose's reading
+   width with :where(), so lesson pages' wider column still wins. */
+.notes-body.slide-themed { background: var(--theme-bg); color: var(--text); max-width: none; }
+:where(.notes-body.slide-themed.prose) > * { max-width: 68ch; }
+.slide-themed h1, .slide-themed h2 { color: var(--heading); border-bottom-color: var(--line); }
+.slide-themed h3, .slide-themed h4 { color: var(--heading-2, var(--heading)); }
+.slide-themed strong { color: var(--strong, inherit); }
+.slide-themed li::marker { color: var(--accent); }
+.slide-themed blockquote { color: var(--text); background: var(--bg-panel);
+                           border-radius: 0 8px 8px 0; padding: .5em 1em; }
+.slide-nav.slide-themed { background: var(--nav-bg); border-top-color: var(--line); }
+
+.slide-theme-ocean {
+  --theme-bg: linear-gradient(160deg, #0b2545 0%, #13315c 55%, #134074 100%);
+  --nav-bg: #0e2a4d;
+  --text: #e6f1ff; --muted: #9fb7d6; --heading: #7fd8ff; --heading-2: #a5f3fc;
+  --accent: #5ce1e6; --accent-hover: #a5f3fc; --strong: #ffffff;
+  --line: rgba(255, 255, 255, .15); --bg: rgba(0, 10, 30, .4);
+  --bg-panel: rgba(255, 255, 255, .07); --bg-head: rgba(255, 255, 255, .1);
+  --hover-bg: rgba(255, 255, 255, .1); color-scheme: dark;
+}
+.slide-theme-sunset {
+  --theme-bg: linear-gradient(165deg, #fff4e6 0%, #ffe1d6 55%, #ffd1dc 100%);
+  --nav-bg: #ffe6dc;
+  --text: #3b1f2b; --muted: #7a5560; --heading: #c2410c; --heading-2: #9d174d;
+  --accent: #b4235a; --accent-hover: #9d174d; --strong: #7c2d12;
+  --line: rgba(59, 31, 43, .16); --bg: rgba(255, 255, 255, .7);
+  --bg-panel: rgba(255, 255, 255, .55); --bg-head: rgba(255, 255, 255, .8);
+  --hover-bg: rgba(255, 255, 255, .6); color-scheme: light;
+}
+.slide-theme-forest {
+  --theme-bg: linear-gradient(170deg, #0f2a1d 0%, #173d2a 60%, #1e4d33 100%);
+  --nav-bg: #13321f;
+  --text: #e8f5e9; --muted: #a5c4ac; --heading: #c5e478; --heading-2: #ffd166;
+  --accent: #ffd166; --accent-hover: #ffe29a; --strong: #ffffff;
+  --line: rgba(255, 255, 255, .14); --bg: rgba(0, 0, 0, .28);
+  --bg-panel: rgba(255, 255, 255, .06); --bg-head: rgba(255, 255, 255, .1);
+  --hover-bg: rgba(255, 255, 255, .1); color-scheme: dark;
+}
+.slide-theme-chalkboard {
+  --theme-bg: radial-gradient(ellipse at 18% 8%, rgba(255, 255, 255, .07), transparent 55%),
+              radial-gradient(ellipse at 85% 92%, rgba(255, 255, 255, .05), transparent 50%),
+              #2c3a33;
+  --nav-bg: #5b3a1e;
+  --text: #f4f1e8; --muted: #c9c4b3; --heading: #ffe680; --heading-2: #9ee6ff;
+  --accent: #ffb3c7; --accent-hover: #ffd1dc; --strong: #ffffff;
+  --line: rgba(255, 255, 255, .25); --bg: rgba(0, 0, 0, .22);
+  --bg-panel: rgba(255, 255, 255, .06); --bg-head: rgba(255, 255, 255, .1);
+  --hover-bg: rgba(255, 255, 255, .1); color-scheme: dark;
+}
+/* The wooden frame round the board. */
+.notes-body.slide-theme-chalkboard { box-shadow: inset 0 0 0 8px #6b4423, inset 0 0 0 10px #4a2e16; }
+.slide-theme-chalkboard h1, .slide-theme-chalkboard h2, .slide-theme-chalkboard h3 {
+  font-family: "Caveat", var(--sans); font-weight: 700; letter-spacing: .01em;
+}
+.slide-theme-chalkboard h1 { font-size: 2.4em; }
+.slide-theme-chalkboard h2 { font-size: 1.9em; border-bottom-style: dashed; }
+.slide-theme-chalkboard h3 { font-size: 1.5em; }
+.slide-theme-chalkboard hr { border-top-style: dashed; }
+
+.slide-theme-arcade {
+  --theme-bg: linear-gradient(rgba(255, 79, 216, .06) 1px, transparent 1px) 0 0 / 100% 26px,
+              radial-gradient(ellipse at 50% 0%, rgba(63, 243, 255, .16), transparent 60%),
+              #0b0b1a;
+  --nav-bg: #0b0b1a;
+  --text: #e0e0ff; --muted: #a0a0d0; --heading: #ff4fd8; --heading-2: #3ff3ff;
+  --accent: #3ff3ff; --accent-hover: #9ff9ff; --strong: #fff36b;
+  --line: rgba(63, 243, 255, .28); --bg: rgba(0, 0, 0, .5);
+  --bg-panel: rgba(63, 243, 255, .06); --bg-head: rgba(63, 243, 255, .12);
+  --hover-bg: rgba(63, 243, 255, .12); color-scheme: dark;
+}
+/* A pixel font is wide: the headings are set smaller to fit the same words. */
+.slide-theme-arcade h1, .slide-theme-arcade h2, .slide-theme-arcade h3 {
+  font-family: "Press Start 2P", var(--mono); font-weight: 400; line-height: 1.5;
+  text-shadow: 0 0 10px currentColor;
+}
+.slide-theme-arcade h1 { font-size: 1.25em; }
+.slide-theme-arcade h2 { font-size: 1em; }
+.slide-theme-arcade h3, .slide-theme-arcade h4 { font-size: .8em; }
+
+/* Lined paper with a red margin. The lines scroll with the writing
+   (attachment local), as they would on a page. */
+.slide-theme-notebook {
+  --theme-bg: linear-gradient(90deg, transparent 34px, #f2a5a5 34px, #f2a5a5 36px, transparent 36px),
+              repeating-linear-gradient(#fffef8 0, #fffef8 27px, #cddff3 27px, #cddff3 28px),
+              #fffef8;
+  --nav-bg: #f6f3e7;
+  --text: #1f2a44; --muted: #5b6478; --heading: #1d4ed8; --heading-2: #b91c1c;
+  --accent: #c2410c; --accent-hover: #9a3412; --strong: #0f172a;
+  --line: rgba(31, 42, 68, .18); --bg: rgba(255, 255, 255, .85);
+  --bg-panel: rgba(255, 255, 255, .8); --bg-head: #f1f5f9;
+  --hover-bg: #f1f5f9; color-scheme: light;
+}
+.notes-body.slide-theme-notebook { background-attachment: local; padding-left: 56px; }
+.slide-theme-notebook h1, .slide-theme-notebook h2, .slide-theme-notebook h3 {
+  font-family: "Patrick Hand", var(--sans); font-weight: 400;
+}
+.slide-theme-notebook h1 { font-size: 2.1em; }
+.slide-theme-notebook h2 { font-size: 1.7em; }
+.slide-theme-notebook h3 { font-size: 1.35em; }
+
+.slide-theme-space {
+  /* A small star field, tiled: a few stars at fixed spots would be lost on
+     a big screen. Two tile sizes so the repeat does not show as a grid. */
+  --theme-bg: radial-gradient(2px 2px at 24px 36px, #fff 50%, transparent) 0 0 / 220px 190px,
+              radial-gradient(1.5px 1.5px at 140px 22px, #fff 50%, transparent) 0 0 / 220px 190px,
+              radial-gradient(2px 2px at 92px 150px, #ffe9a8 50%, transparent) 0 0 / 220px 190px,
+              radial-gradient(1.5px 1.5px at 190px 110px, #cfe8ff 50%, transparent) 0 0 / 220px 190px,
+              radial-gradient(1.5px 1.5px at 60px 80px, rgba(255, 255, 255, .8) 50%, transparent) 0 0 / 170px 230px,
+              radial-gradient(1px 1px at 150px 170px, #fff 50%, transparent) 0 0 / 170px 230px,
+              radial-gradient(ellipse at 80% 100%, rgba(124, 58, 237, .35), transparent 60%),
+              linear-gradient(#0b0221, #1b0b3a 60%, #2a0f4f);
+  --nav-bg: #160733;
+  --text: #ece6ff; --muted: #b3a8d9; --heading: #ffd166; --heading-2: #c4b5fd;
+  --accent: #7dd3fc; --accent-hover: #bae6fd; --strong: #ffffff;
+  --line: rgba(196, 181, 253, .22); --bg: rgba(0, 0, 0, .35);
+  --bg-panel: rgba(255, 255, 255, .06); --bg-head: rgba(255, 255, 255, .1);
+  --hover-bg: rgba(255, 255, 255, .1); color-scheme: dark;
+}
+/* The themes on /help/questions, side by side. */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.theme-grid .help-src { margin: 0 0 6px; }
+.theme-sample { border: 1px solid var(--line); border-radius: 8px; min-height: 200px; }

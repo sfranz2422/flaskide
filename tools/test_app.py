@@ -241,7 +241,11 @@ for name in ("app.js", "account.js", "notes.js", "preview.js"):
     for one in re.findall(r'classList\.(?:add|toggle|remove)\(\s*"([^"]+)"', text):
         applied.add(one)
 
-unstyled = sorted(c for c in applied if c and c not in styled)
+# A literal ending in "-" is a prefix with a name joined on at run time
+# ("slide-theme-" + name, notes.js): it needs some styled class that starts
+# with it. Which names exactly is test_themes.py's job.
+unstyled = sorted(c for c in applied if c and c not in styled
+                  and not (c.endswith("-") and any(s.startswith(c) for s in styled)))
 check("every class the editor applies has a CSS rule", not unstyled, str(unstyled))
 check("  (and it applies some)", len(applied) >= 8, "%d classes" % len(applied))
 

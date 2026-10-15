@@ -84,9 +84,78 @@ window.FlaskIDENotes = (function () {
     FORBID_TAGS: SANITIZE.FORBID_TAGS
   };
 
+  // ----------------------------------------------------------- themes
+  /* A deck's look, picked by its author with one line at the very top:
+
+         theme: chalkboard
+
+     Markdown has no colours or themes of its own, and inline style is
+     taken out of notes (SANITIZE, above) because students write notes too.
+     So a theme is only a NAME from this list: it becomes a class, and every
+     colour lives in style.css. Nothing a student types can reach CSS.
+
+     Each theme sets the same variables the page's own palette does (--text,
+     --accent, --line, ...), on the notes alone, so headings, code, quiz
+     cards and links all follow it without a rule each. A theme is its own
+     background, so it looks the same whether the page is light or dark.
+
+     The line is taken out before the notes are cut into slides — in
+     slides(), which the teacher's "3/5", the lesson editor's cursor and
+     every student's viewer all go through, so none of them can count it
+     differently. A name not on the list is left in, as text, so a typo
+     shows on the slide instead of silently doing nothing. */
+  var THEMES = ["ocean", "sunset", "forest", "chalkboard", "arcade",
+                "notebook", "space"];
+  var THEME_LINE = /^[ \t]*theme[ \t]*:[ \t]*([a-z]+)[ \t]*$/i;
+
+  /* {name, body}: the theme the notes ask for ("" for none), and the notes
+     without its line. Only the first line with anything on it counts. */
+  function takeTheme(md) {
+    var text = String(md || "");
+    var m = text.match(/^\s*([^\n]*)\n?/);
+    var hit = m && m[1].replace(/\r$/, "").match(THEME_LINE);
+    var name = hit && hit[1].toLowerCase();
+    if (!name || THEMES.indexOf(name) < 0) return { name: "", body: text };
+    return { name: name, body: text.slice(m[0].length) };
+  }
+
+  /* Headings in a few themes use a display face. Fetched the first time
+     such a theme is shown, so notes without one never pay for it; until
+     it arrives (or if it never does) the heading is in the page's own
+     font, which is only plainer. */
+  var fontsAsked = false;
+  function themeFonts() {
+    if (fontsAsked) return;
+    fontsAsked = true;
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Caveat:wght@600;700" +
+                "&family=Patrick+Hand&family=Press+Start+2P&display=swap";
+    document.head.appendChild(link);
+  }
+
+  function setTheme(node, name) {
+    if (!node) return;
+    node.className = node.className.replace(/(^|\s)(slide-themed|slide-theme-[a-z]+)(?=\s|$)/g, " ")
+                                   .replace(/\s+/g, " ").trim();
+    if (!name) return;
+    node.className = (node.className + " slide-themed slide-theme-" + name).trim();
+    if (name === "chalkboard" || name === "arcade" || name === "notebook") themeFonts();
+  }
+
+  /* options.theme, when given, is the deck's theme for a slide that no
+     longer has the line (slideView). Without it the notes' own line
+     decides, so notes shown whole are themed by the same one line. */
   function render(target, source, options) {
     var rules = options && options.trusted ? TRUSTED : SANITIZE;
+    var theme = options && typeof options.theme === "string" ? options.theme : null;
+    if (theme === null) {
+      var picked = takeTheme(source);
+      theme = picked.name;
+      source = picked.body;
+    }
     return ensureRenderer().then(function () {
+      setTheme(target, theme);
       var dirty = window.marked.parse(source || "", { breaks: true });
       var clean = window.DOMPurify.sanitize(dirty, rules);
       target.innerHTML = clean;
@@ -124,7 +193,7 @@ window.FlaskIDENotes = (function () {
      Returns [] for notes with no `---` at all — one slide is not slides, and
      the caller then sends the notes whole, as it always did. */
   function slides(md) {
-    var lines = String(md || "").replace(/\r\n?/g, "\n").split("\n");
+    var lines = takeTheme(String(md || "").replace(/\r\n?/g, "\n")).body.split("\n");
     var out = [], cur = [], fence = null, cuts = 0;
     lines.forEach(function (ln) {
       var f = ln.match(/^ {0,3}(`{3,}|~{3,})/);
@@ -188,20 +257,24 @@ window.FlaskIDENotes = (function () {
     bar.appendChild(next);
     body.parentNode.insertBefore(bar, body.nextSibling);
 
-    var md = null, cut = [], at = 0, drawn = null, moved = null;
+    var md = null, cut = [], at = 0, drawn = null, moved = null, theme = "";
 
     function draw() {
-      var text = cut.length ? cut[at] : (md || "");
+      var text = cut.length ? cut[at] : takeTheme(md).body;
+      setTheme(bar, theme);       // the arrows under a themed deck match it
       bar.hidden = !cut.length;
       if (cut.length) {
         pos.textContent = (at + 1) + " / " + cut.length;
         prev.disabled = at <= 0;
         next.disabled = at >= cut.length - 1;
       }
-      if (text === drawn) return Promise.resolve(true);
-      var turned = drawn !== null;
-      drawn = text;
-      return render(body, text).then(function (ok) {
+      // The theme is part of what is on screen: changing only the theme
+      // line must redraw, though no slide's text changed.
+      var key = theme + "\n" + text;
+      if (key === drawn) return Promise.resolve(true);
+      var turned = drawn !== null && drawn.slice(drawn.indexOf("\n") + 1) !== text;
+      drawn = key;
+      return render(body, text, { theme: theme }).then(function (ok) {
         if (turned) body.scrollTop = 0;   // a new slide starts at its top
         return ok;
       });
@@ -225,6 +298,7 @@ window.FlaskIDENotes = (function () {
     return {
       show: function (text, i) {
         md = text || "";
+        theme = takeTheme(md).name;
         var c = slides(md);
         // One slide is not slides, as everywhere else.
         cut = c.length >= 2 ? c : [];
@@ -888,6 +962,8 @@ window.FlaskIDENotes = (function () {
     cleanLong: cleanLong,
     isMarkdown: isMarkdown,
     slides: slides,
+    takeTheme: takeTheme,
+    THEMES: THEMES,
     render: render,
     ensureRenderer: ensureRenderer,
     parseQuiz: parseQuiz,

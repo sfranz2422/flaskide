@@ -58,6 +58,22 @@
 
   <h2>Slides</h2>
   <p>A line with only <code>---</code> on it starts a new slide. A question can go on any slide.</p>
+
+  <h2 id="themes">Themes</h2>
+  <p>Make the very first line of the notes <code>theme:</code> and a name, and every slide
+    takes that look: in the editor, on the class's page and in a lesson. The line itself
+    is never shown. A name that isn't one of these stays on the slide as text, so a typo
+    is easy to spot.</p>
+  {#  The names are notes.js's THEMES; test_themes.py holds this list to it. #}
+  <div class="theme-grid">
+    {% for name in ["ocean", "sunset", "forest", "chalkboard", "arcade", "notebook", "space"] %}
+      <div>
+        <pre class="help-src">theme: {{ name }}</pre>
+        <div class="notes-body prose help-look theme-sample"
+             data-md="theme: {{ name }}&#10;## {{ name|capitalize }}&#10;A **list** holds values in order. [A link](#)&#10;- uses `[ ]`&#10;&#10;> Indexes start at 0."></div>
+      </div>
+    {% endfor %}
+  </div>
 </main>
 
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
