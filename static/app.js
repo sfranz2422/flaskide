@@ -1721,6 +1721,93 @@
       var b = e.target && e.target.closest && e.target.closest(".js-popout");
       if (b && "BroadcastChannel" in window) openPopout();
     });
+
+    // ---------------------------------------------------- answers, counted
+    /* While live, each question card in the teacher's notes and in "Class
+       sees" shows how many of the students here have answered it: "18 / 22
+       answered". The server counts (/api/live/<code>/answers, which says
+       what "here" means); this asks every few seconds while there is a
+       question in the notes, and puts the count on the card for it.
+
+       The teacher's cards are their own copy, answer key and all, with no
+       question id in them, so a card is found by its prompt — with the
+       blanks emptied, as the class's copy has them.
+
+       The cards are rebuilt whenever the notes are drawn again (a keystroke
+       in the .md, the class moving on), which takes the count off them. A
+       MutationObserver puts it back from the last answer at once rather
+       than at the next ask. paintCounts only writes what differs, or the
+       observer would see its own writes and never stop. */
+    var counts = null;
+    var ANSWERS_MS = 3000;
+    // Where the cards are. A function, because FlaskIDE's notes pane is
+    // made after this runs.
+    function countRoots() { return [classNotes, $("notes-body")]; }
+
+    function samePrompt(t) { return String(t || "").replace(/\[\[[^\[\]\n]*\]\]/g, "[[]]").trim(); }
+
+    function countText(hit) {
+      if (!hit) return "";
+      return counts.here === null || counts.here === undefined
+        ? hit.answered + " answered"
+        : hit.answered + " / " + counts.here + " answered";
+    }
+
+    function paintCounts() {
+      countRoots().forEach(function (root) {
+        if (!root) return;
+        root.querySelectorAll(".quiz").forEach(function (box) {
+          var hit = null;
+          if (counts && box.quizPrompt !== undefined) {
+            var want = samePrompt(box.quizPrompt);
+            hit = counts.questions.filter(function (q) { return q.prompt === want; })[0] || null;
+          }
+          var badge = box.querySelector(".quiz-count");
+          if (!hit) {
+            if (badge) badge.remove();
+            return;
+          }
+          if (!badge) {
+            badge = document.createElement("span");
+            badge.className = "quiz-count";
+            var head = box.querySelector(".quiz-head");
+            (head || box).appendChild(badge);
+          }
+          var text = countText(hit);
+          if (badge.textContent !== text) badge.textContent = text;
+          var all = counts.here > 0 && hit.answered >= counts.here;
+          if (badge.classList.contains("all-in") !== all) badge.classList.toggle("all-in", all);
+        });
+      });
+    }
+
+    function askCounts() {
+      watchCards();
+      // Nothing to count: not live, or no question in the notes.
+      if (!liveCode || !/^ {0,3}(`{3,}|~{3,})\s*quiz\s*$/m.test(liveNotes())) {
+        if (counts) { counts = null; paintCounts(); }
+        return;
+      }
+      fetch("/api/live/" + encodeURIComponent(liveCode) + "/answers")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          if (d && d.questions) { counts = d; paintCounts(); }
+        })
+        .catch(function () { /* the next ask will do */ });
+    }
+    var recount = "MutationObserver" in window
+      ? new MutationObserver(function () { if (counts) paintCounts(); }) : null;
+    var watched = [];
+    function watchCards() {
+      if (!recount) return;
+      countRoots().forEach(function (root) {
+        if (!root || watched.indexOf(root) >= 0) return;
+        watched.push(root);
+        recount.observe(root, { childList: true, subtree: true });
+      });
+    }
+    watchCards();
+    setInterval(askCounts, ANSWERS_MS);
   } else {
     /* No Go live button: signed out, or not a teacher. Whatever lesson this
        browser remembers is not one this person can resume, so forget it

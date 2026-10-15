@@ -5278,6 +5278,63 @@ def live_poll(code):
         db.close()
 
 
+@app.get("/api/live/<code>/answers")
+def live_answers(code):
+    """How many of the class have answered each question, for the count on
+    each question card in the teacher's editor while live ("18 / 22").
+
+    The questions are the ones the class was last sent (`live.notes`, keys
+    already out), in order, so a question the teacher has just edited counts
+    the answers given to it as the class sees it. Each comes with its prompt,
+    as the class's copy has it (blanks already emptied by redaction), which
+    is how the editor finds its own card: the teacher's copy has no ids.
+
+    Out of the students HERE NOW: the class's attendance sittings active in
+    the last VISIT_GAP_MINUTES (accounts.Visit). Answered counts only those
+    same students, so a student who answered from the link last week does not
+    make it read 23 / 22. A lesson in no class has no "here": then it is the
+    count alone, and `here` is null.
+
+    Only the lesson's teacher; anyone else is told it does not exist."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        live = _find_live(db, code)
+        if live is None or user is None or user.id != live.host_id:
+            abort(404)
+        item = (db.query(accounts.Assignment).filter_by(id=live.assignment_id).first()
+                if live.assignment_id else None)
+        if item is None:
+            return jsonify(questions=[], here=None)
+        _, course = _class_of(db, item)
+        here = None
+        if course is not None:
+            cutoff = accounts.now() - timedelta(minutes=accounts.VISIT_GAP_MINUTES)
+            here = {uid for (uid,) in
+                    db.query(accounts.Visit.user_id)
+                      .filter(accounts.Visit.class_id == course.id,
+                              accounts.Visit.last_at >= cutoff).distinct()}
+        out = []
+        for piece in quiz._blocks(live.notes or ""):
+            if piece[0] != "quiz":
+                continue
+            q = quiz.parse("\n".join(piece[2]))
+            # The class's copy has no key to work an id out from; it has
+            # the `id:` line redaction wrote, which is what every answer to
+            # it is stored under.
+            qid = q["given_id"] or q["qid"]
+            if not qid:
+                continue
+            who = {sid for (sid,) in
+                   db.query(accounts.QuizAnswer.student_id)
+                     .filter_by(assignment_id=item.id, qid=qid)}
+            out.append({"prompt": q["prompt"].strip(),
+                        "answered": len(who & here) if here is not None else len(who)})
+        return jsonify(questions=out, here=len(here) if here is not None else None)
+    finally:
+        db.close()
+
+
 @app.post("/api/live/<code>/keep")
 def live_keep(code):
     """A student saving their own copy from the live page.

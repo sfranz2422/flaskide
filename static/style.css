@@ -2253,3 +2253,11 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
   --bg-panel: rgba(255, 255, 255, .6); --bg-head: rgba(255, 255, 255, .85);
   --hover-bg: rgba(255, 255, 255, .7); color-scheme: light;
 }
+
+/* "18 / 22 answered" on a question card, in the teacher's editor while
+   live (app.js, "answers, counted"). Green once everyone here has answered. */
+.quiz-head .quiz-count { margin-left: auto; text-transform: none; letter-spacing: 0;
+                         font-variant-numeric: tabular-nums; white-space: nowrap;
+                         padding: 0 8px; border: 1px solid var(--line); border-radius: 999px;
+                         color: var(--muted); font-weight: 600; }
+.quiz-head .quiz-count.all-in { border-color: var(--green); color: var(--green); }

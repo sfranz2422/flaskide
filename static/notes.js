@@ -480,6 +480,9 @@ window.FlaskIDENotes = (function () {
   function buildQuiz(q) {
     var n = ++widgetCount;
     var box = el("div", "quiz");
+    // For the teacher's editor, which finds its own copy of a question by
+    // this to put the class's answer count on it (app.js, "answers, counted").
+    box.quizPrompt = q.prompt;
     var head = el("div", "quiz-head");
     head.appendChild(el("span", "quiz-label",
                         { long: "Long response", blank: "Fill in the blank",
