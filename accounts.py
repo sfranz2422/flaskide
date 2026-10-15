@@ -480,6 +480,43 @@ class Enrollment(Base):
     name = Column(String(200), nullable=False, default="")
 
 
+class Visit(Base):
+    """A student in a class: one sitting, from arriving to last being busy.
+
+    Attendance, for the teacher's class page. A sitting starts when a
+    signed-in student opens anything of the class's — its page, one of its
+    assignments, its live lesson — and runs on while they keep working: the
+    editor's "still here" beat moves `last_at` every few minutes. A gap of
+    more than VISIT_GAP_MINUTES starts a new row, so one row is one stretch
+    of work and a day can hold several.
+
+    The email and name are copied in, not joined from users, so the record
+    reads the same after a roster sync renames or drops the student.
+    `places` is what they opened during the sitting, for the time log.
+
+    Times are UTC, like every other column here. Which DAY a sitting
+    belongs to is the teacher's local day, so the page groups them in the
+    browser; the server cannot know the school's time zone.
+    """
+    __tablename__ = "class_visits"
+
+    id = Column(Integer, primary_key=True)
+    class_id = Column(Integer, ForeignKey("classes.id"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    email = Column(String(320), nullable=False, default="")
+    name = Column(String(200), nullable=False, default="")
+    places = Column(String(500), nullable=False, default="")
+    started_at = Column(DateTime, nullable=False, default=now, index=True)
+    last_at = Column(DateTime, nullable=False, default=now)
+
+
+#: Longer than this between two signs of a student and the second starts a
+#: new sitting. Above the editor's 5-minute beat, so a student who is typing
+#: never splits one in two, and short enough that leaving at lunch and
+#: coming back after shows as two.
+VISIT_GAP_MINUTES = 20
+
+
 class Image(Base):
     """A picture a teacher uploaded for a description, served at /img/<slug>.
 
