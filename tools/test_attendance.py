@@ -15,6 +15,13 @@ WHAT IS BEING GUARDED
       A page load, a save or the page's beat moves the clock. A teacher's
       session is left alone: signing out ends their live lesson.
 
+  A tab Chrome reopens the next day goes to sign-in, not back to work.
+      Chrome shows it from its cache without asking the server, so: a
+      signed-in page is never cached; the page asks GET /api/alive as it
+      opens and whenever it is looked at (which must not count as being
+      here); and an idle student opening a page is sent to sign in, back
+      to that page, instead of being shown it signed out.
+
   The deploy does not sign out the room.
       A session from before this existed starts its clock, it is not
       treated as infinitely old.
@@ -27,6 +34,7 @@ WHAT IS BEING GUARDED
       teacher sees the page.
 """
 import json
+from urllib.parse import parse_qs, urlsplit
 import os
 import re
 import shutil
@@ -143,14 +151,54 @@ check("/api/alive says signed in", r == {"signed_in": True}, r)
 r = client(AMY, act=now - H - 5).post("/api/alive", json={}).get_json()
 check("…and signed out once the time is up", r == {"signed_in": False}, r)
 
+c = client(AMY, act=now - 600)
+r = c.get("/api/alive").get_json()
+check("asking /api/alive says signed in", r == {"signed_in": True}, r)
+check("…and asking is not being here: the clock stays",
+      sess(c).get("act") == now - 600, sess(c).get("act"))
+r = client(AMY, act=now - H - 5).get("/api/alive").get_json()
+check("…and it says signed out once the time is up", r == {"signed_in": False}, r)
+
+PAGE = {"Accept": "text/html,application/xhtml+xml,*/*;q=0.8", "Sec-Fetch-Dest": "document"}
+c = client(AMY, act=now - H - 5)
+r = c.get("/a/loops1?x=1", headers=PAGE)
+
+
+def sent_to_login(r):
+    """The `next` a redirect to /login carries, or None if it is not one."""
+    u = urlsplit(r.headers.get("Location", ""))
+    if r.status_code != 302 or u.path != "/login":
+        return None
+    return parse_qs(u.query).get("next", [None])[0]
+
+
+check("an idle student opening a page is sent to sign in, then back to it",
+      sent_to_login(r) == "/a/loops1?x=1" and "uid" not in sess(c),
+      (r.status_code, r.headers.get("Location")))
+r = client(AMY, act=now - H - 5).get("/my", headers=PAGE)
+check("…a page with no query too", sent_to_login(r) == "/my", r.headers.get("Location"))
+r = client(AMY, act=now - H - 5).get("/api/my/projects", headers=PAGE)
+check("…but a fetch to /api/ just gets its answer", r.status_code != 302, r.status_code)
+r = client(AMY, act=now - H - 5).get("/a/loops1", headers=dict(PAGE, **{"Sec-Fetch-Dest": "iframe"}))
+check("…and so does a frame", r.status_code == 200, r.status_code)
+r = client().get("/a/loops1", headers=PAGE)
+check("a student who was never signed in sees the page",
+      r.status_code == 200, r.status_code)
+r = client(AMY, act=now).get("/a/loops1", headers=PAGE)
+check("a signed-in page is never cached (Chrome reopens tabs from cache)",
+      r.headers.get("Cache-Control") == "no-store", r.headers.get("Cache-Control"))
+r = client().get("/a/loops1", headers=PAGE)
+check("…a signed-out one is left alone", "no-store" not in r.headers.get("Cache-Control", ""),
+      r.headers.get("Cache-Control"))
+
 html = client(AMY).get("/my").get_data(as_text=True)
-check("a student's page carries the Sign in again card", 'id="idle-out"' in html)
+check("a student's page carries the idle script", 'fetch("/api/alive"' in html)
 check("…which gives up before the server does",
       "(%d - 120) * 1000" % H in html)
 html = client(TEACHER).get("/live/live01").get_data(as_text=True)
-check("a teacher's page has no card", "live01" in html and 'id="idle-out"' not in html)
+check("a teacher's page has none", "live01" in html and '"/api/alive"' not in html)
 html = client().get("/a/loose1").get_data(as_text=True)
-check("nor a signed-out student's", 'id="idle-out"' not in html)
+check("nor a signed-out student's", '"/api/alive"' not in html)
 
 print("attendance")
 
@@ -233,56 +281,64 @@ if not shutil.which("node"):
 # The script exactly as a student's page gets it, so the numbers in it are
 # the ones the server rendered.
 page = client(AMY).get("/class/%d" % CLASS).get_data(as_text=True)
-script = re.search(r'<div id="idle-out".*?<script>(.*?)</script>', page, re.S).group(1)
+script = [js for js in re.findall(r"<script>(.*?)</script>", page, re.S)
+          if '"/api/alive"' in js][0]
 
 HARNESS = r"""
 const script = require("fs").readFileSync(0, "utf8");
-let clock = 1e12, ticks = [], listeners = {}, sent = [], reply = {signed_in: true};
-const el = (id) => ({ id, hidden: true, focused: false, focus() { this.focused = true; },
-                      contains(t) { return t === button || t === this; },
-                      addEventListener(type, fn) { this["on" + type] = fn; } });
-const box = el("idle-out"), button = el("idle-out-go");
-global.document = { hidden: false, addEventListener() {},
-                    getElementById: (id) => id === "idle-out" ? box : id === "idle-out-go" ? button : null };
+let clock = 1e12, ticks = [], listeners = {}, docListeners = {}, sent = [], reply = {signed_in: true};
+global.document = { hidden: false,
+                    addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); } };
 global.window = { addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); } };
-global.location = { pathname: "/p/abc", search: "?x=1", href: "" };
+global.location = { pathname: "/p/abc", search: "?x=1", went: [],
+                    replace(u) { this.went.push(u); } };
 global.setInterval = (fn) => ticks.push(fn);
-global.fetch = (url, opts) => { sent.push([url, JSON.parse(opts.body)]);
+global.fetch = (url, opts) => { sent.push([url, (opts && opts.method) || "GET",
+                                           opts && opts.body ? JSON.parse(opts.body) : null]);
   return Promise.resolve({ json: () => Promise.resolve(reply) }); };
+const flush = () => new Promise((r) => setTimeout(r, 0));
 Date.now = () => clock;
+const beats = () => sent.filter((s) => s[1] === "POST");
+const asks = () => sent.filter((s) => s[1] === "GET");
 eval(script);
 
-function fire(type, target) {
-  const e = { target: target || {}, stopped: false, prevented: false,
-              stopPropagation() { this.stopped = true; }, preventDefault() { this.prevented = true; } };
+function fire(type, e) {
+  e = Object.assign({ target: {}, stopped: false, prevented: false,
+              stopPropagation() { this.stopped = true; }, preventDefault() { this.prevented = true; } }, e);
   (listeners[type] || []).forEach((fn) => fn(e));
   return e;
 }
 const out = {};
 const MIN = 60 * 1000;
+(async function () {
+await flush();
+out.on_load = { asks: asks().length, url: asks()[0] && asks()[0][0], went: location.went.length };
 let e = fire("keydown");
-out.typing_at_once = { beats: sent.length, blocked: e.prevented || e.stopped, shown: !box.hidden };
+out.typing_at_once = { beats: beats().length, blocked: e.prevented || e.stopped, went: location.went.length };
 clock += 6 * MIN;
 e = fire("keydown");
-out.after_six_min = { beats: sent.length, body: sent[0] && sent[0][1], url: sent[0] && sent[0][0],
+const b = beats()[0];
+out.after_six_min = { beats: beats().length, body: b && b[2], url: b && b[0],
                       blocked: e.prevented || e.stopped };
 clock += 3 * MIN;
 fire("pointerdown");
-out.three_min_later = { beats: sent.length };
+out.three_min_later = { beats: beats().length };
+fire("focus"); await flush();
+document.hidden = false; docListeners.visibilitychange.forEach((f) => f()); await flush();
+fire("pageshow", { persisted: true }); await flush();
+fire("pageshow", { persisted: false }); await flush();
+out.looked = { asks: asks().length, beats: beats().length, went: location.went.length };
 const LIMIT = %d * 1000;
 clock += LIMIT - 3 * MIN - 1000;      // just short of LIMIT since the beat
 ticks.forEach((t) => t());
-out.just_before = { shown: !box.hidden };
+out.just_before = { went: location.went.length };
 clock += 2000;
 ticks.forEach((t) => t());
-out.timer = { shown: !box.hidden, focused: button.focused };
+out.timer = { went: location.went.slice() };
 e = fire("keydown");
-out.key_after = { blocked: e.prevented && e.stopped };
-e = fire("pointerdown", button);
-out.own_button = { blocked: e.prevented || e.stopped };
-button.onclick();
-out.href = location.href;
+out.key_after = { blocked: e.prevented && e.stopped, went: location.went.length };
 console.log(JSON.stringify(out));
+})();
 """
 
 def run_idle(js):
@@ -294,33 +350,52 @@ def run_idle(js):
         print(proc.stderr)
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
+GO = "/logout?next=" + "%2Flogin%3Fnext%3D%252Fp%252Fabc%253Fx%253D1"
 o = run_idle(HARNESS % (H - 120))
+check("opened, the page asks the server at once (a GET, so not activity)",
+      o["on_load"] == {"asks": 1, "url": "/api/alive", "went": 0}, o["on_load"])
 check("typing straight after load: no beat, nothing blocked",
-      o["typing_at_once"] == {"beats": 0, "blocked": False, "shown": False}, o["typing_at_once"])
+      o["typing_at_once"] == {"beats": 0, "blocked": False, "went": 0}, o["typing_at_once"])
 check("after five minutes a key sends one beat, with the class",
       o["after_six_min"]["beats"] == 1 and o["after_six_min"]["url"] == "/api/alive"
       and o["after_six_min"]["body"] == {"class": CLASS} and not o["after_six_min"]["blocked"],
       o["after_six_min"])
 check("…and not another until five more", o["three_min_later"]["beats"] == 1)
-check("a tab left open shows the card by itself, on time",
-      not o["just_before"]["shown"] and o["timer"]["shown"] and o["timer"]["focused"],
-      (o["just_before"], o["timer"]))
-check("then a key is swallowed, never reaching the editor", o["key_after"]["blocked"])
-check("…but the card's own button still works", not o["own_button"]["blocked"])
-check("Sign in again signs out, then signs in back to this page",
-      o["href"] == "/logout?next=" + "%2Flogin%3Fnext%3D%252Fp%252Fabc%253Fx%253D1", o["href"])
+check("focus, the tab shown, and Back's cache each ask again; a plain load does not twice",
+      o["looked"] == {"asks": 4, "beats": 1, "went": 0}, o["looked"])
+check("a tab left open goes to sign-in by itself, on time, back to this page",
+      o["just_before"]["went"] == 0 and o["timer"]["went"] == [GO], (o["just_before"], o["timer"]))
+check("then a key is swallowed, never reaching the editor, and it goes only once",
+      o["key_after"] == {"blocked": True, "went": 1}, o["key_after"])
 
-# Signed out some other way (another tab, the server's clock): the first
-# beat to hear about it shows the card, long before the page's own time.
+# Chrome reopening yesterday's tab from its cache: the script runs as if
+# just loaded, so only the server knows. Opening it must be enough.
 o = run_idle(HARNESS.split("const out = {};")[0] % () + """
 reply = {signed_in: false};
-clock += 6 * 60 * 1000;
-fire("keydown");
-const before = !box.hidden;
-setTimeout(() => console.log(JSON.stringify({ before, after: !box.hidden })), 0);
+(async function () {
+  const before = location.went.length;
+  await flush(); await flush();
+  console.log(JSON.stringify({ before, after: location.went }));
+})();
 """)
-check("a beat answered signed out shows the card",
-      o == {"before": False, "after": True}, o)
+check("a tab reopened after its time goes to sign-in as it opens",
+      o == {"before": 0, "after": [GO]}, o)
+
+# Signed out some other way (another tab, the server's clock): the first
+# beat to hear about it goes, long before the page's own time.
+o = run_idle(HARNESS.split("const out = {};")[0] % () + """
+(async function () {
+  await flush();
+  reply = {signed_in: false};
+  clock += 6 * 60 * 1000;
+  fire("keydown");
+  const before = location.went.length;
+  await flush(); await flush();
+  console.log(JSON.stringify({ before, after: location.went.length }));
+})();
+""")
+check("a beat answered signed out goes to sign-in",
+      o == {"before": 0, "after": 1}, o)
 
 print()
 print("%d/%d ok" % (sum(results), len(results)))

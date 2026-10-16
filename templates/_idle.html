@@ -8,16 +8,6 @@
     the student's sitting in it open, which is what attendance's "last seen"
     is made of. #}
 {% if idle_seconds %}
-<div id="idle-out" class="modal" hidden>
-  <div class="modal-card" role="alertdialog" aria-labelledby="idle-out-title">
-    <h2 id="idle-out-title">You've been signed out</h2>
-    <p class="modal-sub">After two hours with no work in it, FlaskIDE signs you
-      out. Sign in again to carry on. Your saved work is waiting for you.</p>
-    <div class="modal-actions">
-      <button type="button" class="btn btn-primary" id="idle-out-go">Sign in again</button>
-    </div>
-  </div>
-</div>
 <script>
 (function () {
   "use strict";
@@ -27,25 +17,24 @@
   var LIMIT = ({{ idle_seconds|int }} - 120) * 1000;
   var BEAT = 5 * 60 * 1000;
   var CLASS = {{ attend_class|tojson }};
-  var box = document.getElementById("idle-out");
   var last = Date.now();       // this page's load moved the server's clock too
   var out = false;
 
+  // Straight to Google's sign-in, and from there back to this same page,
+  // which loads fresh. Through /logout, so that a student who closes
+  // Google's page halfway is signed out rather than half in. replace(), so
+  // Back does not land on the dead page again.
+  //
+  // This used to be a "Sign in again" card the student had to press. It
+  // stayed on screen in tabs Chrome reopened the next morning, and they
+  // were used as they were, which is what signing out was meant to stop.
   function signOut() {
     if (out) return;
     out = true;
-    box.hidden = false;
-    document.getElementById("idle-out-go").focus();
-  }
-
-  // Through /logout, so that a student who closes Google's page halfway is
-  // signed out rather than half in, then back to this same page, which
-  // loads fresh.
-  document.getElementById("idle-out-go").addEventListener("click", function () {
     var here = location.pathname + location.search;
-    location.href = "/logout?next=" +
-      encodeURIComponent("/login?next=" + encodeURIComponent(here));
-  });
+    location.replace("/logout?next=" +
+      encodeURIComponent("/login?next=" + encodeURIComponent(here)));
+  }
 
   function beat() {
     fetch("/api/alive", {
@@ -59,16 +48,14 @@
   }
 
   // Capture, on window, so this runs before the editor or a game sees the
-  // event. Once signed out, nothing gets through but the card's own button:
-  // a key typed now would go into a project that can no longer be saved,
-  // and the save would fail with nothing on screen to say why.
+  // event. Once signed out, nothing gets through while the sign-in page
+  // loads: a key typed now would go into a project that can no longer be
+  // saved, and the save would fail with nothing on screen to say why.
   function used(e) {
     if (out || Date.now() - last > LIMIT) {
       signOut();
-      if (!box.contains(e.target)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      e.preventDefault();
+      e.stopPropagation();
       return;
     }
     if (Date.now() - last >= BEAT) {
@@ -80,15 +67,35 @@
     window.addEventListener(type, used, { capture: true, passive: false });
   });
 
-  // A tab left open shows the card by itself, so a student who comes back
-  // to it sees why before they start typing. Timers are slowed in a hidden
-  // tab, so it is checked again the moment the tab is looked at.
+  // Asking the server, which is the only one that knows. Chrome reopening
+  // yesterday's tabs shows them from its cache without asking it, and runs
+  // this script as if the page had just loaded, so `last` is now and the
+  // page's own clock sees nothing wrong. A GET, so asking is not activity:
+  // a tab that is merely looked at must not keep itself signed in.
+  var asking = false;
+  function ask() {
+    if (out || asking) return;
+    asking = true;
+    fetch("/api/alive", { credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && d.signed_in === false) signOut(); })
+      .catch(function () {})     // offline: nothing to tell, so nothing done
+      .then(function () { asking = false; });
+  }
+
+  // A tab left open goes by itself once the time is up. Timers are slowed
+  // in a hidden tab, so it is checked again the moment the tab is looked
+  // at, and the server is asked then too.
   function check() { if (!out && Date.now() - last > LIMIT) signOut(); }
+  function looked() { check(); ask(); }
   setInterval(check, 30 * 1000);
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) check();
+    if (!document.hidden) looked();
   });
-  window.addEventListener("focus", check);
+  window.addEventListener("focus", looked);
+  // Back/Forward's cache brings a page back without running this again.
+  window.addEventListener("pageshow", function (e) { if (e.persisted) looked(); });
+  looked();
 })();
 </script>
 {% endif %}

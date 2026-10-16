@@ -901,9 +901,16 @@ def logout():
 # The page (templates/_idle.html): it watches the keyboard and the mouse and
 # POSTs /api/alive at most every five minutes while they are used. That is
 # what makes reading the notes or typing count as being here, since neither
-# reaches the server on its own. After the idle time it covers the page with
-# a Sign in again card and swallows keys, so nothing typed after the server
+# reaches the server on its own. After the idle time it sends the student to
+# sign in, and swallows keys until it has, so nothing typed after the server
 # let go can be lost to a save that silently fails.
+#
+# CHROME REOPENS YESTERDAY'S TABS FROM ITS CACHE, without asking the server,
+# and the page's clock starts again as if it had just loaded. So: a signed-in
+# page is never cached (_no_store_signed_in), the page GETs /api/alive the
+# moment it is opened or looked at, and an idle student who opens a page is
+# sent to sign in rather than shown it signed out (below). Each one alone
+# left the tab in use the next morning, which is what this is for.
 #
 # The page gives up two minutes before the server does. `act` is only
 # rewritten once a minute, and the beat is sent at most every five, so the
@@ -944,12 +951,43 @@ def _sign_out_idle_student():
     last = session.get("act")
     if last is not None and t - last > STUDENT_IDLE_SECONDS:
         session.clear()
+        # Opening a page: they were signed in, so sign in again, and back
+        # here. Shown the page signed out instead, a student carried on in it
+        # without noticing, saving into this browser and not their account.
+        # Only the page itself — a fetch or a frame gets its usual answer.
+        if (request.method == "GET" and not request.path.startswith("/api/")
+                and request.headers.get("Sec-Fetch-Dest", "document") == "document"
+                and "text/html" in request.headers.get("Accept", "")):
+            return redirect(url_for("login", next=request.full_path.rstrip("?")))
         return
     # A session from before this existed starts its clock now, rather than
     # signing out every student in the room on the deploy. Once a minute at
     # most, so a busy student is not sent a new cookie on every request.
     if last is None or (_counts_as_activity() and t - last >= 60):
         session["act"] = t
+
+
+@app.after_request
+def _no_store_signed_in(response):
+    """A signed-in page is never kept in the browser's cache. Chrome
+    reopening last night's tabs would show them from there, and nothing
+    would ask the server whether this student is still signed in."""
+    if (session.get("uid") and response.mimetype == "text/html"
+            and "Cache-Control" not in response.headers):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/api/alive")
+def alive_check():
+    """Whether this page is still signed in, asked as it is opened or looked
+    at (_idle.html). A GET, so asking is not activity: a tab that is only
+    looked at must not keep itself signed in."""
+    db = SessionLocal()
+    try:
+        return jsonify(signed_in=current_user(db) is not None)
+    finally:
+        db.close()
 
 
 @app.post("/api/alive")
