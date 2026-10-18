@@ -477,8 +477,23 @@ r = teacher.post(POST, json={"course": P4, "topic": "x/../y"})
 check("a topic id that is not one is refused before Google is asked",
       r.status_code == 400 and room[P4]["work"] is None)
 
+r = teacher.post(POST, json={"course": P4, "due": "next tuesday"})
+check("a due date that isn't one is refused before Google is asked",
+      r.status_code == 400 and room[P4]["work"] is None, r.status_code)
+r = teacher.post(POST, json={"course": P4, "due": "2020-01-01T04:59"})
+check("  and so is one already past, in words rather than Google's",
+      r.status_code == 400 and "passed" in r.get_json()["error"]
+      and room[P4]["work"] is None, r.status_code)
+
 calls.clear()
-r = teacher.post(POST, json={"course": P4, "topic": "222"})
+_due_year = P.datetime.now(P.timezone.utc).year + 1
+r = teacher.post(POST, json={"course": P4, "topic": "222",
+                             "due": "%d-03-05T04:59" % _due_year})
+check("  due when asked, as UTC date and time together, the way Classroom takes it",
+      (room[P4]["work"] or {}).get("dueDate") == {"year": _due_year, "month": 3, "day": 5}
+      and (room[P4]["work"] or {}).get("dueTime") == {"hours": 4, "minutes": 59}
+      and r.get_json().get("due") is True,
+      ((room[P4]["work"] or {}).get("dueDate"), (room[P4]["work"] or {}).get("dueTime")))
 check("  posted under the topic chosen",
       (room[P4]["work"] or {}).get("topicId") == "222" and r.get_json().get("topic") == "222",
       (room[P4]["work"] or {}).get("topicId"))
@@ -505,6 +520,8 @@ check("the same assignment can also go to Period 7",
       r.status_code == 200 and [p[0] for p in posts()] == [P4, P7], posts())
 check("  with no topic when none was chosen, as before topics existed",
       "topicId" not in room[P7]["work"])
+check("  and no due date when none was given — not dueTime alone, which Google refuses",
+      "dueDate" not in room[P7]["work"] and "dueTime" not in room[P7]["work"])
 check("  as its own Classroom assignment",
       room[P7]["work"] is not None and room[P7]["work"].get("maxPoints") == 10)
 check("  posted as a draft when asked, for the teacher to assign there later",
@@ -851,7 +868,9 @@ made = {}
 for name in ("Oldest", "Middle", "Newest"):
     made[name] = teacher.post("/api/assignment", json={
         "files": {"app.py": "# %s\n" % name}, "title": name}).get_json()["slug"]
-day = datetime(2026, 9, 1)
+# Noon UTC: the same day in New York, where the page now shows it.
+# Midnight UTC is the evening before there.
+day = datetime(2026, 9, 1, 12)
 
 
 def backdate():
@@ -887,7 +906,7 @@ teacher.post("/api/assignment/%s" % made["Oldest"], json={
 check("editing the code puts it at the top",
       order() == ["Oldest", "Newest", "Middle"], order())
 check("  of the Go live list too", picker() == ["Oldest", "Newest", "Middle"], picker())
-today = datetime.now().strftime("%b %d, %Y")
+today = datetime.now(P.SCHOOL_TZ).strftime("%b %d, %Y")
 check("  showing today as when it changed",
       ('title="Set Sep 01, 2026">%s</td>' % today) in
       teacher.get("/teacher").get_data(as_text=True))

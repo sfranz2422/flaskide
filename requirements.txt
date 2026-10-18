@@ -10,3 +10,7 @@ requests==2.32.3
 # accounts.py). Authlib already pulls it in; listed so that never changes
 # under us.
 cryptography==44.0.2
+# Time zone data for zoneinfo (SCHOOL_TZ in app.py). Most Linux images carry
+# it in /usr/share/zoneinfo, but a slim one doesn't, and then the app dies at
+# import with ZoneInfoNotFoundError — this is where zoneinfo looks next.
+tzdata==2024.2

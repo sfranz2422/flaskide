@@ -19,6 +19,7 @@ import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
@@ -448,6 +449,24 @@ class PackedRequest(Flask.request_class):
 
 
 app = Flask(__name__)
+
+#: The school's clock, for every time the server writes out as words. Times
+#: are stored in UTC (accounts.now), and for a long while they were also
+#: *shown* in UTC, so a student who saved at 2:15 PM in Pennsylvania read
+#: "Saved 06:15 PM" — and nothing failed, it was just wrong. One school, one
+#: zone, so it is a setting rather than a guess from each browser. Times
+#: drawn by the page itself (attendance, a Classroom due date) use the
+#: browser's clock instead and need nothing from here.
+SCHOOL_TZ = ZoneInfo(os.environ.get("SCHOOL_TIMEZONE") or "America/New_York")
+
+
+@app.template_filter("local")
+def _local(t, fmt):
+    """A stored time as words on the school's clock. SQLite hands back
+    naive datetimes; every one stored here is UTC, so naive means UTC."""
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return t.astimezone(SCHOOL_TZ).strftime(fmt)
 app.request_class = PackedRequest
 
 # Signed session cookies. Generated if unset so the app still boots locally,
@@ -589,7 +608,7 @@ def view_shared(slug):
             readonly=True,
             authoring=False,
             slug=proj.slug,
-            shared_at=proj.created_at.strftime("%b %d, %Y at %I:%M %p UTC"),
+            shared_at=_local(proj.created_at, "%b %d, %Y at %I:%M %p"),
         )
     finally:
         db.close()
@@ -1155,7 +1174,7 @@ def open_draft(slug):
             "attend_class": _attend_item(db, user, assignment),
             "assignment_title": assignment.title if assignment else "",
             "assignment_slug": assignment.slug if assignment else "",
-            "submitted_at": submitted.submitted_at.strftime("%b %d at %I:%M %p")
+            "submitted_at": _local(submitted.submitted_at, "%b %d at %I:%M %p")
                             if submitted else "",
         }))
     finally:
@@ -1300,7 +1319,7 @@ def _auto_turn_in(db, item, user, draft=None):
 
 
 def _when(row):
-    return row.submitted_at.strftime("%b %d at %I:%M %p") if row is not None else ""
+    return _local(row.submitted_at, "%b %d at %I:%M %p") if row is not None else ""
 
 
 @app.post("/api/draft/<slug>")
@@ -1338,7 +1357,7 @@ def save_draft(slug):
         if data.get("turn_in") and draft.assignment_id:
             item = db.query(accounts.Assignment).filter_by(id=draft.assignment_id).first()
             turned = _auto_turn_in(db, item, user, draft)
-        return jsonify(saved_at=draft.updated_at.strftime("%I:%M %p"),
+        return jsonify(saved_at=_local(draft.updated_at, "%I:%M %p"),
                        version=draft.version, turned_in_at=_when(turned))
     finally:
         db.close()
@@ -1391,7 +1410,7 @@ def my_projects():
             "title": d.title,
             "assignment": titles.get(d.assignment_id, ""),
             "submitted": bool(d.assignment_id and d.assignment_id in turned_in),
-            "updated": d.updated_at.strftime("%b %d, %I:%M %p"),
+            "updated": _local(d.updated_at, "%b %d, %I:%M %p"),
             "url": url_for("open_draft", slug=d.slug),
         } for d in rows])
     finally:
@@ -1436,7 +1455,7 @@ def my_work():
                          accounts.Assignment.app == APP_NAME).all()} if wanted else {}
 
         def when(t):
-            return t.strftime("%b %d at %I:%M %p")
+            return _local(t, "%b %d at %I:%M %p")
 
         earned = {}
         for aid in items:
@@ -1505,7 +1524,7 @@ def _my_assignment(item, draft, sub, when, earned=None):
         "turned_in_url": (url_for("view_shared", slug=sub.snippet_slug)
                           if sub and sub.snippet_slug else ""),
         "feedback": (sub.feedback or "") if sub else "",
-        "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
+        "feedback_when": (_local(sub.feedback_at, "%b %d at %I:%M %p")
                           if sub and sub.feedback_at else ""),
         "score": _score_text(sub.score) if sub else "",
         # Points from the questions in the notes, and what the grade comes
@@ -1874,7 +1893,7 @@ def turn_in():
         row.auto_snap = 0
         db.commit()
         return jsonify(ok=True,
-                       submitted_at=row.submitted_at.strftime("%b %d at %I:%M %p"),
+                       submitted_at=_local(row.submitted_at, "%b %d at %I:%M %p"),
                        again=row.times_submitted > 1, version=draft.version)
     finally:
         db.close()
@@ -2353,7 +2372,7 @@ def turn_in_lesson(slug):
             row.times_submitted = (row.times_submitted or 0) + 1
         db.commit()
         return jsonify(ok=True, again=row.times_submitted > 1,
-                       submitted_at=row.submitted_at.strftime("%b %d at %I:%M %p"))
+                       submitted_at=_local(row.submitted_at, "%b %d at %I:%M %p"))
     finally:
         db.close()
 
@@ -2367,7 +2386,7 @@ def _lesson_page(db, item, user, live=None):
         done = db.query(accounts.Submission).filter_by(
             assignment_id=item.id, student_id=user.id).first()
         if done is not None:
-            submitted_at = done.submitted_at.strftime("%b %d at %I:%M %p")
+            submitted_at = _local(done.submitted_at, "%b %d at %I:%M %p")
     ctx = user_context(db)
     ctx.update(item=item, notes=quiz.redact(_lesson_notes(item)),
                submitted_at=submitted_at, live=live,
@@ -2664,7 +2683,7 @@ def give_feedback(slug):
         return jsonify(ok=True, feedback=text, score=_score_text(sub.score),
                        total=_score_text(total),
                        synced=_is_synced(sub, total),
-                       when=(sub.feedback_at.strftime("%b %d at %I:%M %p")
+                       when=(_local(sub.feedback_at, "%b %d at %I:%M %p")
                              if sub.feedback_at else ""))
     finally:
         db.close()
@@ -2693,7 +2712,7 @@ def teacher_assignment(slug):
         handed_in = [{
             "name": student.display_name(),
             "email": student.email,
-            "when": sub.submitted_at.strftime("%b %d at %I:%M %p"),
+            "when": _local(sub.submitted_at, "%b %d at %I:%M %p"),
             "times": sub.times_submitted,
             # A lesson's turn-in has no snapshot to open; its answers are
             # listed instead.
@@ -2704,7 +2723,7 @@ def teacher_assignment(slug):
             "student_id": student.id,
             "id": sub.id,
             "feedback": sub.feedback or "",
-            "feedback_when": (sub.feedback_at.strftime("%b %d at %I:%M %p")
+            "feedback_when": (_local(sub.feedback_at, "%b %d at %I:%M %p")
                               if sub.feedback_at else ""),
             "seen": bool(sub.feedback_seen),
             # Turning in again keeps the feedback (it is on this row, which a
@@ -3243,6 +3262,12 @@ def classroom_post(slug):
     from the assignment page (_lesson_for), for work done in a live lesson.
     Either way it is this assignment's: work turned in from the lesson goes
     to the assignment, so Sync grades it the same.
+
+    `due` is when it is due, as UTC "YYYY-MM-DDTHH:MM", or nothing for no
+    due date. The page turns the teacher's own date and time into UTC,
+    because Classroom's dueDate/dueTime are UTC and only the browser knows
+    which clock the teacher meant: 11:59 PM in Pennsylvania is the next day
+    in UTC, and sending the date as typed would put it due a day early.
     """
     db = SessionLocal()
     try:
@@ -3259,6 +3284,9 @@ def classroom_post(slug):
         topic = str(asked.get("topic") or "")
         if topic and not re.fullmatch(r"[0-9A-Za-z_-]{1,40}", topic):
             return jsonify(error="That isn't one of the class's topics."), 400
+        due, problem = _due_for_classroom(asked.get("due"))
+        if problem:
+            return jsonify(error=problem), 400
         access, why = _classroom_token(db, user)
         if access is None:
             return jsonify(error=why), 409
@@ -3305,6 +3333,7 @@ def classroom_post(slug):
                 "state": "DRAFT" if asked.get("draft") is True else "PUBLISHED",
                 "maxPoints": item.out_of,
                 **({"topicId": topic} if topic else {}),
+                **due,
             })
         if status != 200 or not work.get("id"):
             return jsonify(error=_google_message(work, "Google wouldn't create "
@@ -3320,9 +3349,30 @@ def classroom_post(slug):
         db.commit()
         return jsonify(ok=True, course=post.course_name, url=post.url,
                        draft=asked.get("draft") is True,
-                       link="live" if live else "assignment", topic=topic)
+                       link="live" if live else "assignment", topic=topic,
+                       due=bool(due))
     finally:
         db.close()
+
+
+def _due_for_classroom(asked):
+    """({dueDate, dueTime} for a courseWork body, or {} for none; problem).
+
+    Classroom wants both or neither — a dueDate alone is refused — so the
+    page always sends a time, 11:59 PM unless the teacher picked another.
+    A due time already past is refused here in words, rather than letting
+    Google refuse it with a message no teacher can read."""
+    if not asked:
+        return {}, None
+    try:
+        when = datetime.strptime(str(asked), "%Y-%m-%dT%H:%M").replace(
+            tzinfo=timezone.utc)
+    except ValueError:
+        return {}, "That due date isn't a date."
+    if when <= datetime.now(timezone.utc):
+        return {}, "That due date has already passed."
+    return {"dueDate": {"year": when.year, "month": when.month, "day": when.day},
+            "dueTime": {"hours": when.hour, "minutes": when.minute}}, None
 
 
 def _forget_post(db, item, post):
@@ -5608,7 +5658,7 @@ def live_page(code):
             done = db.query(accounts.Submission).filter_by(
                 assignment_id=item.id, student_id=user.id).first()
             if done is not None:
-                submitted_at = done.submitted_at.strftime("%b %d at %I:%M %p")
+                submitted_at = _local(done.submitted_at, "%b %d at %I:%M %p")
 
         # WHAT THE STUDENT'S EDITOR STARTS WITH, when their browser has nothing
         # of its own for this lesson. The same as /a/<slug> would give them:

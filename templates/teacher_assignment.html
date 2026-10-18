@@ -162,6 +162,14 @@
             <button id="gc-post" class="btn">{% if posts %}Also post to this class{% else %}Post to Google Classroom{% endif %}</button>
             <span id="gc-post-state" class="dim small"></span>
           </div>
+          {#  Blank date, no due date — as before this was here. The time
+              starts at 11:59 PM, Classroom's own default, and both are the
+              teacher's clock; the script turns them into Google's UTC. #}
+          <div class="gc-link small">
+            <label>Due <input type="date" id="gc-due-date" class="field"></label>
+            <label>at <input type="time" id="gc-due-time" class="field" value="23:59"></label>
+            <span class="dim">Leave the date blank for no due date.</span>
+          </div>
           <label class="small"><input type="checkbox" id="gc-draft" checked>
             Post as a draft — assign it from Classroom when you're ready</label>
           {#  Which link the class is given in Classroom. The live lesson's is
@@ -611,16 +619,33 @@
       if (!picker.value) { state.textContent = "Choose a class first."; return; }
       var draft = document.getElementById("gc-draft").checked;
       var live = (document.querySelector('input[name="gc-link"]:checked') || {}).value === "live";
+      /* The due date as the teacher meant it, on their own clock, sent as
+         UTC: Classroom's dueDate and dueTime are UTC, so 11:59 PM here is
+         already tomorrow there. new Date("YYYY-MM-DDTHH:MM") reads local
+         time — the one parse that does — and toISOString gives it back in
+         UTC. */
+      var dueDate = document.getElementById("gc-due-date").value;
+      var dueTime = document.getElementById("gc-due-time").value || "23:59";
+      var due = "", dueWords = "";
+      if (dueDate) {
+        var at = new Date(dueDate + "T" + dueTime);
+        if (isNaN(at)) { state.textContent = "That due date isn't a date."; return; }
+        if (at <= new Date()) { state.textContent = "That due date has already passed."; return; }
+        due = at.toISOString().slice(0, 16);
+        dueWords = ", due " + at.toLocaleString([], { weekday: "short", month: "short",
+                     day: "numeric", hour: "numeric", minute: "2-digit" }) + ",";
+      }
       if (!confirm("Post \u201c" + {{ assignment.title | tojson }} + "\u201d to " + choice.textContent
                    + (live ? " (linked to the live lesson)" : "")
                    + (!topicPick.hidden && topicPick.value
                       ? " under \u201c" + topicPick.options[topicPick.selectedIndex].textContent + "\u201d" : "")
+                   + dueWords
                    + (draft ? " as a draft? The class won't see it until you assign it in Google Classroom."
                             : "? The class will see it in Google Classroom straight away."))) return;
       this.disabled = true;
       var btn = this;
       post(base + "/classroom/post", { course: picker.value, draft: draft,
-                                       link: live ? "live" : "assignment",
+                                       link: live ? "live" : "assignment", due: due,
                                        topic: topicPick.hidden ? "" : topicPick.value }).then(function (out) {
         if (!out.ok) { btn.disabled = false; state.textContent = out.d.error || "Not posted"; return; }
         location.reload();

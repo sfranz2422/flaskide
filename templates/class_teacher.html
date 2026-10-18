@@ -239,7 +239,7 @@
     <h2>Students <span class="count">{{ roster|length }}</span></h2>
     {% if course.course_id %}
       <p>From Google Classroom: <strong>{{ course.course_name or "its class" }}</strong>{%
-        if course.roster_at %} <span class="dim small">· synced {{ course.roster_at.strftime('%b %d at %I:%M %p') }}</span>{% endif %}</p>
+        if course.roster_at %} <span class="dim small">· synced {{ course.roster_at|local('%b %d at %I:%M %p') }}</span>{% endif %}</p>
       <div class="grade-line">
         <button id="roster-sync" class="btn">Sync roster</button>
         <span id="roster-state" class="dim small"></span>

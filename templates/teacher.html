@@ -85,7 +85,7 @@
             <td><a href="{{ url_for('teacher_assignment', slug=a.slug) }}">{{ a.title }}</a>{%
               if a.kind == 'lesson' %} <span class="kind-tag">lesson</span>{% endif %}{%
               if waiting.get(a.id) %} <span class="needs-grading" title="Long responses waiting for your points">{{ waiting[a.id] }} to grade</span>{% endif %}</td>
-            <td class="dim" title="Set {{ a.created_at.strftime('%b %d, %Y') }}">{{ a.changed.strftime('%b %d, %Y') }}</td>
+            <td class="dim" title="Set {{ a.created_at|local('%b %d, %Y') }}">{{ a.changed|local('%b %d, %Y') }}</td>
             <td><strong>{{ counts.get(a.id, 0) }}</strong></td>
             <td class="right rowactions">
               <a class="linkbtn" href="{{ url_for('teach_assignment_live', slug=a.slug) }}"
