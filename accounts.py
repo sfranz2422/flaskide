@@ -661,6 +661,19 @@ class LiveSession(Base):
     #: requests — a caret moved without typing is simply one more push.
     cursor = Column(String(24), nullable=False, default="")
 
+    #: The teacher's laser pointer, while they hold Alt over their code or a
+    #: slide (static/laser.js has the format): "c:line:ch" for a place in
+    #: `body`, "s:..." for a place on a slide, empty when they are not
+    #: pointing. NOT part of a push and does NOT move `version`: it changes
+    #: several times a second while the teacher points, and moving `version`
+    #: would make every student fetch the whole file and notes each time.
+    #: `pointer_seq` is its own stamp instead, from the same clock as
+    #: `version` and kept in order the same way, and the poll answers a
+    #: student whose `version` is current but whose pointer is not with the
+    #: pointer alone. BigInteger for the same reason as `version`.
+    pointer = Column(String(80), nullable=False, default="")
+    pointer_seq = Column(BigInteger, nullable=False, default=0)
+
     started_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
     #: Set when the teacher stops. The row stays so that a student still on
@@ -755,6 +768,14 @@ LATER_COLUMNS = [
     ("live_sessions", "cursor",
      "ALTER TABLE live_sessions ADD COLUMN cursor VARCHAR(24) NOT NULL "
      "DEFAULT ''"),
+    # The teacher's laser pointer. Empty and 0 are true of every earlier
+    # lesson: nobody was pointing.
+    ("live_sessions", "pointer",
+     "ALTER TABLE live_sessions ADD COLUMN pointer VARCHAR(80) NOT NULL "
+     "DEFAULT ''"),
+    ("live_sessions", "pointer_seq",
+     "ALTER TABLE live_sessions ADD COLUMN pointer_seq BIGINT NOT NULL "
+     "DEFAULT 0"),
     # Feedback on turned-in work. Empty, NULL and 0 are true of every earlier
     # submission: none had any, and "not seen" is harmless with nothing to
     # see, because the New marker is only shown beside feedback that exists.
