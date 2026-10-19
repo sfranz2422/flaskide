@@ -673,6 +673,13 @@ class LiveSession(Base):
     #: pointer alone. BigInteger for the same reason as `version`.
     pointer = Column(String(80), nullable=False, default="")
     pointer_seq = Column(BigInteger, nullable=False, default=0)
+    #: The path to `pointer`: the last fraction of a second of the teacher's
+    #: mouse, as "stamp@place;stamp@place;…", which the class plays back so a
+    #: circle drawn round a word arrives as a circle rather than as the four
+    #: corners a poll four times a second would catch. Text, not String: it
+    #: is several places long, and `pointer` stays the newest one alone, for
+    #: a page that does not know about paths.
+    pointer_path = Column(Text, nullable=False, default="")
 
     started_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
@@ -776,6 +783,10 @@ LATER_COLUMNS = [
     ("live_sessions", "pointer_seq",
      "ALTER TABLE live_sessions ADD COLUMN pointer_seq BIGINT NOT NULL "
      "DEFAULT 0"),
+    # The laser's path. Empty is true of every earlier lesson.
+    ("live_sessions", "pointer_path",
+     "ALTER TABLE live_sessions ADD COLUMN pointer_path TEXT NOT NULL "
+     "DEFAULT ''"),
     # Feedback on turned-in work. Empty, NULL and 0 are true of every earlier
     # submission: none had any, and "not seen" is harmless with nothing to
     # see, because the New marker is only shown beside feedback that exists.
