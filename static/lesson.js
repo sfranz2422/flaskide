@@ -18,7 +18,7 @@
   var N = window[(L.ns || "FlaskIDE") + "Notes"];
   var $ = function (id) { return document.getElementById(id); };
 
-  N.setQuizContext({ assignment: L.slug, signedIn: L.signedIn });
+  N.setQuizContext({ assignment: L.slug, signedIn: L.signedIn, viewOnly: L.viewOnly });
   var slides = N.slideView($("lesson-body"));
 
   // ------------------------------------------------------------ theme

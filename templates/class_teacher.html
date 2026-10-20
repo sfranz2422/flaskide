@@ -70,6 +70,41 @@
       Add picture works the same. data-item="banner" is only for that box
       (_describe.html keys its editor on it); the order and the row buttons
       look at tr[data-item] only, so it can never be sent as a position. #}
+  {#  The class's view-only link, for administrators: the page as students
+      see it, every assignment a preview that saves and records nothing
+      (class_view in app.py). New link replaces it, for one that has gone
+      further than it should; the old one stops working at once. #}
+  <section class="view-link" aria-label="View-only link">
+    <span class="view-link-label">View-only link</span>
+    <input id="view-url" class="field" type="text" readonly value="{{ view_url }}"
+           aria-label="View-only link to this class" onclick="this.select()">
+    <button id="view-copy" class="btn" type="button">Copy</button>
+    <button id="view-new" class="linkbtn" type="button"
+            title="Make a new link; the old one stops working">New link</button>
+    <span class="dim small">For administrators: the class as students see it.
+      Nothing opened from it is saved or turned in.</span>
+  </section>
+  <script>
+    (function () {
+      var box = document.getElementById("view-url");
+      document.getElementById("view-copy").addEventListener("click", function () {
+        var b = this;
+        box.select();
+        (navigator.clipboard ? navigator.clipboard.writeText(box.value)
+                             : Promise.resolve(document.execCommand("copy")))
+          .then(function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1500); });
+      });
+      document.getElementById("view-new").addEventListener("click", function () {
+        if (!confirm("Make a new view-only link? The current one stops working, "
+                     + "so anyone you gave it to will need the new one.")) return;
+        fetch("/api/class/{{ course.id }}/view-link", { method: "POST" })
+          .then(function (r) { return r.json(); })
+          .then(function (d) { if (d.url) box.value = d.url; else alert(d.error || "No new link"); })
+          .catch(function () { alert("No new link — check your connection"); });
+      });
+    })();
+  </script>
+
   <section class="class-banner" id="banner" data-item="banner">
     <div class="banner-head">
       <h1 class="banner-title">{{ course.name }}</h1>

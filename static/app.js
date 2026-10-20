@@ -29,7 +29,8 @@
      is not one, or the teacher's own copy, there is nowhere to record an
      answer, and notes.js says so on the question rather than taking one. */
   window.FlaskIDENotes.setQuizContext({ assignment: cfg.assignmentSlug,
-                                        signedIn: cfg.signedIn });
+                                        signedIn: cfg.signedIn,
+                                        viewOnly: cfg.viewOnly });
   var runtime = window.FlaskIDERuntime;
   var $ = function (id) { return document.getElementById(id); };
 

@@ -39,7 +39,10 @@
     <button id="theme" class="btn btn-icon-only" title="Switch between light and dark">
       <span id="theme-glyph">☾</span>
     </button>
-    {% if user %}
+    {% if visitor %}
+      <a class="btn" href="{{ url_for('class_view', token=visitor) }}">Back to {{ course.name }}</a>
+      <span class="chip" title="Nothing here is saved or turned in">View only</span>
+    {% elif user %}
       {#  Turn in: the answers are already kept as they are given, so this
           only says "I'm done" — and is what sends the points to Classroom. #}
       <span id="lesson-turned" class="savestate">{% if submitted_at %}Turned in {{ submitted_at }}{% endif %}</span>
@@ -70,6 +73,8 @@
     waiting: {{ 'true' if waiting else 'false' }},
     ended: {{ 'true' if (live and live.ended and not waiting) else 'false' }},
     signedIn: {{ 'true' if user else 'false' }},
+    // Opened through a class's view-only link: questions say so.
+    viewOnly: {{ 'true' if visitor else 'false' }},
     turnInUrl: "{{ url_for('turn_in_lesson', slug=item.slug) }}"
   };
 </script>

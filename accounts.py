@@ -414,6 +414,13 @@ class Course(Base):
     #: picture, a welcome, office hours. Markdown, like a description, and
     #: shown the same way. Empty is no box.
     banner = Column(Text, nullable=False, default="")
+    #: The secret in the class's view-only link, /view/<token>: the class's
+    #: page as a student sees it, for an administrator, with every assignment
+    #: openable as a preview that saves, turns in and records nothing. Made
+    #: the first time the teacher's class page is opened (empty until then),
+    #: and replaced by New link, which is how a link that has gone too far is
+    #: taken back.
+    view_token = Column(String(32), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=now)
 
 
@@ -783,6 +790,10 @@ LATER_COLUMNS = [
     ("live_sessions", "pointer_seq",
      "ALTER TABLE live_sessions ADD COLUMN pointer_seq BIGINT NOT NULL "
      "DEFAULT 0"),
+    # A class's view-only link. Empty is "not made yet", which is true of
+    # every earlier class; its teacher's page makes one when next opened.
+    ("classes", "view_token",
+     "ALTER TABLE classes ADD COLUMN view_token VARCHAR(32) NOT NULL DEFAULT ''"),
     # The laser's path. Empty is true of every earlier lesson.
     ("live_sessions", "pointer_path",
      "ALTER TABLE live_sessions ADD COLUMN pointer_path TEXT NOT NULL "

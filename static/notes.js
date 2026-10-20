@@ -421,7 +421,7 @@ window.FlaskIDENotes = (function () {
 
   /* Where answers go, set by the page: the assignment's slug, and whether
      anyone is signed in. No assignment means nowhere to record an answer. */
-  var quizCtx = { assignment: "", signedIn: false };
+  var quizCtx = { assignment: "", signedIn: false, viewOnly: false };
   var mine = null;            // promise of {qid: result}, fetched once
   var answered = {};          // qid -> {response, correct, earned, points}
   var pending = {};           // qid -> what is typed or picked, not yet sent
@@ -429,7 +429,8 @@ window.FlaskIDENotes = (function () {
 
   function setQuizContext(ctx) {
     quizCtx = { assignment: (ctx && ctx.assignment) || "",
-                signedIn: !!(ctx && ctx.signedIn) };
+                signedIn: !!(ctx && ctx.signedIn),
+                viewOnly: !!(ctx && ctx.viewOnly) };
     mine = null;
     answered = {};
   }
@@ -609,6 +610,13 @@ window.FlaskIDENotes = (function () {
       return box;
     }
     box.dataset.qid = q.id;
+    // A class's view-only link: the question as students see it, unanswerable
+    // — whoever is looking, signed in or not, is not one of the class.
+    if (quizCtx.viewOnly) {
+      disable();
+      foot.appendChild(el("span", "dim small", "View only: answers aren't recorded here."));
+      return box;
+    }
     if (!quizCtx.assignment) {
       disable();
       foot.appendChild(el("span", "dim small",
@@ -848,6 +856,10 @@ window.FlaskIDENotes = (function () {
       return box;
     }
     box.dataset.qid = q.id;
+    if (quizCtx.viewOnly) {
+      foot.appendChild(el("span", "dim small", "View only: answers aren't recorded here."));
+      return box;
+    }
     if (!quizCtx.assignment) {
       foot.appendChild(el("span", "dim small",
         "Answers are only recorded on an assignment, so this one can't be answered here."));

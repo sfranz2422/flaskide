@@ -110,7 +110,9 @@
                               the dialog Share opens, or the bar when there
                               is no sign-in at all
     #}
-    {% if readonly %}
+    {% if visitor %}
+      <a class="btn" href="{{ url_for('class_view', token=visitor) }}">Back to {{ course.name }}</a>
+    {% elif readonly %}
       <a class="btn btn-primary" href="{{ url_for('fork_shared', slug=slug) }}">Edit a copy</a>
     {% else %}
       {% if draft_slug %}
@@ -219,7 +221,12 @@
 </div>
 {% endif %}
 
-{% if readonly %}
+{% if visitor %}
+<div class="banner">
+  <strong>View only</strong> — this is the assignment as {{ course.name }} starts it.
+  You can run it, but nothing is saved or turned in, and its questions can't be answered here.
+</div>
+{% elif readonly %}
 <div class="banner">
   <strong>Shared project</strong> — you're viewing a read-only snapshot{% if author %} from {{ author }}{% endif %}{% if shared_at %}, saved {{ shared_at }}{% endif %}.
   You can run it, but to change it choose <em>Edit a copy</em>.
@@ -416,6 +423,8 @@
 <script>
   window.FLASKIDE = {
     readonly: {{ 'true' if readonly else 'false' }},
+    // Opened through a class's view-only link: questions say so.
+    viewOnly: {{ 'true' if visitor else 'false' }},
     authoring: {{ 'true' if authoring else 'false' }},
     shareUrl: "{{ url_for('create_share') }}",
     files: {{ files | tojson }},

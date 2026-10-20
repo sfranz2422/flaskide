@@ -25,7 +25,9 @@
   <div class="brand"><a class="brandlink" href="{{ url_for('home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
   <div class="meta"><span class="pagetitle">{{ course.name }}</span></div>
   <div class="actions">
-    {% if preview %}
+    {% if visitor %}
+      <span class="chip" title="Nothing opened from here is saved or turned in">View only</span>
+    {% elif preview %}
       <a class="btn" href="{{ url_for('teacher_class', class_id=course.id) }}">Back to your class page</a>
     {% else %}
       {% for c in my_classes if c.id != course.id %}
@@ -33,12 +35,16 @@
       {% endfor %}
       <a class="btn" href="{{ url_for('my_work') }}">My work</a>
     {% endif %}
-    <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
+    {% if not visitor %}<a class="btn" href="{{ url_for('logout') }}">Sign out</a>{% endif %}
   </div>
 </header>
 
 <main class="sheet">
-  {% if preview %}
+  {% if visitor %}
+    <p class="dim">A view-only link to this class: the page as its students
+      see it. Open any assignment to look at it or run its code — nothing is
+      saved, turned in or recorded.</p>
+  {% elif preview %}
     <p class="dim">This is what your students see: hidden and archived
       assignments are left out, and grades are each student's own.</p>
   {% endif %}
@@ -78,7 +84,7 @@
           <article class="card {{ 'card-done' if r.turned_in }}">
             <div class="card-head">
               <span class="card-icon" aria-hidden="true">{{ "📘" if r.kind == "lesson" else "📝" }}</span>
-              <a class="card-title" href="{{ r.open_url }}"
+              <a class="card-title" href="{{ url_for('class_view_item', token=visitor, slug=r.slug) if visitor else r.open_url }}"
                  {% if r.turned_in %}title="What you turned in"{% endif %}>{{ r.title }}</a>
               <span class="card-badges">
                 {% if r.on_air %}<span class="live-pill">● Live now</span>{% endif %}
@@ -89,12 +95,17 @@
             </div>
             {% if r.description %}<div class="md card-desc" data-md="{{ r.description }}">{{ r.description }}</div>{% endif %}
             <div class="card-actions">
-              {% if r.live_code %}
+              {% if r.live_code and not visitor %}
                 <a class="btn {{ 'btn-live' if r.on_air }}" href="{{ url_for('live_page', code=r.live_code) }}"
                    title="{{ 'Your teacher is live now' if r.on_air else 'The live lesson' }}">{{ "● Join the live lesson" if r.on_air else "Live lesson" }}</a>
               {% endif %}
-              <a class="btn btn-primary" href="{{ url_for('open_assignment', slug=r.slug) }}"
-                 title="Your own copy, to work in">{{ "Open the lesson" if r.kind == "lesson" else "Open the assignment" }}</a>
+              {% if visitor %}
+                <a class="btn btn-primary" href="{{ url_for('class_view_item', token=visitor, slug=r.slug) }}"
+                   title="A preview: nothing is saved or turned in">{{ "Open the lesson" if r.kind == "lesson" else "Open the assignment" }}</a>
+              {% else %}
+                <a class="btn btn-primary" href="{{ url_for('open_assignment', slug=r.slug) }}"
+                   title="Your own copy, to work in">{{ "Open the lesson" if r.kind == "lesson" else "Open the assignment" }}</a>
+              {% endif %}
             </div>
           </article>
         {% endif %}

@@ -284,6 +284,22 @@ check("  and that copy really has the notes, questions and all",
       ("id: " + mc["qid"]) in draft_of(KID3),
       "without them the check above passes on an empty copy")
 
+# A class's view-only link (class_view): an assignment's preview and a
+# lesson's, as an administrator opens them.
+_vc = teacher.post("/api/class", json={"name": "Viewed"}).get_json()["id"]
+_va = teacher.post("/api/class/%d/new" % _vc, json={"title": "Viewed code"}).get_json()["slug"]
+teacher.post("/api/assignment/%s" % _va, json={
+    "title": "Viewed code", "files": {ENTRY: 'from flask import Flask\n', "notes.md": NOTES}})
+_vl = teacher.post("/api/class/%d/new" % _vc, json={"title": "Viewed lesson",
+                                                    "kind": "lesson"}).get_json()["slug"]
+teacher.post("/api/lesson/%s" % _vl, json={"notes": NOTES})
+_vt = re.search(r'/view/([A-Za-z0-9_-]+)"',
+                teacher.get("/teacher/class/%d" % _vc).get_data(as_text=True)).group(1)
+for _what, _slug in (("an assignment", _va), ("a lesson", _vl)):
+    page = stranger.get("/view/%s/a/%s" % (_vt, _slug)).get_data(as_text=True)
+    check("a class's view-only link, %s" % _what, not leaks(page) and "len(" in page,
+          leaks(page) or ("" if "len(" in page else "the question is not there at all"))
+
 # ---------------------------------------------------------------- answering
 print("\nAnswering")
 

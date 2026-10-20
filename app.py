@@ -976,7 +976,11 @@ def _sign_out_idle_student():
         # Only the page itself — a fetch or a frame gets its usual answer.
         if (request.method == "GET" and not request.path.startswith("/api/")
                 and request.headers.get("Sec-Fetch-Dest", "document") == "document"
-                and "text/html" in request.headers.get("Accept", "")):
+                and "text/html" in request.headers.get("Accept", "")
+                # A view-only link asks no one to sign in: an administrator
+                # signed in here as a student, two hours idle, is shown the
+                # page signed out, which is all it ever shows anyone.
+                and not request.path.startswith("/view/")):
             return redirect(url_for("login", next=request.full_path.rstrip("?")))
         return
     # A session from before this existed starts its clock now, rather than
@@ -4562,8 +4566,116 @@ def teacher_class(class_id):
         ctx = user_context(db)
         ctx.update(course=course, rows=rows, archived=archived, others=others,
                    roster=roster, classroom_connected=link is not None,
-                   classroom_on=classroom_configured())
+                   classroom_on=classroom_configured(),
+                   view_url=url_for("class_view", token=_view_token(db, course),
+                                    _external=True, _scheme=_scheme()))
         return render_template("class_teacher.html", **ctx)
+    finally:
+        db.close()
+
+
+# --------------------------------------------------------------------------
+# A class's view-only link
+# --------------------------------------------------------------------------
+# For administrators: the class's page as a student sees it, and every
+# assignment on it openable — to look at, and to Run — without being one of
+# the class. Nothing reached through it saves, turns in, answers or takes
+# attendance, WHOEVER opens it: an administrator is often signed in here
+# with their school account, and the ordinary assignment link would make
+# them a draft, the automatic turn-in would hand it in, and they would turn
+# up in the teacher's results. So these pages are rendered as for nobody
+# signed in, and link only to each other.
+#
+# No live links: a live lesson takes attendance and keeps the visitor's
+# typing, and watching one is not what the link is for.
+
+def _view_token(db, course):
+    """The class's view-only token, made now if it has none. Two workers
+    making one at once write only where it is still empty, so they agree."""
+    if not course.view_token:
+        (db.query(accounts.Course)
+           .filter(accounts.Course.id == course.id, accounts.Course.view_token == "")
+           .update({"view_token": secrets.token_urlsafe(12)}, synchronize_session=False))
+        db.commit()
+        db.refresh(course)
+    return course.view_token
+
+
+def _viewed_class(db, token):
+    if not token or not re.fullmatch(r"[A-Za-z0-9_-]{8,32}", token):
+        return None
+    return db.query(accounts.Course).filter_by(view_token=token, app=APP_NAME).first()
+
+
+def _as_visitor(db):
+    """A page's context as for nobody signed in, whoever is."""
+    ctx = user_context(db)
+    ctx.update(user=None, user_name="", user_email="", is_teacher=False, my_classes=[])
+    return ctx
+
+
+@app.get("/view/<token>")
+def class_view(token):
+    db = SessionLocal()
+    try:
+        course = _viewed_class(db, token)
+        if course is None:
+            return render_template("404.html", message="That view-only link isn't "
+                                   "one any more. Ask the teacher for the new one."), 404
+        rows, _ = _class_rows(db, course, student=True)
+        ctx = _as_visitor(db)
+        ctx.update(course=course, rows=rows, preview=False, visitor=token,
+                   attend_class=None)
+        return render_template("class_student.html", **ctx)
+    finally:
+        db.close()
+
+
+@app.get("/view/<token>/a/<slug>")
+def class_view_item(token, slug):
+    """One assignment of the class, through its view-only link: the starter
+    code, runnable and read-only, or a lesson's slides; the answer keys out,
+    as from every other exit. Only one the class's students can see — not
+    hidden, not archived, and in this class."""
+    db = SessionLocal()
+    try:
+        course = _viewed_class(db, token)
+        item = db.query(accounts.Assignment).filter_by(slug=slug, app=APP_NAME).first()
+        placed = (db.query(accounts.ClassItem).filter_by(
+                     class_id=course.id, assignment_id=item.id).first()
+                  if course is not None and item is not None else None)
+        if placed is None or placed.hidden or item.archived:
+            abort(404)
+        ctx = _as_visitor(db)
+        ctx.update(visitor=token, course=course)
+        if _is_lesson(item):
+            ctx.update(item=item, notes=quiz.redact(_lesson_notes(item)),
+                       submitted_at="", live=None, waiting=False, is_host=False,
+                       attend_class=None)
+            return render_template("lesson.html", **ctx)
+        ctx.update(code=item.code, files=quiz.redact_files(item.file_map()),
+                   title=item.title, author="", readonly=True, authoring=False,
+                   slug=None, shared_at=None)
+        return render_template("index.html", **ctx)
+    finally:
+        db.close()
+
+
+@app.post("/api/class/<int:class_id>/view-link")
+def renew_view_link(class_id):
+    """A new view-only link for the class; the old one stops working."""
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return jsonify(error="Only the class's teacher can do that."), 403
+        course = db.query(accounts.Course).filter_by(id=class_id, app=APP_NAME).first()
+        if course is None or course.teacher_id != user.id:
+            return jsonify(error="That isn't one of your classes."), 404
+        course.view_token = secrets.token_urlsafe(12)
+        db.commit()
+        return jsonify(url=url_for("class_view", token=course.view_token,
+                                   _external=True, _scheme=_scheme()))
     finally:
         db.close()
 

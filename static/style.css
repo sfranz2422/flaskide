@@ -2343,3 +2343,11 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   .laser-dot, .laser-trail-1.on, .laser-trail-2.on, .laser-trail-3.on { transition: opacity 0.25s; }
 }
+
+/* A class's view-only link, at the top of the teacher's class page. */
+.view-link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+             margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line);
+             border-radius: 8px; }
+.view-link-label { font-weight: 600; }
+.view-link #view-url { flex: 1 1 320px; min-width: 0; font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+.view-link .dim { flex-basis: 100%; }
