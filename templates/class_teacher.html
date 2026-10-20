@@ -689,6 +689,32 @@
   document.querySelectorAll(".desc-preview[data-md]").forEach(function (el) {
     if (el.dataset.md) showDescription(el, el.dataset.md);
   });
+
+  /* Keep the teacher's place. Hide, Show, Rename, Archive and the rest all
+     end in location.reload(), and this page is no-store, so the browser
+     builds it afresh and lands at the top — a teacher hiding the tenth
+     assignment of a long list had to scroll back down after every click.
+     The same goes for Back from an assignment's page. So the position is
+     kept as the page goes, per class, and put back only on a reload or a
+     Back/Forward: a link that opens the page anew (All classes → this one)
+     still starts at the top, as it should. It is put back twice because
+     pictures in descriptions load after this runs and push the rows down;
+     without the second go the page settles a few rows short, silently. */
+  (function () {
+    var key = "class-scroll-" + CLASS;
+    var nav = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+    var returning = nav && (nav.type === "reload" || nav.type === "back_forward");
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    addEventListener("pagehide", function () {
+      try { sessionStorage.setItem(key, String(scrollY)); } catch (e) {}
+    });
+    if (!returning) return;
+    var y = 0;
+    try { y = Number(sessionStorage.getItem(key)) || 0; } catch (e) {}
+    if (!y) return;
+    scrollTo(0, y);
+    addEventListener("load", function () { scrollTo(0, y); });
+  })();
 </script>
 </body>
 </html>
