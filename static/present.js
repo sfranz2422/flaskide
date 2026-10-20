@@ -87,6 +87,21 @@
     if (view.at() !== was) go(view.at());
   });
 
+  /* The laser pointer (static/laser.js): hold Alt over the slide. Only
+     while live, and passed to the editor to send, like everything else
+     this page does — it never talks to the server itself. */
+  if (window.LiveLaser) {
+    window.LiveLaser.teacher({
+      active: function () { return live && lost.hidden; },
+      send: function (p, path) { chan.postMessage({ type: "point", pointer: p, path: path }); },
+      surfaces: function () {
+        return [{ el: body, point: function (x, y) {
+          return window.LiveLaser.pointAtSlide(body, view.at(), x, y);
+        } }];
+      }
+    });
+  }
+
   $("present-full").addEventListener("click", function () {
     var el = document.documentElement;
     if (document.fullscreenElement) document.exitFullscreen();

@@ -2310,3 +2310,36 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
   cursor: pointer;
 }
 .live-sent[hidden] { display: none; }
+
+/* The teacher's laser pointer (static/laser.js). Fixed to the window and
+   placed by transform, so it floats over the mirror, a slide or anything
+   else without being inside any of them, and never takes a click
+   (pointer-events: none — on the teacher's page it sits right under the
+   mouse, and elementFromPoint would otherwise find the dot itself). Red on
+   every theme: it has to be the brightest thing on a projected screen. */
+.laser-dot {
+  position: fixed; left: 0; top: 0; z-index: 10000;
+  width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%;
+  /* See-through in the middle: it sits ON the letter pointed at, and a
+     solid dot hid exactly the thing the teacher wanted read. */
+  background: rgba(255, 38, 38, 0.45);
+  border: 2px solid rgba(255, 38, 38, 0.95);
+  box-sizing: border-box;
+  box-shadow: 0 0 8px 3px rgba(255, 38, 38, 0.6), 0 0 26px 10px rgba(255, 38, 38, 0.3);
+  pointer-events: none; opacity: 0;
+  transition: transform 0.1s linear, opacity 0.25s;
+}
+.laser-dot.on { opacity: 1; }
+/* The trail: the same dot again, smaller and fainter, arriving later. */
+.laser-trail { width: 14px; height: 14px; margin: -7px 0 0 -7px; box-shadow: none; border: 0;
+               background: rgba(255, 38, 38, 0.6); }
+.laser-trail-1.on { opacity: 0.45; transition: transform 0.18s ease-out, opacity 0.25s; }
+.laser-trail-2.on { opacity: 0.28; transition: transform 0.26s ease-out, opacity 0.25s; }
+.laser-trail-3.on { opacity: 0.15; transition: transform 0.34s ease-out, opacity 0.25s; }
+/* Lit again somewhere new: appears there, rather than gliding in. */
+.laser-dot.laser-jump { transition: none; }
+/* The teacher's own, under the mouse: no glide, it is the mouse. */
+.laser-here { transition: opacity 0.15s; }
+@media (prefers-reduced-motion: reduce) {
+  .laser-dot, .laser-trail-1.on, .laser-trail-2.on, .laser-trail-3.on { transition: opacity 0.25s; }
+}

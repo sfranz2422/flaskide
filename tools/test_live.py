@@ -2440,6 +2440,10 @@ async function run(name) {
   function showMirror(d) { shown.push(d.body); seen = d.version; }
   var location = {replace: function (u) { moved = u; }};
   function setTimeout(fn, ms) { next = {fn: fn, ms: ms}; }
+  // The laser pointer is made in this block too (laser.js); never lit here.
+  var window = {LiveLaser: {student: function () {
+    return {show: function () {}, lit: function () { return false; }}; }}};
+  var mirror = null, followAfter = 0, notesSlides = null, notesBody = null;
   function fetch() {
     var a = answers.shift();
     if (a === 304) return Promise.resolve({status: 304, ok: false});

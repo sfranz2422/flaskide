@@ -1227,6 +1227,48 @@
       });
     }
 
+    // ------------------------------------------------ the laser pointer
+    /* Hold Alt and point (static/laser.js has how, and why it is not a
+       push). Over the code, the open file's line and character — not while
+       the notes are on show, when the class's mirror holds the slide
+       instead, nor for a markdown file open as source, which the class
+       reads rendered. Over the notes here, the "Class sees" pane or the
+       popped-out slides, a place on that slide: each says which slide it is
+       showing, and a student on another one sees no dot. */
+    function sendPointer(pointer, path) {
+      if (!liveCode) return;
+      fetch("/api/live/" + encodeURIComponent(liveCode) + "/point", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pointer: pointer, path: path || "", seq: nextSeq() })
+      }).catch(function () {
+        // A dropped one is fine: the next move, or the beat, sends it again.
+      });
+    }
+    window.LiveLaser.teacher({
+      active: function () { return !!liveCode; },
+      send: sendPointer,
+      surfaces: function () {
+        var L = window.LiveLaser, list = [];
+        if (editor && !notesShown && !window.FlaskIDENotes.isMarkdown(current)) {
+          list.push({ el: editor.getWrapperElement(),
+                      point: function (x, y) { return L.pointAtCode(editor, x, y); } });
+        }
+        var nv = $("notes-view"), nb = $("notes-body");
+        if (nv && nb && !nv.hidden && slidesView()) {
+          list.push({ el: nb,
+                      point: function (x, y) { return L.pointAtSlide(nb, slidesView().at(), x, y); } });
+        }
+        if (classView && !classView.hidden) {
+          list.push({ el: classNotes,
+                      point: function (x, y) {
+                        return L.pointAtSlide(classNotes, currentSlides() ? slideAt : 0, x, y);
+                      } });
+        }
+        return list;
+      }
+    });
+
     /* The tail of what the console says. Trimmed here as well as on the
        server, so a runaway loop does not send 200 KB every 400ms. */
     var OUTPUT_CHARS = 16000;
@@ -1804,6 +1846,8 @@
         popChan.onmessage = function (e) {
           var d = e.data || {};
           if (d.type === "go" && typeof d.slide === "number") popoutGo(d.slide);
+          // The laser, pointed in the pop-out: sent from here, like all else.
+          else if (d.type === "point" && typeof d.pointer === "string") sendPointer(d.pointer, d.path);
           else if (d.type === "hello") tellPopout(true);
         };
         setInterval(function () { tellPopout(false); }, 500);

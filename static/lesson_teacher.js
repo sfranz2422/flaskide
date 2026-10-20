@@ -166,6 +166,31 @@
     pushTimer = setTimeout(pushNow, 600);
   }
 
+  /* The laser pointer (static/laser.js): hold Alt over a slide, presenting
+     or in the preview. Each says which slide it is showing; the class sees
+     the dot only on that one. */
+  if (window.LiveLaser) {
+    window.LiveLaser.teacher({
+      active: function () { return !!live; },
+      send: function (p, path) {
+        if (!live) return;
+        fetch("/api/live/" + encodeURIComponent(live) + "/point", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pointer: p, path: path || "", seq: nextSeq() })
+        }).catch(function () { /* the next move, or the beat, sends it again */ });
+      },
+      surfaces: function () {
+        return [[present, $("lesson-present-body")], [preview, $("lesson-preview")]]
+          .map(function (pair) {
+            var view = pair[0], el = pair[1];
+            return { el: el, point: function (x, y) {
+              return window.LiveLaser.pointAtSlide(el, view.at(), x, y);
+            } };
+          });
+      }
+    });
+  }
+
   function paintLive(code) {
     live = code;
     liveBtn.textContent = code ? "End lesson" : "Go live";

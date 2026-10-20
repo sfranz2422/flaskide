@@ -137,11 +137,24 @@
   // ENDED_MS: an ended lesson keeps checking, so teaching it again brings
   // the class along without a reload (the same as live.js).
   var POLL_MS = 1000, WAITING_MS = 15000, ENDED_MS = 5000, pace = POLL_MS;
+  /* The teacher's laser pointer, on the slide in front of the student (only
+     when it is the slide pointed at), and asked for faster while it is lit
+     — as in live.js, which has why. */
+  var LASER_MS = 250, pointerSeq = -1;
+  var laser = window.LiveLaser.student({
+    slides: { body: $("lesson-body"), at: function () { return slides.at(); } }
+  });
+  function takePointer(data) {
+    if (typeof data.pointer_seq !== "number") return;
+    pointerSeq = data.pointer_seq;
+    laser.show(data.pointer || "", data.pointer_path || "");
+  }
+  function livePace() { return laser.lit() ? LASER_MS : POLL_MS; }
   var moving = false;      // sent on to another link; this page is done
   function poll() {
-    fetch("/api/live/" + encodeURIComponent(L.live) + "?v=" + seen, { cache: "no-store" })
+    fetch("/api/live/" + encodeURIComponent(L.live) + "?v=" + seen + "&p=" + pointerSeq, { cache: "no-store" })
       .then(function (res) {
-        if (res.status === 304) { misses = 0; waiting = false; pace = POLL_MS; setState("Live", "on"); return null; }
+        if (res.status === 304) { misses = 0; waiting = false; pace = livePace(); setState("Live", "on"); return null; }
         if (res.status === 404) { setState("Lesson not found", "off"); throw new Error("gone"); }
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.json();
@@ -149,6 +162,7 @@
       .then(function (data) {
         misses = 0;
         if (!data) return;
+        if (data.pointer_only) { takePointer(data); pace = livePace(); return; }
         // An older link for this assignment: on to its lesson (live_poll).
         if (data.moved) {
           moving = true;
@@ -159,13 +173,14 @@
         waiting = false;
         seen = data.version;
         apply(data);
+        takePointer(data);
         if (data.ended) {
           // The slides stay and stop following, but it keeps asking.
           pace = ENDED_MS;
           setState("Lesson ended", "off");
           return;
         }
-        pace = POLL_MS;
+        pace = livePace();
         setState("Live", "on");
       })
       .catch(function (err) {

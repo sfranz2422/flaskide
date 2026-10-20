@@ -1166,6 +1166,28 @@
   }
 
   var POLL_MS = 1000;
+  /* While the teacher's laser is lit, and for half a minute after (WARM_MS
+     in laser.js), asked this often instead, so the dot keeps up with the
+     teacher's hand. Only then: thirty students at this pace all lesson
+     would be too much for the server. */
+  var LASER_MS = 250;
+
+  /* The teacher's laser pointer: over the mirror, or on the slide in the
+     notes pane — there only when the student is on the slide pointed at.
+     A line scrolled out of sight is scrolled to, as the caret is, unless
+     the student has just scrolled away to read. */
+  var laser = window.LiveLaser.student({
+    code: { cm: mirror, follow: function (pos) {
+      if (Date.now() >= followAfter) mirror.scrollIntoView(pos, 60);
+    } },
+    slides: notesSlides ? { body: notesBody, at: function () { return notesSlides.at(); } } : null
+  });
+  var pointerSeq = -1;       // the pointer's own stamp, as `seen` is the file's
+  function takePointer(data) {
+    if (typeof data.pointer_seq !== "number") return;
+    pointerSeq = data.pointer_seq;
+    laser.show(data.pointer || "", data.pointer_path || "");
+  }
   /* A lesson made ahead from the assignment page, whose link was posted
      before it began. Its page keeps checking — not every second, since a
      tab opened the night before would ask all night — and the lesson
@@ -1182,12 +1204,12 @@
 
 
   function poll() {
-    fetch("/api/live/" + encodeURIComponent(L.code) + "?v=" + seen,
+    fetch("/api/live/" + encodeURIComponent(L.code) + "?v=" + seen + "&p=" + pointerSeq,
           { cache: "no-store" })
       .then(function (res) {
         if (res.status === 304) {         // the usual answer: nothing new
           misses = 0;
-          pace = POLL_MS;                 // only a lesson on the air says 304
+          pace = laser.lit() ? LASER_MS : POLL_MS;  // only a lesson on the air says 304
           everLive = true;
           setState("Live", "on");
           return null;
@@ -1202,6 +1224,12 @@
       .then(function (data) {
         misses = 0;
         if (!data) return;
+        // Only the laser moved: nothing else in it, and nothing else to do.
+        if (data.pointer_only) {
+          takePointer(data);
+          pace = laser.lit() ? LASER_MS : POLL_MS;
+          return;
+        }
         // An older link for this assignment: on to its lesson (live_poll).
         if (data.moved) {
           moving = true;
@@ -1218,12 +1246,14 @@
         if (data.ended) {
           pace = ENDED_MS;
           showMirror(data);
+          takePointer(data);              // "": nobody points at an ended lesson
           setState("Lesson ended", "off");
           return;
         }
-        pace = POLL_MS;
         everLive = true;
         showMirror(data);
+        takePointer(data);
+        pace = laser.lit() ? LASER_MS : POLL_MS;
         setState("Live", "on");
       })
       .catch(function (err) {
