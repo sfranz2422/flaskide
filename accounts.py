@@ -22,6 +22,8 @@ same database and already owns `projects`:
     xp_awards        every piece of XP a student was given, once each (xp.py)
     class_events     each random event a teacher set off in a class
     student_photos   pictures students uploaded as avatars, approved or waiting
+    test_results     what an assignment's tests found: the student's own check,
+                     and the teacher's, which is the one that counts
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -378,6 +380,33 @@ class XpAward(Base):
     detail = Column(String(64), nullable=False, default="")
     by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=now, index=True)
+
+
+class TestResult(Base):
+    """What an assignment's tests (autograde.py) found in a student's work.
+
+    Two kinds, one row of each per student per assignment, rewritten in
+    place. "self" is the student's own Check my work: run in their browser,
+    so it could be faked, and kept only so the teacher can see it. "verified"
+    is the teacher's Check all, run in the TEACHER's browser on what the
+    student turned in: that one counts toward the grade (app.py, _earned).
+    A verified result older than the student's last turn-in is stale — the
+    work changed since — and the teacher's page says so.
+    """
+    __tablename__ = "test_results"
+    __table_args__ = (
+        UniqueConstraint("assignment_id", "student_id", "kind", name="uq_test_result"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("assignments.id"), index=True, nullable=False)
+    student_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    kind = Column(String(16), nullable=False, default="self")
+    earned = Column(Float, nullable=False, default=0.0)
+    possible = Column(Float, nullable=False, default=0.0)
+    #: JSON list of {label, ok, detail, points}, for the teacher's page.
+    details = Column(Text, nullable=False, default="[]")
+    checked_at = Column(DateTime, nullable=False, default=now)
 
 
 class StudentPhoto(Base):
