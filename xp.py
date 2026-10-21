@@ -35,7 +35,7 @@ import accounts
 
 XP_PER_POINT = 10
 ALL_ANSWERED_XP = 20
-RUN_XP = 5
+RUN_XP = 2
 RUN_EVERY_SECONDS = 30 * 60
 TOKEN_EVERY = 500
 
@@ -235,6 +235,42 @@ EVENTS = [
     {"id": "legacy-bounty", "title": "Legacy code bounty", "icon": "\U0001F4B0",
      "text": "One student untangles code nobody has touched since 1998. They gain 50 XP.",
      "who": "one", "xp": 50, "weight": 1},
+    {"id": "pair-programming", "title": "Pair programming", "icon": "\U0001F46F",
+     "text": "Two students share a keyboard and fix everything. They each gain 10 XP.",
+     "who": "some", "n": 2, "xp": 10, "weight": 3},
+    {"id": "code-review", "title": "Glowing code review", "icon": "\u2B50",
+     "text": "A reviewer calls one student's code \"beautiful\". They gain 10 XP.",
+     "who": "one", "xp": 10, "weight": 3},
+    {"id": "all-green", "title": "All tests pass", "icon": "\u2705",
+     "text": "Green checks across the board. Everyone gains 4 XP.",
+     "who": "all", "xp": 4, "weight": 3},
+    {"id": "repo-star", "title": "Your repo got a star", "icon": "\U0001F31F",
+     "text": "A stranger on the internet loves one student's project. They gain 20 XP.",
+     "who": "one", "xp": 20, "weight": 2},
+    {"id": "intern", "title": "It was the intern's fault", "icon": "\U0001F937",
+     "text": "git blame clears the student with the least XP. They gain 10 XP.",
+     "who": "lowest", "xp": 10, "weight": 3},
+    {"id": "pizza", "title": "Pizza for the dev team", "icon": "\U0001F355",
+     "text": "Someone ordered pizza for the release. Everyone gains 4 XP.",
+     "who": "all", "xp": 4, "weight": 2},
+    {"id": "midnight-deploy", "title": "The midnight deploy went perfectly", "icon": "\U0001F680",
+     "text": "Three students shipped it and nothing broke. They each gain 10 XP.",
+     "who": "some", "n": 3, "xp": 10, "weight": 2},
+    {"id": "forgot-save", "title": "Forgot to save", "icon": "\U0001F4BE",
+     "text": "One student's laptop died before Ctrl+S. They lose 5 XP.",
+     "who": "one", "xp": -5, "weight": 2},
+    {"id": "indentation", "title": "IndentationError", "icon": "\u21E5",
+     "text": "Tabs and spaces, mixed. One student loses 3 XP.",
+     "who": "one", "xp": -3, "weight": 2},
+    {"id": "wifi-down", "title": "The Wi-Fi went down", "icon": "\U0001F4F6",
+     "text": "Nobody can look anything up. Everyone loses 2 XP.",
+     "who": "all", "xp": -2, "weight": 1},
+    {"id": "dependency", "title": "A dependency broke overnight", "icon": "\U0001F4E6",
+     "text": "Someone else's update broke three students' code. They each lose 3 XP.",
+     "who": "some", "n": 3, "xp": -3, "weight": 1},
+    {"id": "force-push", "title": "git push --force", "icon": "\u26A0\uFE0F",
+     "text": "One student overwrote everyone's work. They lose 10 XP.",
+     "who": "one", "xp": -10, "weight": 1},
     {"id": "prod-bug", "title": "Unexpected bug in production", "icon": "\U0001F41B",
      "text": "Something nobody tested breaks for real users. Everyone loses 5 XP.",
      "who": "all", "xp": -5, "weight": 2},
@@ -312,6 +348,8 @@ def penalty_for(amount, current):
 AVATARS = [
     ("gamer-boy", "Gamer", 1),
     ("gamer-girl", "Streamer", 1),
+    ("coder", "Coder", 1),
+    ("techie", "Techie", 1),
     ("hacker", "Hacker", 1),
     ("neon", "Neon", 1),
     ("blocky", "Blocky warrior", 1),
