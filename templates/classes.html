@@ -62,7 +62,7 @@
         {%- if game.run_minutes %} · run a program in about {{ game.run_minutes }} min for +{{ game.run_xp }} XP
         {%- else %} · your next program that runs (with changed code) earns +{{ game.run_xp }} XP{% endif %}</p>
       <div class="xp-facts">
-        <span class="xp-tokens" title="One for every 500 XP. Your teacher turns them into bonus points.">🪙 <strong>{{ game.tokens }}</strong> token{{ "" if game.tokens == 1 else "s" }}</span>
+        <span class="xp-tokens" title="One for every {{ game.token_every }} XP. Spend them with your teacher.">🪙 <strong>{{ game.tokens }}</strong> token{{ "" if game.tokens == 1 else "s" }}</span>
         <a class="btn" href="{{ url_for('avatar_page') }}">Edit avatar</a>
       </div>
       {% if game.quests %}

@@ -146,11 +146,15 @@ check("level 1 at 0 XP, 2 at 100, still 2 at 249, 3 at 250",
       [xp.level_of(n) for n in (0, 99, 100, 249, 250)] == [1, 1, 2, 2, 3])
 check("  and on past the end of the list",
       xp.level_of(xp.LEVEL_STARTS[-1] + xp.LEVEL_STEP_AFTER) == len(xp.LEVEL_STARTS) + 1)
-s = xp.summary(1040, tokens_used=1)
+s = xp.summary(2 * xp.TOKEN_EVERY + 40, tokens_used=1)
 check("a summary: tokens earned less used, badges by XP",
       s["tokens_earned"] == 2 and s["tokens"] == 1
-      and [b["have"] for b in s["badges"]][:6] == [True, True, True, True, True, False],
+      and [b["have"] for b in s["badges"]] == [x <= 2 * xp.TOKEN_EVERY + 40 for x, _, _, _ in xp.BADGES]
+      and any(b["have"] for b in s["badges"]) and not all(b["have"] for b in s["badges"]),
       s["tokens"])
+check("a token costs 1000 XP, as the teacher set it", xp.TOKEN_EVERY == 1000)
+check("  one XP short of a token is no token",
+      xp.summary(xp.TOKEN_EVERY - 1)["tokens"] == 0 and xp.summary(xp.TOKEN_EVERY)["tokens"] == 1)
 check("  progress through the level, 0 to 100",
       xp.summary(175)["progress"] == 50, xp.summary(175)["progress"])
 check("a name on the board is the first name and last initial",
@@ -320,11 +324,14 @@ with c.session_transaction() as s:
 # ------------------------------------------------------------- teacher's XP
 print("\nGiving XP and using tokens")
 
-# Up to exactly 1000, whatever the runs above paid: two tokens' worth.
-r = teacher.post("/api/class/%d/xp" % CLASS, json={"student": CAL, "xp": 1000 - total(CAL),
+# Cal to exactly two tokens' worth, whatever the runs above paid: most of it
+# directly (a grant is capped at GRANT_LIMIT), the last 10 from the teacher.
+TARGET = 2 * xp.TOKEN_EVERY
+xp.award(P.SessionLocal(), CAL, "test:bulk", TARGET - 10 - total(CAL), "", "pyide")
+r = teacher.post("/api/class/%d/xp" % CLASS, json={"student": CAL, "xp": 10,
                                                    "reason": "Helped a classmate"})
 check("the teacher gives XP to a student in the class", r.status_code == 200
-      and r.get_json()["xp"] == 1000 and r.get_json()["tokens"] == 2, r.get_json())
+      and r.get_json()["xp"] == TARGET and r.get_json()["tokens"] == 2, r.get_json())
 check("  and the student sees why",
       "Helped a classmate" in cal.get("/classes").get_data(as_text=True))
 check("not to someone outside the class",
@@ -343,7 +350,7 @@ check("0 and too much are refused",
                        json={"student": CAL, "xp": xp.GRANT_LIMIT + 1}).status_code == 400)
 r = teacher.post("/api/class/%d/xp" % CLASS, json={"student": CAL, "xp": -10,
                                                    "reason": "Oops"})
-check("a negative grant takes XP back", r.status_code == 200 and total(CAL) == 990,
+check("a negative grant takes XP back", r.status_code == 200 and total(CAL) == TARGET - 10,
       total(CAL))
 teacher.post("/api/class/%d/xp" % CLASS, json={"student": CAL, "xp": 10})
 
@@ -393,7 +400,7 @@ board = amy.get("/class/%d" % CLASS).get_data(as_text=True)
 board = board[board.find('id="leaderboard"'):]
 check("a student who hides leaves the board", "Cal C." not in board
       and '<span class="xp-place">1</span>' in board)
-check("  and still earns", total(CAL) == 1000)
+check("  and still earns", total(CAL) == TARGET)
 page = cal.get("/class/%d" % CLASS).get_data(as_text=True)
 check("  and their class page says they're hidden", "You&#39;re hidden" in page
       or "You're hidden" in page)
@@ -409,10 +416,13 @@ check("the view-only link shows no leaderboard", 'id="leaderboard"' not in view
 print("\nThe student's home page")
 
 page = cal.get("/classes").get_data(as_text=True)
-check("their level, XP and tokens", "Level 6" in page and "1000 XP" in page
-      and "<strong>0</strong> tokens" in page, "")
-check("  their badges, earned and not", 'class="have" title="Thousand Club' in page
-      and 'class="locked" title="Liftoff' in page)
+check("their level, XP and tokens", "Level %d" % xp.level_of(TARGET) in page
+      and "%d XP" % TARGET in page and "<strong>0</strong> tokens" in page, "")
+_have = [n for x, _, n, _ in xp.BADGES if x <= TARGET][-1]
+_locked = [n for x, _, n, _ in xp.BADGES if x > TARGET][0]
+check("  their badges, earned and not", ('class="have" title="%s' % _have) in page
+      and ('class="locked" title="%s' % _locked) in page, (_have, _locked))
+check("  and what a token costs", "One for every %d XP" % xp.TOKEN_EVERY in page)
 board = page[page.find("xp-home-board"):]
 check("  each class's leaderboard, top first, and their place in it",
       "You're #1 of 3" in page and "P4 Intro" in board

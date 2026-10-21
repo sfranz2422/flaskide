@@ -12,6 +12,7 @@ never imported, never executed and never reaches this machine.
 """
 
 import base64
+import hashlib
 import json
 import os
 import random
@@ -2305,6 +2306,25 @@ def _keep_result(db, item, student_id, kind, data):
     return row
 
 
+def _tests_xp(db, item, student_id, row):
+    """XP for every test the TEACHER's check found passing: XP_PER_POINT for
+    each of its points, the same as a question. Once per test — its source
+    is the test's label — so checking again pays nothing twice, and a
+    student who fixes their code is paid for the tests that now pass, and
+    only those. Never from a student's own check, which could be faked."""
+    student = db.query(accounts.User).filter_by(id=student_id).first()
+    if not _earns_xp(student):
+        return 0
+    got = 0
+    for r in json.loads(row.details or "[]"):
+        if r.get("ok") and r.get("points"):
+            key = hashlib.sha1(r["label"].encode("utf-8")).hexdigest()[:12]
+            got += xp.award(db, student_id, "test:%d:%s" % (item.id, key),
+                            r["points"] * xp.XP_PER_POINT,
+                            ("Test passed in %s: %s" % (item.title, r["label"]))[:200], APP_NAME)
+    return got
+
+
 @app.post("/api/tests/self")
 def tests_self():
     """A student's own Check my work, kept for the teacher to see. It counts
@@ -2385,9 +2405,10 @@ def tests_verify(slug):
         if sub is None:
             return jsonify(error="They haven't turned anything in."), 404
         row = _keep_result(db, item, student_id, "verified", data)
-        _full_marks_xp(db, item, student_id)
+        gained = _tests_xp(db, item, student_id, row)
+        gained += _full_marks_xp(db, item, student_id)
         total = _total(sub.score, _earned(db, item.id).get(student_id))
-        return jsonify(ok=True, earned=row.earned, possible=row.possible,
+        return jsonify(ok=True, earned=row.earned, possible=row.possible, xp=gained,
                        total=_score_text(total), synced=_is_synced(sub, total))
     finally:
         db.close()

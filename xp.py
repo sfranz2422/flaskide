@@ -38,7 +38,12 @@ XP_PER_POINT = 10
 ALL_ANSWERED_XP = 20
 RUN_XP = 2
 RUN_EVERY_SECONDS = 30 * 60
-TOKEN_EVERY = 500
+#: The XP a token costs. Was 500; raised to 1000 on 2026-10-21 by the
+#: teacher. Tokens are worked out from XP, never stored (summary), so the
+#: new price applies to everyone at once — a student who had earned tokens
+#: at 500 has half as many, and any they had already used beyond that show
+#: as none left, never as a debt.
+TOKEN_EVERY = 1000
 
 #: What a teacher can give or take in one go. Negative is allowed — taking
 #: back XP given by mistake is the only undo there is.
@@ -66,8 +71,8 @@ BADGES = [
     (10, "first-steps", "First Steps", "\U0001F463"),
     (100, "century", "Century", "\U0001F4AF"),
     (250, "rising-star", "Rising Star", "⭐"),
-    (500, "first-token", "First Token", "\U0001FA99"),
-    (1000, "thousand-club", "Thousand Club", "\U0001F3C6"),
+    (500, "halfway", "Halfway There", "\U0001F3AF"),
+    (1000, "first-token", "First Token", "\U0001FA99"),
     (2000, "liftoff", "Liftoff", "\U0001F680"),
     (3500, "diamond", "Diamond Coder", "\U0001F48E"),
     (5000, "royalty", "Code Royalty", "\U0001F451"),
@@ -114,6 +119,7 @@ def summary(total, tokens_used=0):
         "to_next": nxt - total,
         "tokens": max(0, tokens_earned(total) - (tokens_used or 0)),
         "tokens_earned": tokens_earned(total),
+        "token_every": TOKEN_EVERY,
         "badges": [{"id": b, "name": n, "icon": i, "xp": x, "have": total >= x}
                    for x, b, n, i in BADGES],
     }
