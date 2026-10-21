@@ -293,6 +293,17 @@ it); each editor's tests are its own. Each test the teacher's check finds passin
 fixed code is paid only for what now passes; a student's own check pays
 nothing.
 
+**The token shop** ("The token shop" in `app.py`; `accounts.ShopItem`,
+`ShopRequest`; `/teacher/shop`). What tokens buy: one shop per teacher,
+shared by their classes and all three editors (tokens are), stocked from
+`xp.SHOP_STARTER` the first time it's opened — only then, so a teacher who
+empties the shelf isn't restocked; items are taken off the shelf, never
+deleted. A student asks from their home page; the request HOLDS its tokens
+(`_tokens_free` = earned − used − held), so they can't ask for more than
+they have. The teacher answers on the class's XP & tokens page: Approve
+spends the tokens in one UPDATE conditional on them still being there,
+Decline spends nothing. `test_shop.py` is the same file in all three.
+
 ## Style
 
 Comments explain *why*, and name the silent failures. The two-kinds-of-project

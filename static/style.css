@@ -2560,3 +2560,27 @@ label.xp-who { cursor: pointer; }
 .tests-lines { list-style: none; margin: 6px 0; padding: 0; }
 .tests-lines .is-right { color: var(--green); }
 .tests-lines .is-wrong { color: var(--red); }
+
+/* The token shop: the student's shelf and requests, and the teacher's page. */
+a.xp-tokens { color: var(--text); text-decoration: none; }
+.shop { margin: 0 0 28px; }
+.shop-items { list-style: none; margin: 0 0 16px; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.shop-item { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--bg-panel); }
+.shop-item .btn { align-self: flex-start; margin-top: auto; }
+.shop-item.too-dear { opacity: .6; }
+.shop-cost { font-family: var(--mono); font-weight: 600; color: var(--amber); }
+.shop-name { font-weight: 600; }
+.shop-requests { list-style: none; margin: 0; padding: 0; }
+.shop-requests li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 10px;
+  align-items: baseline; flex-wrap: wrap; }
+.shop-status { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--line); }
+.shop-status.is-pending { color: var(--amber); border-color: var(--amber); }
+.shop-status.is-approved { color: var(--green); border-color: var(--green); }
+.shop-status.is-declined, .shop-status.is-cancelled { color: var(--muted); }
+.shop-table input.field { width: 100%; }
+.shop-table td:nth-child(3) input { width: 5em; }
+.shop-table tr.is-off td { opacity: .5; }
+.xp-requests { border-color: var(--amber); }

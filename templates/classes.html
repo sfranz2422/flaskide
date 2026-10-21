@@ -62,7 +62,7 @@
         {%- if game.run_minutes %} · run a program in about {{ game.run_minutes }} min for +{{ game.run_xp }} XP
         {%- else %} · your next program that runs (with changed code) earns +{{ game.run_xp }} XP{% endif %}</p>
       <div class="xp-facts">
-        <span class="xp-tokens" title="One for every {{ game.token_every }} XP. Spend them with your teacher.">🪙 <strong>{{ game.tokens }}</strong> token{{ "" if game.tokens == 1 else "s" }}</span>
+        <a class="xp-tokens" href="#shop" title="One for every {{ game.token_every }} XP. Spend them in the token shop.">🪙 <strong>{{ game.tokens }}</strong> token{{ "" if game.tokens == 1 else "s" }}{% if game.held %} <span class="dim small">· {{ game.held }} on hold</span>{% endif %}</a>
         <a class="btn" href="{{ url_for('avatar_page') }}">Edit avatar</a>
       </div>
       {% if game.quests %}
@@ -124,6 +124,44 @@
     </section>
   {% endif %}
 
+  {#  The token shop (app.py, "The token shop"): each of their teachers'
+      shelves, and what they have asked for. Asking holds the tokens until
+      the teacher answers; Approve is what spends them. #}
+  {% if game.shops %}
+    <section class="shop" id="shop">
+      {% for shop in game.shops %}
+        <h2 class="enrolled-title">🪙 Token shop{% if game.shops|length > 1 %} <span class="dim small">· {{ shop.teacher }}</span>{% endif %}</h2>
+        <p class="enrolled-sub">You have <strong>{{ game.free }}</strong> token{{ "" if game.free == 1 else "s" }} to spend.
+          One for every {{ game.token_every }} XP. Your teacher approves what you ask for.</p>
+        <ul class="shop-items">
+          {% for i in shop["items"] %}
+            <li class="shop-item {{ 'too-dear' if i.cost > game.free }}">
+              <span class="shop-cost">{{ i.cost }} 🪙</span>
+              <span class="shop-name">{{ i.name }}</span>
+              {% if i.description %}<span class="shop-desc dim small">{{ i.description }}</span>{% endif %}
+              <button class="btn {{ 'btn-primary' if i.cost <= game.free }} js-ask" type="button" data-item="{{ i.id }}"
+                      {{ "disabled" if i.cost > game.free }}
+                      title="{{ 'Ask your teacher for this' if i.cost <= game.free else 'You need %d more' % (i.cost - game.free) }}">Ask for it</button>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endfor %}
+      {% if game.requests %}
+        <h2 class="xp-sub">Your requests</h2>
+        <ul class="shop-requests">
+          {% for q in game.requests %}
+            <li data-request="{{ q.id }}">
+              <span class="shop-status is-{{ q.status }}">{{ {"pending": "Waiting", "approved": "Approved", "declined": "Declined", "cancelled": "Cancelled"}[q.status] }}</span>
+              {{ q.name }} <span class="dim small">· {{ q.cost }} 🪙</span>
+              {% if q.status == "pending" %}<button class="linkbtn js-cancel" type="button">Cancel</button>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <p class="small" id="shop-state" role="status"></p>
+    </section>
+  {% endif %}
+
   {% if enrolled %}
     <h1 class="enrolled-title">Currently enrolled classes</h1>
     <p class="enrolled-sub">Choose a class to see its assignments and lessons.</p>
@@ -150,6 +188,31 @@
 </main>
 <script src="{{ url_for('static', filename='avatar.js') }}"></script>
 <script>
+  // The shop: asking holds the tokens, cancelling gives them back.
+  function shopPost(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); });
+  }
+  document.querySelectorAll(".js-ask").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var name = b.closest(".shop-item").querySelector(".shop-name").textContent;
+      if (!confirm("Ask your teacher for " + name + "? The tokens are held until they answer.")) return;
+      b.disabled = true;
+      shopPost("/api/shop/request", { item: b.dataset.item }).then(function (out) {
+        if (!out.ok) { document.getElementById("shop-state").textContent = out.d.error || "That didn't send."; b.disabled = false; return; }
+        location.reload();
+      }).catch(function () { b.disabled = false; });
+    });
+  });
+  document.querySelectorAll(".js-cancel").forEach(function (b) {
+    b.addEventListener("click", function () {
+      shopPost("/api/shop/request/" + b.closest("li").dataset.request + "/cancel").then(function () {
+        location.reload();
+      });
+    });
+  });
+
   // Hiding is saved at once; still earning XP and badges either way.
   document.getElementById("board-hidden").addEventListener("change", function (e) {
     var box = e.target;

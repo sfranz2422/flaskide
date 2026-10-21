@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token shop — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{#  Before any other script: it wraps fetch so every JSON body goes past
+    Render's firewall (pack.js says why). #}
+<script src="{{ url_for('static', filename='pack.js') }}"></script>
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page class-teacher">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">Token shop</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ back if back.startswith('/') and not back.startswith('//') else url_for('teacher_home') }}">Back</a>
+  </div>
+</header>
+
+{#  The teacher's shop (accounts.ShopItem): what their students can spend
+    tokens on, in every class and every editor. Started from
+    xp.SHOP_STARTER; everything here is theirs to change. Taking an item off
+    the shelf hides it from students and keeps its past requests. #}
+<main class="sheet shop-page">
+  <h1 class="att-title">🪙 Token shop</h1>
+  <p class="dim">Students earn one token for every {{ token_every }} XP. They ask for an item
+    from their home page; you approve or decline it on the class's <strong>XP &amp; tokens</strong>
+    page, and approving spends the tokens. This shop is the same in all your classes.</p>
+
+  <table class="xp-table shop-table">
+    <thead><tr><th>Item</th><th>What it is</th><th>Tokens</th><th>On the shelf</th><th></th></tr></thead>
+    <tbody>
+      {% for i in items %}
+        <tr data-item="{{ i.id }}" class="{{ '' if i.active else 'is-off' }}">
+          <td><input class="field js-name" maxlength="120" value="{{ i.name }}" aria-label="Item name"></td>
+          <td><input class="field js-desc" maxlength="400" value="{{ i.description }}" aria-label="What it is"></td>
+          <td><input class="field js-cost" type="number" min="1" max="{{ max_cost }}" value="{{ i.cost }}" aria-label="Price in tokens"></td>
+          <td><input type="checkbox" class="js-active" {{ "checked" if i.active }} aria-label="On the shelf"></td>
+          <td><button class="btn js-save" type="button">Save</button> <span class="dim small js-state" role="status"></span></td>
+        </tr>
+      {% endfor %}
+      <tr class="shop-new">
+        <td><input class="field" id="new-name" maxlength="120" placeholder="New item" aria-label="New item's name"></td>
+        <td><input class="field" id="new-desc" maxlength="400" placeholder="What it is" aria-label="What it is"></td>
+        <td><input class="field" id="new-cost" type="number" min="1" max="{{ max_cost }}" value="1" aria-label="Price in tokens"></td>
+        <td></td>
+        <td><button class="btn btn-primary" type="button" id="new-add">Add</button> <span class="dim small" id="new-state" role="status"></span></td>
+      </tr>
+    </tbody>
+  </table>
+</main>
+
+<script>
+(function () {
+  function post(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); });
+  }
+  document.querySelectorAll("tr[data-item]").forEach(function (row) {
+    var state = row.querySelector(".js-state");
+    function save() {
+      state.textContent = "Saving…";
+      post("/api/shop/item/" + row.dataset.item, {
+        name: row.querySelector(".js-name").value,
+        description: row.querySelector(".js-desc").value,
+        cost: row.querySelector(".js-cost").value,
+        active: row.querySelector(".js-active").checked
+      }).then(function (out) {
+        state.textContent = out.ok ? "Saved." : (out.d.error || "Not saved.");
+        row.classList.toggle("is-off", !row.querySelector(".js-active").checked);
+      }).catch(function () { state.textContent = "Not saved — check your connection."; });
+    }
+    row.querySelector(".js-save").addEventListener("click", save);
+    row.querySelector(".js-active").addEventListener("change", save);
+  });
+  document.getElementById("new-add").addEventListener("click", function () {
+    var state = document.getElementById("new-state");
+    post("/api/shop/item", { name: document.getElementById("new-name").value,
+                             description: document.getElementById("new-desc").value,
+                             cost: document.getElementById("new-cost").value })
+      .then(function (out) {
+        if (!out.ok) { state.textContent = out.d.error || "Not added."; return; }
+        location.reload();
+      }).catch(function () { state.textContent = "Not added — check your connection."; });
+  });
+})();
+</script>
+</body>
+</html>

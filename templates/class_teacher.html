@@ -33,7 +33,7 @@
     <a class="btn" href="{{ url_for('class_attendance', class_id=course.id) }}"
        title="Who came into this class, day by day">Attendance</a>
     <a class="btn" href="{{ url_for('class_xp', class_id=course.id) }}"
-       title="Each student's XP and tokens: use a token, give XP, approve pictures">XP &amp; tokens{% if photos_waiting %} <span class="count-pill">{{ photos_waiting }} to approve</span>{% endif %}</a>
+       title="Each student's XP and tokens: give XP, approve pictures and shop requests">XP &amp; tokens{% if photos_waiting %} <span class="count-pill">{{ photos_waiting }} to approve</span>{% endif %}</a>
     <a class="btn" href="{{ url_for('teacher_home') }}">All classes</a>
     <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
   </div>

@@ -4793,7 +4793,8 @@ def teacher_class(class_id):
         ctx = user_context(db)
         ctx.update(course=course, rows=rows, archived=archived, others=others,
                    roster=roster, classroom_connected=link is not None,
-                   photos_waiting=len(_pending_photos(db, course)),
+                   photos_waiting=(len(_pending_photos(db, course))
+                                   + len(_class_requests(db, course, user))),
                    classroom_on=classroom_configured(),
                    view_url=url_for("class_view", token=_view_token(db, course),
                                     _external=True, _scheme=_scheme()))
@@ -5240,6 +5241,12 @@ def _game_card(db, user):
                               "me_row": me_row[0] if me_row and me_row[0] not in top else None,
                               "url": link})
     card["quests"] = _open_quests(db, user)
+    card["held"] = _held(db, user.id)
+    card["free"] = max(0, card["tokens"] - card["held"])
+    card["shops"] = _shops_for(db, user)
+    card["requests"] = [_request_out(r) for r in db.query(accounts.ShopRequest)
+                        .filter_by(student_id=user.id)
+                        .order_by(accounts.ShopRequest.created_at.desc()).limit(8)]
     # Roughly how long until a Run pays again. Only roughly: the time is
     # counted as they work (_sign_out_idle_student), not by the clock.
     card["run_minutes"] = max(0, (xp.RUN_EVERY_SECONDS - session.get("busy", 0)) // 60)
@@ -5352,6 +5359,253 @@ def save_avatar():
         return jsonify(ok=True, avatar=avatar)
     finally:
         db.close()
+
+
+# --------------------------------------------------------------------------
+# The token shop
+# --------------------------------------------------------------------------
+# What tokens buy. Each teacher has one shop (accounts.ShopItem), shared by
+# their classes and all three editors, started from xp.SHOP_STARTER the
+# first time they open it. A student asks for an item from their home page;
+# the request holds those tokens until the teacher approves it on the class's
+# XP page — which spends them — or declines it. The teacher's own Use button
+# still works for anything bought face to face.
+
+def _held(db, student_id):
+    """Tokens a student has asked for and not been answered on yet."""
+    rows = db.query(accounts.ShopRequest.cost).filter_by(
+        student_id=student_id, status="pending")
+    return sum(c for (c,) in rows)
+
+
+def _tokens_free(db, student):
+    """Tokens a student can still ask for: earned, less used, less held."""
+    earned = xp.tokens_earned(xp.total(db, student.id))
+    return max(0, earned - (student.tokens_used or 0) - _held(db, student.id))
+
+
+def _ensure_shop(db, teacher):
+    """Stock a teacher's shop the first time they open it — only then. A
+    teacher who took everything off the shelf has rows, all inactive, and
+    is not handed the starter list again."""
+    if db.query(accounts.ShopItem.id).filter_by(teacher_id=teacher.id).first() is None:
+        for name, cost, what in xp.SHOP_STARTER:
+            db.add(accounts.ShopItem(teacher_id=teacher.id, name=name, cost=cost,
+                                     description=what))
+        db.commit()
+
+
+def _shop_items(db, teacher_id, everything=False):
+    q = db.query(accounts.ShopItem).filter_by(teacher_id=teacher_id)
+    if not everything:
+        q = q.filter_by(active=1)
+    return q.order_by(accounts.ShopItem.active.desc(), accounts.ShopItem.cost,
+                      accounts.ShopItem.name).all()
+
+
+def _request_out(r, student=None):
+    return {"id": r.id, "name": r.name, "cost": r.cost, "status": r.status,
+            "when": _utc_iso(r.created_at),
+            "student": student.display_name() if student is not None else "",
+            "student_id": r.student_id}
+
+
+def _shops_for(db, user):
+    """The shops a student can buy from: their teachers' here, each with
+    what is on its shelf. A teacher who never opened their shop has the
+    starter list, so a class sees one from the start."""
+    out = []
+    for tid in sorted({c.teacher_id for c in _my_classes(db, user)}):
+        teacher = db.query(accounts.User).filter_by(id=tid).first()
+        if teacher is None:
+            continue
+        _ensure_shop(db, teacher)
+        out.append({"teacher": teacher.display_name(), "teacher_id": tid,
+                    "items": [{"id": i.id, "name": i.name, "cost": i.cost,
+                               "description": i.description}
+                              for i in _shop_items(db, tid)]})
+    return out
+
+
+def _shop_clean(data, item=None):
+    """(fields, error) for an item the teacher sent."""
+    fields = {}
+    if "name" in data or item is None:
+        name = clean(data.get("name"), 120)
+        if not name:
+            return None, "Give it a name."
+        fields["name"] = name
+    if "description" in data:
+        fields["description"] = clean(data.get("description"), 400)
+    if "cost" in data or item is None:
+        try:
+            cost = int(str(data.get("cost", "")).strip())
+        except ValueError:
+            return None, "The price has to be a whole number of tokens."
+        if cost < 1 or cost > xp.SHOP_MAX_COST:
+            return None, "The price has to be between 1 and %d tokens." % xp.SHOP_MAX_COST
+        fields["cost"] = cost
+    if "active" in data:
+        fields["active"] = 1 if data.get("active") else 0
+    return fields, ""
+
+
+@app.get("/teacher/shop")
+def teacher_shop():
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        _ensure_shop(db, user)
+        ctx = user_context(db)
+        ctx.update(items=_shop_items(db, user.id, everything=True),
+                   token_every=xp.TOKEN_EVERY, max_cost=xp.SHOP_MAX_COST,
+                   back=request.args.get("back", ""))
+        return render_template("shop_teacher.html", **ctx)
+    finally:
+        db.close()
+
+
+@app.post("/api/shop/item")
+def shop_item_new():
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only a teacher can stock a shop."), 403
+        fields, why = _shop_clean(request.get_json(silent=True) or {})
+        if why:
+            return jsonify(error=why), 400
+        if db.query(accounts.ShopItem).filter_by(teacher_id=user.id).count() >= xp.SHOP_MAX_ITEMS:
+            return jsonify(error="That's as many items as a shop holds."), 400
+        item = accounts.ShopItem(teacher_id=user.id, **fields)
+        db.add(item)
+        db.commit()
+        return jsonify(ok=True, id=item.id)
+    finally:
+        db.close()
+
+
+@app.post("/api/shop/item/<int:item_id>")
+def shop_item_update(item_id):
+    """Change an item, or take it off the shelf (active false) and back."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only a teacher can stock a shop."), 403
+        item = db.query(accounts.ShopItem).filter_by(id=item_id, teacher_id=user.id).first()
+        if item is None:
+            return jsonify(error="No such item."), 404
+        fields, why = _shop_clean(request.get_json(silent=True) or {}, item)
+        if why:
+            return jsonify(error=why), 400
+        for k, v in fields.items():
+            setattr(item, k, v)
+        db.commit()
+        return jsonify(ok=True)
+    finally:
+        db.close()
+
+
+@app.post("/api/shop/request")
+def shop_request():
+    """A student asks for an item. Its tokens are held until the teacher
+    answers; they can't ask for more than they have, counting held ones."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in first."), 401
+        if accounts.is_teacher(user.email):
+            return jsonify(error="Teachers don't spend tokens."), 403
+        try:
+            item_id = int((request.get_json(silent=True) or {}).get("item"))
+        except (TypeError, ValueError):
+            return jsonify(error="No such item."), 404
+        item = db.query(accounts.ShopItem).filter_by(id=item_id, active=1).first()
+        if item is None or item.teacher_id not in {c.teacher_id for c in _my_classes(db, user)}:
+            return jsonify(error="That isn't in your teacher's shop."), 404
+        free = _tokens_free(db, user)
+        if free < item.cost:
+            return jsonify(error="That costs %d token%s; you have %d to spend."
+                           % (item.cost, "" if item.cost == 1 else "s", free)), 409
+        row = accounts.ShopRequest(item_id=item.id, teacher_id=item.teacher_id,
+                                   student_id=user.id, name=item.name, cost=item.cost)
+        db.add(row)
+        db.commit()
+        return jsonify(ok=True, request=_request_out(row), free=_tokens_free(db, user))
+    finally:
+        db.close()
+
+
+@app.post("/api/shop/request/<int:request_id>/cancel")
+def shop_request_cancel(request_id):
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in first."), 401
+        row = db.query(accounts.ShopRequest).filter_by(
+            id=request_id, student_id=user.id, status="pending").first()
+        if row is None:
+            return jsonify(error="That request isn't waiting any more."), 404
+        row.status, row.decided_at = "cancelled", accounts.now()
+        db.commit()
+        return jsonify(ok=True, free=_tokens_free(db, user))
+    finally:
+        db.close()
+
+
+@app.post("/api/shop/request/<int:request_id>/<decision>")
+def shop_request_decide(request_id, decision):
+    """The teacher answers a request. Approving spends the tokens in one
+    UPDATE that only happens if they still have them — a token used by hand
+    meanwhile, or XP taken back, and it is refused rather than overspent."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None or not accounts.is_teacher(user.email):
+            return jsonify(error="Only the teacher can do that."), 403
+        if decision not in ("approve", "decline"):
+            abort(404)
+        row = db.query(accounts.ShopRequest).filter_by(
+            id=request_id, teacher_id=user.id, status="pending").first()
+        if row is None:
+            return jsonify(error="That request isn't waiting any more."), 404
+        if decision == "approve":
+            earned = xp.tokens_earned(xp.total(db, row.student_id))
+            spent = (db.query(accounts.User)
+                       .filter(accounts.User.id == row.student_id,
+                               accounts.User.tokens_used + row.cost <= earned)
+                       .update({"tokens_used": accounts.User.tokens_used + row.cost},
+                               synchronize_session=False))
+            if not spent:
+                db.rollback()
+                return jsonify(error="They don't have enough tokens for it any more."), 409
+        row.status = "approved" if decision == "approve" else "declined"
+        row.decided_at = accounts.now()
+        db.commit()
+        student = db.query(accounts.User).filter_by(id=row.student_id).first()
+        return jsonify(ok=True, status=row.status,
+                       tokens=max(0, xp.tokens_earned(xp.total(db, student.id))
+                                  - student.tokens_used))
+    finally:
+        db.close()
+
+
+def _class_requests(db, course, teacher):
+    """Requests waiting on this teacher from this class's students."""
+    people = {u.id: u for _, u in _class_students(db, course) if u is not None}
+    if not people:
+        return []
+    rows = (db.query(accounts.ShopRequest)
+              .filter(accounts.ShopRequest.teacher_id == teacher.id,
+                      accounts.ShopRequest.status == "pending",
+                      accounts.ShopRequest.student_id.in_(list(people)))
+              .order_by(accounts.ShopRequest.created_at))
+    return [_request_out(r, people[r.student_id]) for r in rows]
 
 
 # --------------------------------------------------------------------------
@@ -5542,12 +5796,14 @@ def class_xp(class_id):
             row = {"name": e.name or e.email, "email": e.email, "id": None}
             if u is not None:
                 row.update(xp.summary(have.get(u.id, 0), u.tokens_used))
-                row.update(id=u.id, avatar=xp.avatar_of(u), hidden=bool(u.board_hidden))
+                row.update(id=u.id, avatar=xp.avatar_of(u), hidden=bool(u.board_hidden),
+                           held=_held(db, u.id))
             students.append(row)
         ctx = user_context(db)
         ctx.update(course=course, students=students, token_every=xp.TOKEN_EVERY,
                    grant_limit=xp.GRANT_LIMIT, behaviors=xp.BEHAVIORS,
                    photos=_pending_photos(db, course),
+                   requests=_class_requests(db, course, user),
                    events=[_event_out(db, e) for e in _event_rows(db, course)])
         return render_template("class_xp.html", **ctx)
     finally:

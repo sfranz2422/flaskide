@@ -27,6 +27,8 @@
   <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
   <div class="meta"><span class="pagetitle">{{ course.name }} · XP &amp; tokens</span></div>
   <div class="actions">
+    <a class="btn" href="{{ url_for('teacher_shop', back=request.path) }}"
+       title="What your students can spend tokens on">🪙 Token shop</a>
     <a class="btn" href="{{ url_for('student_class', class_id=course.id) }}#leaderboard">Leaderboard</a>
     <a class="btn" href="{{ url_for('teacher_class', class_id=course.id) }}">Back to the class</a>
   </div>
@@ -47,6 +49,25 @@
     </div>
     <button id="event-btn" class="btn btn-primary xp-event-btn" type="button">🎲 Random event</button>
   </div>
+
+  {#  Shop requests from this class's students (app.py, "The token shop"):
+      their tokens are held until you answer, and Approve spends them. #}
+  {% if requests %}
+    <section class="xp-photos xp-requests" id="requests">
+      <h2>Shop requests</h2>
+      <ul class="xp-event-list">
+        {% for q in requests %}
+          <li data-request="{{ q.id }}">
+            <span class="xp-event-icon" aria-hidden="true">🪙</span>
+            <span class="xp-event-body"><strong>{{ q.student }}</strong> wants <strong>{{ q.name }}</strong>
+              <span class="dim small">· {{ q.cost }} token{{ "" if q.cost == 1 else "s" }}</span></span>
+            <button class="btn btn-primary js-request" data-decision="approve" type="button">Approve</button>
+            <button class="btn js-request" data-decision="decline" type="button">Decline</button>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
 
   {#  Photos students uploaded, waiting for you. Nobody else sees one until
       it is approved; rejecting deletes it. #}
@@ -103,7 +124,7 @@
           {% if s.id %}
             <td>{{ s.level }} <span class="dim small">{{ s.title }}</span></td>
             <td class="js-xp">{{ s.xp }}</td>
-            <td><strong class="js-tokens">{{ s.tokens }}</strong>
+            <td><strong class="js-tokens">{{ s.tokens }}</strong>{% if s.held %}<span class="dim small" title="Asked for in the shop, waiting for you"> · {{ s.held }} on hold</span>{% endif %}
               <button class="btn js-use" type="button" {{ "disabled" if not s.tokens }}>Use</button></td>
           {% else %}
             <td colspan="3" class="dim">Hasn't signed in yet, so has no XP.</td>
@@ -231,6 +252,20 @@
         else { tokens.textContent = out.d.tokens; }
         use.disabled = !(out.ok ? out.d.tokens : +tokens.textContent);
       }).catch(function () { use.disabled = false; alert("That didn't save. Try again."); });
+    });
+  });
+
+  // ---- Shop requests
+  document.querySelectorAll(".js-request").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var li = b.closest("li");
+      fetch("/api/shop/request/" + li.dataset.request + "/" + b.dataset.decision,
+            { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (out) {
+          if (!out.ok) { alert(out.d.error || "That didn't work."); return; }
+          location.reload();
+        }).catch(function () { alert("That didn't work. Try again."); });
     });
   });
 

@@ -22,6 +22,8 @@ same database and already owns `projects`:
     xp_awards        every piece of XP a student was given, once each (xp.py)
     class_events     each random event a teacher set off in a class
     student_photos   pictures students uploaded as avatars, approved or waiting
+    shop_items       what a teacher's students can spend tokens on
+    shop_requests    a student asking for one; approving spends the tokens
     test_results     what an assignment's tests found: the student's own check,
                      and the teacher's, which is the one that counts
 
@@ -407,6 +409,43 @@ class TestResult(Base):
     #: JSON list of {label, ok, detail, points}, for the teacher's page.
     details = Column(Text, nullable=False, default="[]")
     checked_at = Column(DateTime, nullable=False, default=now)
+
+
+class ShopItem(Base):
+    """Something a teacher's students can spend tokens on: a late pass, a
+    seat for the day. One shop per teacher, shared by every class and all
+    three editors, because tokens are (xp.py). Never deleted, only taken off
+    the shelf (`active` 0): a request keeps pointing at what was bought, and
+    a teacher who cleared the shelf isn't handed the starter list again."""
+    __tablename__ = "shop_items"
+
+    id = Column(Integer, primary_key=True)
+    teacher_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    name = Column(String(120), nullable=False, default="")
+    description = Column(String(400), nullable=False, default="")
+    cost = Column(Integer, nullable=False, default=1)
+    active = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, nullable=False, default=now)
+
+
+class ShopRequest(Base):
+    """A student asking for a shop item. "pending" until the teacher decides:
+    "approved" spends the tokens (users.tokens_used goes up by `cost`, in one
+    conditional UPDATE), "declined" or "cancelled" spends nothing. While
+    pending, its cost is held: a student can't ask for more than they have,
+    counting what they have already asked for. The name and cost are copied,
+    so a later price change doesn't rewrite what was asked for."""
+    __tablename__ = "shop_requests"
+
+    id = Column(Integer, primary_key=True)
+    item_id = Column(Integer, ForeignKey("shop_items.id"), index=True, nullable=False)
+    teacher_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    student_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    name = Column(String(120), nullable=False, default="")
+    cost = Column(Integer, nullable=False, default=1)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    created_at = Column(DateTime, nullable=False, default=now)
+    decided_at = Column(DateTime, nullable=True)
 
 
 class StudentPhoto(Base):

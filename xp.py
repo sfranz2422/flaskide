@@ -196,6 +196,33 @@ def board_name(user):
 
 
 # --------------------------------------------------------------------------
+# The token shop
+# --------------------------------------------------------------------------
+
+#: What a teacher's shop starts with, the first time they open it: (name,
+#: tokens, what it is). Theirs to change, price or take off the shelf. The
+#: ones that touch a grade cost more, so they stay worth saving for.
+SHOP_STARTER = [
+    ("Pick your seat", 1, "Sit where you like for one class."),
+    ("Music while you work", 1, "Headphones during work time, for one class."),
+    ("A hint on a quiz", 1, "One hint from your teacher on one quiz question."),
+    ("Name tomorrow's example", 1, "Choose the variable names or the theme of the next example."),
+    ("Run the random event", 1, "You press the button at the start of class."),
+    ("Late pass", 2, "Turn one assignment in a day late, no penalty."),
+    ("Redo", 2, "Resubmit one assignment for a new score."),
+    ("Notes card", 2, "One index card of notes on a quiz."),
+    ("Drop a quiz score", 3, "Your lowest quiz score doesn't count."),
+    ("Exam bonus", 3, "+5% on a test or exam."),
+    ("Homework pass", 3, "Skip one homework assignment."),
+    ("Design a challenge", 5, "Write a challenge or quest for the whole class."),
+]
+
+#: The most one item can cost, and the most items a shop can hold.
+SHOP_MAX_COST = 100
+SHOP_MAX_ITEMS = 60
+
+
+# --------------------------------------------------------------------------
 # Rewards, penalties and random events
 # --------------------------------------------------------------------------
 
