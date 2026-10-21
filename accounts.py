@@ -20,6 +20,7 @@ same database and already owns `projects`:
     quiz_questions   the answer key to each question in an assignment's notes
     quiz_answers     a student's one answer to one of those questions
     xp_awards        every piece of XP a student was given, once each (xp.py)
+    class_events     each random event a teacher set off in a class
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -374,6 +375,27 @@ class XpAward(Base):
     reason = Column(String(200), nullable=False, default="")
     detail = Column(String(64), nullable=False, default="")
     by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=now, index=True)
+
+
+class ClassEvent(Base):
+    """A random event the teacher set off in a class (xp.EVENTS): what it
+    was, and when. Its XP is ordinary XpAward rows with the source
+    "event:<this id>:<user id>", so Undo can find exactly them and nothing
+    else. `undone` keeps the row, so the class page stops showing the event
+    rather than forgetting it happened."""
+    __tablename__ = "class_events"
+
+    id = Column(Integer, primary_key=True)
+    class_id = Column(Integer, ForeignKey("classes.id"), index=True, nullable=False)
+    app = Column(String(16), nullable=False, default="pyide")
+    #: The event's id in xp.EVENTS, and its title and words as they were
+    #: shown — copied, so renaming an event later doesn't rewrite history.
+    kind = Column(String(32), nullable=False, default="")
+    title = Column(String(120), nullable=False, default="")
+    text = Column(String(400), nullable=False, default="")
+    by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    undone = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, nullable=False, default=now, index=True)
 
 

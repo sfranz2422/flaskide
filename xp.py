@@ -189,6 +189,111 @@ def board_name(user):
 
 
 # --------------------------------------------------------------------------
+# Rewards, penalties and random events
+# --------------------------------------------------------------------------
+
+#: The reasons the teacher picks from on a class's XP page: (reason, XP).
+#: Programming-themed, sized to this XP — a level is a few hundred XP, so
+#: these are the size of a question or two, not of a level. The teacher can
+#: still type any amount and reason.
+BEHAVIORS = [
+    ("Helped debug a teammate's code", 10),
+    ("Found a bug in the class notes", 10),
+    ("Answered a question in class", 10),
+    ("Clean, well-commented code", 15),
+    ("Solved the challenge problem", 20),
+    ("Focused and hard-working today", 20),
+    ("Off task / distracting others", -5),
+    ("Late to class", -5),
+    ("Missing classwork", -10),
+]
+
+#: Random events, drawn by the teacher's button (app.py, class_event).
+#: `who` is everyone in the class ("all"), one random student ("one"), `n`
+#: random students ("some"), the student with the least XP ("lowest") or the
+#: most ("highest"). `weight` makes the good ones likelier than the bad.
+#: A penalty never takes a student below 0 XP (penalty_for).
+EVENTS = [
+    {"id": "first-try", "title": "It compiled on the first try!", "icon": "\U0001F389",
+     "text": "Every program in the room runs first time. Everyone gains 5 XP.",
+     "who": "all", "xp": 5, "weight": 3},
+    {"id": "rubber-duck", "title": "Rubber duck debugging", "icon": "\U0001F986",
+     "text": "A rubber duck on one desk starts giving excellent advice. One student gains 15 XP.",
+     "who": "one", "xp": 15, "weight": 4},
+    {"id": "mentor", "title": "A senior dev drops by", "icon": "\U0001F9D1\u200D\U0001F4BB",
+     "text": "A senior developer mentors the newest coder. The student with the least XP gains 15 XP.",
+     "who": "lowest", "xp": 15, "weight": 4},
+    {"id": "hackathon", "title": "Hackathon winners", "icon": "\U0001F3C6",
+     "text": "Three students' weekend project takes first place. They each gain 20 XP.",
+     "who": "some", "n": 3, "xp": 20, "weight": 2},
+    {"id": "missing-colon", "title": "Found the missing colon", "icon": "\U0001F50D",
+     "text": "After an hour of staring, one student spots it. They gain 10 XP.",
+     "who": "one", "xp": 10, "weight": 3},
+    {"id": "coffee", "title": "The coffee machine is fixed", "icon": "\u2615",
+     "text": "Productivity soars. Everyone gains 3 XP.",
+     "who": "all", "xp": 3, "weight": 3},
+    {"id": "legacy-bounty", "title": "Legacy code bounty", "icon": "\U0001F4B0",
+     "text": "One student untangles code nobody has touched since 1998. They gain 50 XP.",
+     "who": "one", "xp": 50, "weight": 1},
+    {"id": "prod-bug", "title": "Unexpected bug in production", "icon": "\U0001F41B",
+     "text": "Something nobody tested breaks for real users. Everyone loses 5 XP.",
+     "who": "all", "xp": -5, "weight": 2},
+    {"id": "infinite-loop", "title": "Infinite loop!", "icon": "\u267E\uFE0F",
+     "text": "One student's program never ends, and neither does the afternoon. They lose 5 XP.",
+     "who": "one", "xp": -5, "weight": 2},
+    {"id": "merge-conflict", "title": "Merge conflict", "icon": "\U0001F500",
+     "text": "Two students changed the same line. They each lose 5 XP.",
+     "who": "some", "n": 2, "xp": -5, "weight": 2},
+    {"id": "server-down", "title": "The server crashed", "icon": "\U0001F4A5",
+     "text": "Nobody saved. Everyone loses 3 XP.",
+     "who": "all", "xp": -3, "weight": 1},
+    {"id": "off-by-one", "title": "Off-by-one error", "icon": "\U0001F522",
+     "text": "Even the best make it. The student with the most XP loses 10 XP.",
+     "who": "highest", "xp": -10, "weight": 1},
+]
+
+EVENT_IDS = [e["id"] for e in EVENTS]
+
+
+def pick_event(rng):
+    """One event, at random by weight. `rng` is a random.Random, so a test
+    can hand it a seeded one."""
+    roll = rng.uniform(0, sum(e["weight"] for e in EVENTS))
+    for e in EVENTS:
+        roll -= e["weight"]
+        if roll <= 0:
+            return e
+    return EVENTS[-1]
+
+
+def event_targets(event, people, have, rng):
+    """Which of `people` (Users) an event hits, given their XP in `have`.
+    The least or most XP is one student; a tie is settled at random, so it
+    isn't always whoever sorts first."""
+    if not people:
+        return []
+    who = event["who"]
+    if who == "all":
+        return list(people)
+    if who == "some":
+        return rng.sample(list(people), min(event.get("n", 1), len(people)))
+    if who in ("lowest", "highest"):
+        score = [have.get(u.id, 0) for u in people]
+        edge = min(score) if who == "lowest" else max(score)
+        return [rng.choice([u for u in people if have.get(u.id, 0) == edge])]
+    return [rng.choice(list(people))]
+
+
+def penalty_for(amount, current):
+    """What XP a change really moves: all of a reward, but no more of a
+    penalty than the student has. XP never goes below 0 — a level-1 student
+    on 3 XP who is late loses 3, not 5."""
+    if amount >= 0:
+        return amount
+    return max(amount, -max(0, current))
+
+
+# --------------------------------------------------------------------------
 # Avatars
 # --------------------------------------------------------------------------
 
