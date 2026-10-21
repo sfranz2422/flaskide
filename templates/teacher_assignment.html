@@ -133,6 +133,31 @@
         two together are what goes to Classroom — so count them in Out of.</p>
     {% endif %}
 
+    {#  Tests (autograde.py): students check their own work as often as they
+        like; Check all runs every turned-in project here, in this browser,
+        and only that result counts toward the grade. #}
+    {% if tests or test_errors %}
+      <div class="tests-teacher" id="tests-teacher">
+        <p class="small">The notes have <strong>{{ tests|length }} test{{ "" if tests|length == 1 else "s" }}</strong>
+          worth <strong>{{ tests_points }} point{{ "" if tests_points == "1" else "s" }}</strong>.
+          Students can check their own work as often as they like. <strong>Check all</strong>
+          runs what each student turned in, here in your browser, and only that result is
+          added to their grade — count the tests in Out of.</p>
+        <p class="small"><a href="{{ url_for('help_questions') }}#tests" target="_blank" rel="noopener">How to write tests</a></p>
+        {% for e in test_errors %}<p class="small tests-error">⚠ {{ e }}</p>{% endfor %}
+        {% if tests %}
+          <div class="grade-line">
+            <button id="tests-check-all" class="btn btn-primary" type="button"
+                    {{ "disabled" if not handed_in }}>Check all</button>
+            <span id="tests-state" class="dim small" role="status">{% if not handed_in %}Nothing turned in yet.{% endif %}</span>
+          </div>
+        {% endif %}
+      </div>
+    {% elif assignment.kind != 'lesson' %}
+      <p class="small dim">Want the code checked automatically? Put a <code>tests</code> block in the
+        notes — <a href="{{ url_for('help_questions') }}#tests" target="_blank" rel="noopener">how to write tests</a>.</p>
+    {% endif %}
+
     {% if classroom_on %}
       <div class="gc">
         {% if posts %}
@@ -261,7 +286,7 @@
                 box is thirty clicks. The student sees it on their My work
                 page. It stays when they turn in again; the line under the
                 box says so, because the comment may be about the old copy. #}
-            <tr class="fb-row" data-sub="{{ s.id }}">
+            <tr class="fb-row" data-sub="{{ s.id }}" data-student="{{ s.student_id }}">
               <td colspan="4">
                 {#  A lesson has no code to open: what the student did is their
                     answers, so they are listed, right or not, in the order
@@ -295,6 +320,11 @@
                     {% endfor %}
                   </ol>
                 {% elif assignment.kind == 'lesson' %}<p class="dim small">No questions answered.</p>{% endif %}
+                {% if tests %}
+                  <ul class="tests-lines small" {% if not s.test_lines %}hidden{% endif %}>
+                    {% for t in s.test_lines %}<li class="{{ 'is-right' if t.ok else 'is-wrong' }}">{{ '✓' if t.ok else '✗' }} {{ t.label }}{% if t.detail and not t.ok %} <span class="dim">— {{ t.detail }}</span>{% endif %}</li>{% endfor %}
+                  </ul>
+                {% endif %}
                 <textarea class="field fb-text" rows="2" maxlength="5000"
                           placeholder="Feedback for {{ s.name }} — they see it on their My work page">{{ s.feedback }}</textarea>
                 <div class="fb-foot">
@@ -305,10 +335,18 @@
                   {% if s.quiz %}
                     <span class="fb-quiz small" title="Points from the questions in the notes">Questions {{ s.quiz }}{% if quiz_points %}/{{ quiz_points }}{% endif %}{% if assignment.out_of %} +{% endif %}</span>
                   {% endif %}
+                  {% if tests %}
+                    {#  Your Check all's result, which counts; theirs beside
+                        it, which doesn't. Stale when they turned in again
+                        after you checked. #}
+                    <span class="fb-tests small {{ 'is-stale' if s.tests_stale }}"
+                          title="{{ 'Turned in again since you checked — press Check all' if s.tests_stale else 'From your Check all' }}">Tests {{ s.tests or "not checked" }}{% if s.tests_stale %} ⟳{% endif %}{% if assignment.out_of and s.tests %} +{% endif %}</span>
+                    {% if s.tests_self %}<span class="dim small" title="Their own Check my work — doesn't count">(their check {{ s.tests_self }})</span>{% endif %}
+                  {% endif %}
                   {% if assignment.out_of %}
                     <input class="field fb-score" type="number" step="any" min="0"
                            value="{{ s.score }}" aria-label="Score for {{ s.name }}">
-                    {% if s.quiz %}<span class="dim">= <span class="fb-total">{{ s.total }}</span></span>{% endif %}
+                    {% if s.quiz or tests %}<span class="dim">= <span class="fb-total">{{ s.total }}</span></span>{% endif %}
                     <span class="dim">/ {{ assignment.out_of }}</span>
                   {% endif %}
                   <button class="btn fb-save">Save</button>
@@ -881,5 +919,87 @@
   });
 </script>
 
+{#  Check all: every turned-in project, run against the notes' tests HERE,
+    in the teacher's browser — which is what makes the result safe to count
+    (autograde.py says why it can't be the student's). Python is only loaded
+    when the button is pressed: it is several MB, and most visits to this
+    page are to read and mark. #}
+{% if tests %}
+<script>
+(function () {
+  var btn = document.getElementById("tests-check-all");
+  if (!btn) return;
+  var state = document.getElementById("tests-state");
+  var slug = {{ assignment.slug|tojson }};
+  var tests = {{ tests|tojson }};
+  var pyodide = null;
+
+  function load(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = src; s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  /* Python and Flask, loaded the way the editor loads them (flask.js). */
+  async function python() {
+    if (pyodide) return pyodide;
+    state.textContent = "Loading Python…";
+    if (!window.loadPyodide) await load("https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js");
+    if (!window.FlaskIDERuntime) await load({{ url_for('static', filename='flask.js')|tojson }});
+    if (!window.PyIDETests) await load({{ url_for('static', filename='autograde.js')|tojson }});
+    await window.FlaskIDERuntime.boot(function (note) { if (note) state.textContent = note; });
+    pyodide = window.FlaskIDERuntime;
+    return pyodide;
+  }
+  function paintRow(student, out, lines) {
+    var row = document.querySelector('.fb-row[data-student="' + student + '"]');
+    if (!row) return;
+    var t = row.querySelector(".fb-tests");
+    if (t) {
+      t.classList.remove("is-stale");
+      t.title = "From your Check all";
+      t.textContent = "Tests " + out.earned + " / " + out.possible + ({{ 'true' if assignment.out_of else 'false' }} ? " +" : "");
+    }
+    var total = row.querySelector(".fb-total");
+    if (total && out.total) total.textContent = out.total;
+    paintSync(row, out.total, out.synced);
+    var list = row.querySelector(".tests-lines");
+    if (list) {
+      list.innerHTML = "";
+      lines.forEach(function (r) {
+        var li = document.createElement("li");
+        li.className = r.ok ? "is-right" : "is-wrong";
+        li.textContent = (r.ok ? "✓ " : "✗ ") + r.label + (r.ok || !r.detail ? "" : " — " + r.detail);
+        list.appendChild(li);
+      });
+      list.hidden = false;
+    }
+  }
+  btn.addEventListener("click", async function () {
+    btn.disabled = true;
+    try {
+      var py = await python();
+      state.textContent = "Fetching what was turned in…";
+      var res = await fetch("/api/assignment/" + encodeURIComponent(slug) + "/tests/work");
+      if (!res.ok) throw new Error("couldn't fetch the work");
+      var work = (await res.json()).work;
+      for (var i = 0; i < work.length; i++) {
+        state.textContent = "Checking " + work[i].name + " (" + (i + 1) + " of " + work.length + ")…";
+        var got = await window.PyIDETests.run(py, work[i].files, tests);
+        var saved = await post(base + "/tests/verify", { student: work[i].student, results: got.results });
+        if (!saved.ok) throw new Error(saved.d.error || "a result wasn't saved");
+        paintRow(work[i].student, saved.d, got.results);
+      }
+      state.textContent = "Checked " + work.length + " project" + (work.length === 1 ? "" : "s") + ".";
+    } catch (e) {
+      state.textContent = "Stopped: " + (e && e.message ? e.message : e) + ". Press Check all to try again.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endif %}
 </body>
 </html>

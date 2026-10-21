@@ -82,12 +82,13 @@
                     <span class="dim small">{{ a.feedback_when }}</span>
                   </div>
                   {#  The questions in the notes count as soon as they are
-                      answered, so their points show before the teacher has
-                      marked anything — and the score is then the two added
-                      up, which is what goes to Google Classroom. #}
+                      answered, and the tests once the teacher has checked
+                      them (Check all), so their points show before the
+                      teacher has marked anything — and the score is then
+                      them added up, which is what goes to Google Classroom. #}
                   {% if a.score or a.quiz %}
                     <div class="feedback-score">Score: <strong>{{ a.total }}{% if a.out_of %} / {{ a.out_of }}{% endif %}</strong>
-                      {% if a.quiz %}<span class="dim small">· {{ a.quiz }} from the questions</span>{% endif %}</div>
+                      {% if a.quiz %}<span class="dim small">· {{ a.quiz }} from the questions and tests</span>{% endif %}</div>
                   {% endif %}
                   {% if a.feedback %}<div class="feedback-body">{{ a.feedback }}</div>{% endif %}
                   {% if a.feedback_older %}

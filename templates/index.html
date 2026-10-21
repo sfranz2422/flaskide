@@ -68,6 +68,9 @@
       <span class="btn-icon">▶</span><span id="run-label">Run</span>
     </button>
     <button id="stop" class="btn btn-stop" hidden>■ Stop</button>
+    {#  Check my work: the notes' tests, run here, as often as they like
+        (autograde.js). Only on a project whose notes have tests. #}
+    <button id="check" class="btn btn-check" hidden title="Run your teacher's tests on your code">✔ Check my work</button>
     {#  The app's pages in a tab of their own: bigger on a projector, and
         a real-looking site for students to click around. Flask apps only —
         a SQL project has no pages. #}
@@ -308,6 +311,8 @@
           {% if authoring %}
             <a class="linkbtn" href="{{ url_for('help_questions') }}" target="_blank" rel="noopener"
                title="How to write ```quiz questions in these notes">Question formats</a>
+            <a class="linkbtn" href="{{ url_for('help_questions') }}#tests" target="_blank" rel="noopener"
+               title="A ```tests block: what Check my work and Check all check the code against">Tests</a>
             <a class="linkbtn" href="{{ url_for('help_questions') }}#themes" target="_blank" rel="noopener"
                title="A look for the slides: theme: and a name on the first line">Themes</a>
             {#  Only a teacher may upload (/api/image); anyone else
@@ -459,6 +464,7 @@
 <script src="{{ url_for('static', filename='account.js') }}"></script>
 <script src="{{ url_for('static', filename='split.js') }}"></script>
 <script src="{{ url_for('static', filename='laser.js') }}"></script>
+<script src="{{ url_for('static', filename='autograde.js') }}"></script>
 <script src="{{ url_for('static', filename='xp.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 {% include "_idle.html" %}

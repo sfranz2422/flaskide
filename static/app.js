@@ -274,6 +274,7 @@
     if (!strip) return;
     strip.textContent = "";
     renderNotesButtons();
+    refreshCheck();
     tabOrder().filter(function (name) {
       return !(notesAsButtons() && isNotes(name));
     }).forEach(function (name) {
@@ -422,6 +423,57 @@
     window.PyIDEXP.ran(files, XP_CODE);
   }
 
+  /* Check my work: the tests in the notes (autograde.js), run here on what
+     is in the editor now, as often as the student likes. It is feedback:
+     the result is kept for the teacher to see, but what counts is the
+     teacher's Check all on what was turned in — a check run in this
+     browser could be faked. Shown only when the notes have tests. */
+  function testsHere() {
+    return window.PyIDETests ? window.PyIDETests.fromFiles(readProject().files).tests : [];
+  }
+
+  function refreshCheck() {
+    var b = $("check");
+    if (b) b.hidden = !testsHere().length;
+  }
+
+  async function checkWork() {
+    if (running) return;
+    var project = readProject(), tests = testsHere();
+    if (!tests.length) return;
+    if (notesShown) showPreview();
+    running = true;
+    var btns = [$("run"), $("check")];
+    btns.forEach(function (b) { if (b) b.disabled = true; });
+    clearOutput();
+    say("Checking your code against " + tests.length + " test" +
+        (tests.length === 1 ? "" : "s") + "…\n", "dim");
+    try {
+      await runtime.boot(function (note) { if (note) say(note + "\n", "dim"); });
+      var got = await window.PyIDETests.run(runtime, project.files, tests);
+      clearOutput();
+      got.results.forEach(function (r) {
+        say((r.ok ? "✓ " : "✗ ") + r.label + "\n", r.ok ? "" : "err");
+        if (!r.ok && r.detail) say("    " + r.detail + "\n", "dim");
+      });
+      say("\n" + got.earned + " of " + got.possible + " points" +
+          (got.earned === got.possible ? " — every test passes." : ".") + "\n");
+      say("This check is for you. What counts is your teacher's check of what " +
+          "you turn in.\n", "dim");
+      if (cfg.signedIn && cfg.assignmentSlug && !cfg.viewOnly) {
+        fetch("/api/tests/self", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignment: cfg.assignmentSlug, results: got.results })
+        }).catch(function () {});
+      }
+    } catch (err) {
+      say("\n" + (err && err.message ? err.message : String(err)) + "\n", "err");
+    } finally {
+      running = false;
+      btns.forEach(function (b) { if (b) b.disabled = false; });
+    }
+  }
+
   async function run() {
     if (running) return;
     // Run with the notes up would run into a pane nobody can see, and look
@@ -431,6 +483,9 @@
     hasRun = true;
     var btn = $("run");
     if (btn) btn.disabled = true;
+    // Not a check while a run is going: both load the app into one Python.
+    var checkBtn = $("check");
+    if (checkBtn) checkBtn.disabled = true;
     clearOutput();
 
     var project = readProject();
@@ -440,6 +495,7 @@
       } finally {
         running = false;
         if (btn) btn.disabled = false;
+        if (checkBtn) checkBtn.disabled = false;
       }
       return;
     }
@@ -486,6 +542,7 @@
     } finally {
       running = false;
       if (btn) btn.disabled = false;
+      if (checkBtn) checkBtn.disabled = false;
     }
   }
 
@@ -911,6 +968,8 @@
     }
 
     if ($("run")) $("run").addEventListener("click", run);
+    if ($("check")) $("check").addEventListener("click", checkWork);
+    refreshCheck();
     if ($("run-tab")) $("run-tab").addEventListener("click", runInNewTab);
     if ($("preview-back")) $("preview-back").addEventListener("click", function () {
       preview.back();

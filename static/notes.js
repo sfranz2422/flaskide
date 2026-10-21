@@ -466,6 +466,12 @@ window.FlaskIDENotes = (function () {
   function pointsText(p) { return p + (p === 1 ? " point" : " points"); }
 
   function enhanceQuizzes(root) {
+    // A ```tests block, as the list of what the code will be checked on —
+    // where autograde.js is loaded (the editor, the live page); elsewhere
+    // it stays the code block it was, which still says the same.
+    if (window.PyIDETests) {
+      try { window.PyIDETests.renderBlocks(root); } catch (e) { /* left as code */ }
+    }
     var codes = root.querySelectorAll("pre > code.language-quiz");
     /* One at a time, each on its own: a question that cannot be built stays
        on the page as the code block it came in, and the rest of the notes

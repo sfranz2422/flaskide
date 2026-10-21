@@ -38,6 +38,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from werkzeug.exceptions import BadRequest
 
 import accounts
+import autograde
 import quiz
 import xp
 
@@ -1474,7 +1475,7 @@ def my_work():
 
         earned = {}
         for aid in items:
-            got = _quiz_earned(db, aid).get(user.id)
+            got = _earned(db, aid).get(user.id)
             if got is not None:
                 earned[aid] = got
 
@@ -2215,11 +2216,179 @@ def quiz_grade():
         earned = _quiz_earned(db, item.id).get(student_id)
         sub = db.query(accounts.Submission).filter_by(
             assignment_id=item.id, student_id=student_id).first()
-        total = _total(sub.score if sub else None, earned)
+        total = _total(sub.score if sub else None, _earned(db, item.id).get(student_id))
         return jsonify(ok=True, score=_score_text(score), quiz=_score_text(earned),
                        total=_score_text(total),
                        synced=bool(sub and _is_synced(sub, total)),
                        waiting=_ungraded(db, [item.id]).get(item.id, 0))
+    finally:
+        db.close()
+
+
+# --------------------------------------------------------------------------
+# Tests: Check my work, and the teacher's Check all
+# --------------------------------------------------------------------------
+# An assignment's notes can carry a ```tests block (autograde.py has the
+# format). The tests run in a browser, never here. A student's Check my work
+# runs them in theirs — feedback, which a determined student could fake, so
+# it is only kept for the teacher to see. The teacher's Check all runs them
+# in the teacher's browser on what each student turned in, and THAT result
+# is the one that counts toward the grade: added to the questions' points in
+# _earned, which every total goes through (results, My work, Sync, Skyward,
+# the class page, quests).
+
+def _result_text(row):
+    """"7 / 10" for a result row, "" for none."""
+    if row is None:
+        return ""
+    return "%s / %s" % (_score_text(row.earned), _score_text(row.possible))
+
+
+def _when_naive(t):
+    """A stored time comparable with another: SQLite hands back naive ones,
+    Postgres aware ones, and the two can't be compared."""
+    return t.replace(tzinfo=None) if t is not None and t.tzinfo is not None else t
+
+
+def _tests_earned(db, assignment_id):
+    """{student id: points from the teacher's checked tests}."""
+    return {r.student_id: r.earned for r in db.query(accounts.TestResult).filter_by(
+        assignment_id=assignment_id, kind="verified")}
+
+
+def _earned(db, assignment_id):
+    """{student id: the points the notes give} — questions answered plus
+    tests the teacher checked. What a grade adds to the teacher's score."""
+    out = dict(_quiz_earned(db, assignment_id))
+    for sid, pts in _tests_earned(db, assignment_id).items():
+        out[sid] = round(out.get(sid, 0.0) + pts, 2)
+    return out
+
+
+def _clean_results(raw):
+    """A results list from a page, cut down to what it should be: a few
+    hundred short labelled lines at most."""
+    out = []
+    for r in (raw if isinstance(raw, list) else [])[:200]:
+        if not isinstance(r, dict):
+            continue
+        try:
+            points = float(r.get("points") or 0)
+        except (TypeError, ValueError):
+            points = 0.0
+        out.append({"label": str(r.get("label", ""))[:200], "ok": bool(r.get("ok")),
+                    "detail": str(r.get("detail", ""))[:400],
+                    "points": max(0.0, min(points, 1000.0))})
+    return out
+
+
+def _keep_result(db, item, student_id, kind, data):
+    results = _clean_results(data.get("results"))
+    possible = round(sum(r["points"] for r in results), 2)
+    earned = round(sum(r["points"] for r in results if r["ok"]), 2)
+    row = db.query(accounts.TestResult).filter_by(
+        assignment_id=item.id, student_id=student_id, kind=kind).first()
+    if row is None:
+        row = accounts.TestResult(assignment_id=item.id, student_id=student_id, kind=kind)
+        db.add(row)
+    # Worked out from the lines, not taken from the page's own sum, so a
+    # page can't claim more points than the lines it sent.
+    row.earned, row.possible = earned, possible
+    row.details = json.dumps(results)
+    row.checked_at = accounts.now()
+    try:
+        db.commit()
+    except Exception:
+        # The same student checked from two tabs at once: the other's row
+        # is the result, which is the same tests on the same work.
+        db.rollback()
+    return row
+
+
+@app.post("/api/tests/self")
+def tests_self():
+    """A student's own Check my work, kept for the teacher to see. It counts
+    toward nothing."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in to keep your result."), 401
+        data = request.get_json(silent=True) or {}
+        item = _quiz_assignment(db, data.get("assignment"))
+        if item is None:
+            return jsonify(error="No such assignment."), 404
+        if user.id == item.teacher_id or accounts.is_teacher(user.email):
+            return jsonify(ok=True, practice=True)
+        row = _keep_result(db, item, user.id, "self", data)
+        return jsonify(ok=True, earned=row.earned, possible=row.possible)
+    finally:
+        db.close()
+
+
+@app.get("/api/assignment/<slug>/tests/work")
+def tests_work(slug):
+    """Every turned-in project's files, for the teacher's Check all — the
+    snapshot each student turned in, notes left out (the tests come from
+    the assignment's notes as they are now)."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        rows = (db.query(accounts.Submission, accounts.User)
+                  .join(accounts.User, accounts.Submission.student_id == accounts.User.id)
+                  .filter(accounts.Submission.assignment_id == item.id,
+                          accounts.Submission.snippet_slug != "")
+                  .order_by(accounts.User.name).all())
+        snaps = {sn.slug: sn for sn in db.query(Project).filter(
+            Project.slug.in_([sub.snippet_slug for sub, _ in rows] or [""]))}
+        work = []
+        for sub, student in rows:
+            snap = snaps.get(sub.snippet_slug)
+            if snap is None:
+                continue
+            # Every file of the snapshot — app.py, templates, static,
+            # schema.sql — but the notes.
+            files = {n: t for n, t in _as_files(snap.files).items()
+                     if not n.lower().endswith(".md")}
+            work.append({"student": student.id, "name": student.display_name(), "files": files})
+        return jsonify(work=work)
+    finally:
+        db.close()
+
+
+def _as_files(raw):
+    try:
+        data = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return {str(k): v for k, v in data.items() if isinstance(v, str)} if isinstance(data, dict) else {}
+
+
+@app.post("/api/assignment/<slug>/tests/verify")
+def tests_verify(slug):
+    """One student's result from the teacher's Check all. Counts toward
+    their grade, and can complete the assignment's quest."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        data = request.get_json(silent=True) or {}
+        try:
+            student_id = int(data.get("student"))
+        except (TypeError, ValueError):
+            return jsonify(error="No such student."), 404
+        sub = db.query(accounts.Submission).filter_by(
+            assignment_id=item.id, student_id=student_id).first()
+        if sub is None:
+            return jsonify(error="They haven't turned anything in."), 404
+        row = _keep_result(db, item, student_id, "verified", data)
+        _full_marks_xp(db, item, student_id)
+        total = _total(sub.score, _earned(db, item.id).get(student_id))
+        return jsonify(ok=True, earned=row.earned, possible=row.possible,
+                       total=_score_text(total), synced=_is_synced(sub, total))
     finally:
         db.close()
 
@@ -2699,7 +2868,7 @@ def give_feedback(slug):
         sub.feedback_seen = 0
         db.commit()
         _full_marks_xp(db, item, sub.student_id)
-        earned = _quiz_earned(db, item.id).get(sub.student_id)
+        earned = _earned(db, item.id).get(sub.student_id)
         total = _total(sub.score, earned)
         return jsonify(ok=True, feedback=text, score=_score_text(sub.score),
                        total=_score_text(total),
@@ -2728,8 +2897,13 @@ def teacher_assignment(slug):
                   .filter(accounts.Submission.assignment_id == item.id)
                   .order_by(accounts.User.name).all())
         earned = _quiz_earned(db, item.id)
+        points = _earned(db, item.id)
         possible = _quiz_possible(item)
         answers = _answers_for_teacher(db, item)
+        tests, test_errors = autograde.file_tests(item.file_map())
+        results = {}
+        for r in db.query(accounts.TestResult).filter_by(assignment_id=item.id):
+            results.setdefault(r.student_id, {})[r.kind] = r
         handed_in = [{
             "name": student.display_name(),
             "email": student.email,
@@ -2754,8 +2928,16 @@ def teacher_assignment(slug):
                                 and sub.submitted_at > sub.feedback_at),
             "score": _score_text(sub.score),
             "quiz": _score_text(earned.get(student.id)),
-            "total": _score_text(_total(sub.score, earned.get(student.id))),
-            "synced": _is_synced(sub, _total(sub.score, earned.get(student.id))),
+            "total": _score_text(_total(sub.score, points.get(student.id))),
+            "synced": _is_synced(sub, _total(sub.score, points.get(student.id))),
+            "tests": _result_text(results.get(student.id, {}).get("verified")),
+            # Checked before they last turned in: the work has changed since.
+            "tests_stale": bool(results.get(student.id, {}).get("verified") is not None
+                                and _when_naive(results[student.id]["verified"].checked_at)
+                                < _when_naive(sub.submitted_at)),
+            "tests_self": _result_text(results.get(student.id, {}).get("self")),
+            "test_lines": json.loads(results.get(student.id, {}).get("verified").details)
+                          if results.get(student.id, {}).get("verified") is not None else [],
         } for sub, student in rows]
 
         # Anyone who opened the assignment but never pressed Turn in.
@@ -2796,6 +2978,8 @@ def teacher_assignment(slug):
         ctx.update(quiz_count=len(possible),
                    quiz_points=_score_text(sum(q["points"] for q in possible)))
         ctx.update(waiting=_ungraded(db, [item.id]).get(item.id, 0))
+        ctx.update(tests=tests, test_errors=test_errors,
+                   tests_points=_score_text(sum(t["points"] for t in tests)))
         ctx.update(assignment=item, handed_in=handed_in, not_yet=not_yet,
                    share_url=url_for("open_assignment", slug=item.slug,
                                      _external=True, _scheme=_scheme()))
@@ -3669,7 +3853,7 @@ def classroom_sync(slug):
         waiting = [p.course_name or "a class" for p, _ in classes if p.id in drafts]
         # What goes across is the score PLUS the questions' points, and a
         # student with no score yet but answers given still has a grade.
-        earned = _quiz_earned(db, item.id)
+        earned = _earned(db, item.id)
         totals = {sub.id: _total(sub.score, earned.get(sub.student_id))
                   for sub, _ in rows}
         for sub, student in rows:
@@ -3803,7 +3987,7 @@ def skyward_file(slug):
         rows = (db.query(accounts.Submission, accounts.User)
                   .join(accounts.User, accounts.Submission.student_id == accounts.User.id)
                   .filter(accounts.Submission.assignment_id == item.id).all())
-        earned = _quiz_earned(db, item.id)
+        earned = _earned(db, item.id)
         lines, guessed, ungraded, nameless = [], [], [], []
         for sub, student in rows:
             email = student.email.lower()
@@ -4489,7 +4673,7 @@ def _class_rows(db, course, user=None, student=False):
         sent_to = {p.assignment_id for p in db.query(accounts.ClassroomPost.assignment_id)
                    .filter(accounts.ClassroomPost.assignment_id.in_(ids))}
         sent_to |= {a.id for a in items.values() if a.classroom_work_id}
-        earned_by = {aid: _quiz_earned(db, aid) for aid in sent_to}
+        earned_by = {aid: _earned(db, aid) for aid in sent_to}
         for sub in (db.query(accounts.Submission)
                       .filter(accounts.Submission.assignment_id.in_(list(sent_to)))
                     if sent_to else []):
@@ -4542,7 +4726,7 @@ def _class_rows(db, course, user=None, student=False):
                                              if a.classroom_work_id else [])}
         if student:
             sub = subs.get(a.id)
-            earned = _quiz_earned(db, a.id).get(user.id) if user else None
+            earned = _earned(db, a.id).get(user.id) if user else None
             total = _total(sub.score if sub else None, earned)
             # The live link only if the teacher shows it — or it is on the
             # air now, when hiding it would hide the lesson from the class.
@@ -4886,16 +5070,18 @@ def _quiz_xp(db, item, user, key, answer):
 
 
 def _has_full_marks(db, item, student_id):
-    """Full marks: the grade (score plus questions) reaching Out of, or —
-    for an assignment with no points — every question's points earned. An
-    assignment with neither has no full marks to get."""
-    earned = _quiz_earned(db, item.id).get(student_id)
+    """Full marks: the grade (score plus questions plus checked tests)
+    reaching Out of, or — for an assignment with no points — every
+    question's and test's points earned. An assignment with none of those
+    has no full marks to get."""
+    earned = _earned(db, item.id).get(student_id)
     if item.out_of:
         sub = db.query(accounts.Submission).filter_by(
             assignment_id=item.id, student_id=student_id).first()
         total = _total(sub.score if sub else None, earned)
         return total is not None and total >= item.out_of
-    possible = sum(q["points"] for q in _quiz_possible(item))
+    possible = (sum(q["points"] for q in _quiz_possible(item))
+                + autograde.possible(item.file_map()))
     return possible > 0 and earned is not None and earned >= possible - 0.001
 
 

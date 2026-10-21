@@ -38,7 +38,7 @@ failing one, so a red suite cannot scroll past unnoticed — a bare
 `for ... do python3 "$t"; done` will let it.
 
 **`node` is required** by `test_complete.py`, `test_pack.py`, `test_quiz.py`,
-`test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py`, `test_xp.py` and `test_keep_place.py`. `test_syntax.py`
+`test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py`, `test_xp.py`, `test_keep_place.py` and `test_autograde.py`. `test_syntax.py`
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
 `brew install node` if it is missing.
@@ -265,6 +265,29 @@ deletes it. They are not `images`, because `/img/<slug>` serves anyone with
 the address. The page crops and shrinks a photo to 400px before sending.
 
 The XP pages load `pack.js` first like every page here that sends JSON.
+
+**Tests: Check my work and Check all** (`autograde.py`,
+`static/autograde.js`, "Tests" in `app.py`, `/help/questions#tests`). A
+```` ```tests ```` block in an assignment's notes is checked against the
+student's project, one test per line: a request (`GET / -> 200`,
+`GET / contains Welcome`, `POST /login name=sam&pw=1 -> contains Hello`),
+the code's shape (`uses render_template`, `avoids eval`, `defines home`),
+or, in a SQL project, the last query's result (`returns 3 rows`,
+`result contains Alice`). The app is loaded as Run loads it
+(`_flaskide_load`) and each request goes through Flask's test client, under
+a time limit. **They run in a browser, never on the server.** A student's
+Check my work runs in theirs — feedback, which could be faked, so it is kept
+(`TestResult`, kind "self") for the teacher to see and counts for nothing.
+The teacher's Check all loads Python and Flask in the TEACHER's browser,
+runs every turned-in snapshot, and posts kind "verified", which is added to
+the grade through `_earned` — every total goes through it, so Classroom,
+Skyward, My work, the class page and quests all include it. Points are
+summed from the lines posted, never a total a page claims. A verified result
+older than the last turn-in is shown stale (⟳). autograde.js reads a block
+exactly as autograde.py; `test_autograde.py` holds them together and runs
+the tests on flask.js's own bridge with real Flask, as `test_bridge.py`
+does. The global is `PyIDETests` in all three editors (notes.js looks for
+it); each editor's tests are its own.
 
 ## Style
 

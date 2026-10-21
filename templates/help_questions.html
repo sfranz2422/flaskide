@@ -56,6 +56,30 @@
     </section>
   {% endfor %}
 
+  {#  Tests: autograde.py has the format; test_autograde.py checks this
+      example parses, so the help can't drift from what is accepted. #}
+  <h2 id="tests">Tests — Check my work and Check all</h2>
+  <p>A <code>tests</code> block in an assignment's notes is checked against the student's code.
+    Students press <strong>Check my work</strong> as often as they like. On the assignment's
+    page, <strong>Check all</strong> runs what each student turned in, in your browser, and
+    only that result is added to their grade. One test per line; each is 1 point unless the
+    line ends with <code>(2 points)</code>.</p>
+  <pre class="help-src" id="tests-example">```tests
+GET / -&gt; 200                              the page answers 200
+GET /nope -&gt; 404                          …or any other status
+GET / contains Welcome                     the page shows Welcome
+POST /login name=sam&amp;pw=1 -&gt; contains Hello, sam     a form sent to the route
+uses render_template                       a name in the .py files (also for, if, import sqlite3…)
+avoids eval                                the name eval appears nowhere
+defines home        (2 points)             there is a def home
+returns 3 rows                             SQL projects: the last query's rows
+result contains Alice                      …and a value in them
+# a line starting with # is a comment
+```</pre>
+  <p class="dim">"contains" ignores capitals and extra spaces, and looks at the page both as
+    HTML and as a reader sees it. A route that crashes, or takes longer than 5 seconds, fails
+    that test and says why.</p>
+
   <h2>Slides</h2>
   <p>A line with only <code>---</code> on it starts a new slide. A question can go on any slide.</p>
 
