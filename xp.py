@@ -196,37 +196,77 @@ def board_name(user):
 #: Every part an avatar is built from, by kind, in the order the editor
 #: shows them: (id, label, level it unlocks at). static/avatar.js draws each
 #: id, and test_xp.py checks it can draw every one listed here.
+#:
+#: Two styles. A "character" is built from the parts below: fantasy
+#: classes and everyday clothes to start, armour, robes and magic as the
+#: levels come. A "picture" is one ready-made image instead: a sun, a flower, a
+#: dragon, a blocky figure. The blocky ones are drawn here, in the style of
+#: block games, and copy no game's actual characters. The background is
+#: shared by both. Changing style keeps the other style's choices, so a
+#: student can switch back without rebuilding their face.
 AVATAR_PARTS = {
+    "style": [("hero", "Character", 1), ("icon", "Picture", 1)],
+    "icon": [("sun", "Sun", 1), ("flower", "Flower", 1), ("moon", "Moon", 1),
+             ("mountain", "Mountain", 1), ("wave", "Wave", 1), ("star", "Star", 1),
+             ("blocky", "Blocky hero", 1), ("grass", "Grass block", 1),
+             ("sword", "Sword & shield", 1), ("potion", "Potion", 2),
+             ("pixsword", "Pixel sword", 2), ("pickaxe", "Pickaxe", 3),
+             ("crystal", "Crystal", 4), ("ore", "Diamond ore", 5),
+             ("dragon", "Fire dragon", 6), ("phoenix", "Phoenix", 8)],
     "skin": [("s1", "Light", 1), ("s2", "Fair", 1), ("s3", "Medium", 1),
              ("s4", "Tan", 1), ("s5", "Brown", 1), ("s6", "Deep", 1)],
-    "face": [("round", "Round", 1), ("oval", "Oval", 1), ("square", "Square", 1)],
-    "hair": [("none", "None", 1), ("short", "Short", 1), ("buzz", "Buzz", 1),
-             ("long", "Long", 1), ("curly", "Curly", 1), ("bun", "Bun", 1),
-             ("spiky", "Spiky", 3), ("mohawk", "Mohawk", 5)],
+    "face": [("oval", "Oval", 1), ("square", "Angular", 1), ("round", "Round", 1)],
+    "hair": [("short", "Short", 1), ("buzz", "Buzz", 1), ("swept", "Swept", 1),
+             ("messy", "Messy", 1), ("curly", "Curly", 1), ("long", "Long", 1),
+             ("ponytail", "Ponytail", 1), ("braids", "Braids", 1),
+             ("none", "None", 1), ("spiky", "Spiky", 3), ("mohawk", "Mohawk", 5)],
     "hair_color": [("black", "Black", 1), ("brown", "Brown", 1),
-                   ("blonde", "Blonde", 1), ("red", "Red", 1),
-                   ("gray", "Gray", 1), ("blue", "Blue", 4),
-                   ("pink", "Pink", 4), ("green", "Green", 6),
+                   ("auburn", "Auburn", 1), ("blonde", "Blonde", 1),
+                   ("red", "Red", 1), ("gray", "Gray", 1), ("blue", "Blue", 3),
+                   ("purple", "Purple", 3), ("white", "White", 5),
                    ("gold", "Gold", 9)],
-    "eyes": [("dots", "Dots", 1), ("round", "Round", 1), ("happy", "Happy", 1),
-             ("sleepy", "Sleepy", 2), ("wink", "Wink", 3), ("stars", "Stars", 7)],
-    "mouth": [("smile", "Smile", 1), ("grin", "Grin", 1), ("flat", "Flat", 1),
-              ("open", "Open", 2), ("tongue", "Tongue", 5)],
+    "beard": [("none", "None", 1), ("stubble", "Stubble", 1),
+              ("goatee", "Goatee", 1), ("full", "Beard", 1)],
+    "eyes": [("calm", "Calm", 1), ("focused", "Focused", 1), ("fierce", "Fierce", 1),
+             ("glow", "Glowing", 6), ("ember", "Ember", 8)],
+    "mouth": [("neutral", "Neutral", 1), ("smile", "Smile", 1),
+              ("smirk", "Smirk", 1), ("grin", "Grin", 1)],
+    "marks": [("none", "None", 1), ("freckles", "Freckles", 1),
+              ("scar", "Scar", 2), ("warpaint", "War paint", 3),
+              ("rune", "Glowing rune", 7)],
     "glasses": [("none", "None", 1), ("round", "Round", 1),
-                ("square", "Square", 2), ("shades", "Shades", 4),
-                ("visor", "Visor", 8)],
-    "hat": [("none", "None", 1), ("beanie", "Beanie", 2), ("cap", "Cap", 3),
-            ("headphones", "Headphones", 5), ("wizard", "Wizard hat", 9),
+                ("square", "Square", 1), ("shades", "Shades", 2)],
+    "mask": [("none", "None", 1), ("cloth", "Rogue's mask", 2),
+             ("veil", "Shadow veil", 5)],
+    "hat": [("none", "None", 1), ("hood", "Hood", 1), ("bandana", "Bandana", 1),
+            ("beanie", "Beanie", 1), ("cap", "Backwards cap", 1),
+            ("headphones", "Headphones", 1), ("circlet", "Circlet", 4),
+            ("helmet", "Knight helmet", 6), ("wizard", "Wizard hat", 9),
             ("crown", "Crown", 10)],
-    "background": [("sky", "Sky", 1), ("mint", "Mint", 1), ("peach", "Peach", 1),
-                   ("lilac", "Lilac", 1), ("night", "Night", 3),
-                   ("sunset", "Sunset", 6), ("galaxy", "Galaxy", 8)],
+    "outfit": [("duelist", "Duelist", 1), ("bard", "Bard", 1),
+               ("scout", "Scout", 1), ("hoodie", "Hoodie", 1),
+               ("tee", "T-shirt", 1), ("jacket", "Jacket", 1),
+               ("varsity", "Varsity jacket", 1), ("rogue", "Rogue", 2),
+               ("warrior", "Warrior", 2), ("knight", "Knight", 3),
+               ("mage", "Mage", 4), ("ranger", "Ranger", 5),
+               ("sorcerer", "Sorcerer", 6), ("darkknight", "Dark knight", 8),
+               ("paladin", "Paladin", 10)],
+    "effect": [("none", "None", 1), ("sparks", "Sparks", 2), ("fire", "Fire", 3),
+               ("frost", "Frost", 5), ("arcane", "Arcane", 6),
+               ("nature", "Nature", 7), ("lightning", "Lightning", 9)],
+    "background": [("falls", "Waterfalls", 1), ("forest", "Forest", 1),
+                   ("slate", "Slate", 1), ("midnight", "Midnight", 1),
+                   ("crimson", "Crimson", 1), ("sky", "Sky", 1),
+                   ("castle", "Castle", 2), ("night", "Starry night", 3),
+                   ("sunset", "Sunset", 4), ("lava", "Lava", 7),
+                   ("galaxy", "Galaxy", 8)],
 }
 
 AVATAR_KINDS = list(AVATAR_PARTS)
 
+#: What a student who never chose looks like: the first of each kind — a
+#: duelist in front of the waterfalls, nothing on their head.
 DEFAULT_AVATAR = {kind: parts[0][0] for kind, parts in AVATAR_PARTS.items()}
-DEFAULT_AVATAR.update(hair="short", hair_color="brown", eyes="round")
 
 
 def avatar_of(user):
