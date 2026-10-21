@@ -102,6 +102,13 @@ class User(Base):
     avatar = Column(Text, nullable=False, default="")
     board_hidden = Column(Integer, nullable=False, default=0)
     tokens_used = Column(Integer, nullable=False, default=0)
+    #: Editor themes (xp.EDITOR_THEMES): the ones bought with tokens, as a
+    #: comma-separated list of ids, and the one chosen ("" is the ordinary
+    #: light/dark). Free themes unlock by level and are never listed here.
+    #: The choice is checked against both whenever a page is drawn, so a
+    #: theme that stops being theirs simply stops showing.
+    themes_owned = Column(String(400), nullable=False, default="")
+    editor_theme = Column(String(24), nullable=False, default="")
 
     def display_name(self) -> str:
         return self.name or self.email.split("@")[0]
@@ -425,6 +432,10 @@ class ShopItem(Base):
     description = Column(String(400), nullable=False, default="")
     cost = Column(Integer, nullable=False, default=1)
     active = Column(Integer, nullable=False, default=1)
+    #: An editor theme's id (xp.EDITOR_THEMES) when the item is one: bought
+    #: at once, no request, because it only changes the buyer's own screen.
+    #: "" for everything else.
+    theme = Column(String(24), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=now)
 
 
@@ -1027,6 +1038,14 @@ LATER_COLUMNS = [
      "ALTER TABLE users ADD COLUMN tokens_used INTEGER NOT NULL DEFAULT 0"),
     ("assignments", "xp_bonus",
      "ALTER TABLE assignments ADD COLUMN xp_bonus INTEGER NOT NULL DEFAULT 0"),
+    # Editor themes. Empty is true of everyone and every shop item from
+    # before them: nobody owned or chose one, and no item was a theme.
+    ("users", "themes_owned",
+     "ALTER TABLE users ADD COLUMN themes_owned VARCHAR(400) NOT NULL DEFAULT ''"),
+    ("users", "editor_theme",
+     "ALTER TABLE users ADD COLUMN editor_theme VARCHAR(24) NOT NULL DEFAULT ''"),
+    ("shop_items", "theme",
+     "ALTER TABLE shop_items ADD COLUMN theme VARCHAR(24) NOT NULL DEFAULT ''"),
 ]
 
 

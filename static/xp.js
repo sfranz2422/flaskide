@@ -72,5 +72,21 @@ window.PyIDEXP = (function () {
     } catch (e) {}
   }
 
-  return { ran: ran, hash: hash, toast: toast };
+  /* The student's editor theme, when they chose one (a page's <head> put
+     it on <html> from the account): its id, or "" for ordinary light/dark.
+     The editors use it for CodeMirror's colours (.cm-s-pyide-<id>). */
+  function namedTheme() {
+    var t = document.documentElement.getAttribute("data-theme") || "";
+    return /^[a-z]{2,20}$/.test(t) && t !== "light" && t !== "dark" ? t : "";
+  }
+  /* Back to ordinary light/dark from the editor's button: saved to the
+     account, or the next page would put the theme straight back. */
+  function clearTheme() {
+    try {
+      fetch("/api/me/theme", { method: "POST", headers: { "Content-Type": "application/json" },
+                               body: JSON.stringify({ theme: "" }) }).catch(function () {});
+    } catch (e) {}
+  }
+
+  return { ran: ran, hash: hash, toast: toast, namedTheme: namedTheme, clearTheme: clearTheme };
 })();

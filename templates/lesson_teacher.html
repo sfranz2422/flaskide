@@ -15,8 +15,8 @@
   // The editor's light/dark choice, so this page matches it rather than the
   // computer's setting, and never flashes the other one first.
   try {
-    var saved = localStorage.getItem("flaskide-theme");
-    if (saved === "light" || saved === "dark") {
+    var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem("flaskide-theme");
+    if (saved) {
       document.documentElement.setAttribute("data-theme", saved);
     }
   } catch (e) {}

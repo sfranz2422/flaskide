@@ -12,8 +12,8 @@
 <script>
   // The editor's light/dark choice, so this page does not flash the other one.
   try {
-    var saved = localStorage.getItem("flaskide-theme");
-    if (saved === "light" || saved === "dark") {
+    var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem("flaskide-theme");
+    if (saved) {
       document.documentElement.setAttribute("data-theme", saved);
     }
   } catch (e) {}
@@ -146,6 +146,33 @@
           {% endfor %}
         </ul>
       {% endfor %}
+      {#  Editor themes (xp.EDITOR_THEMES): free ones by level, the rest
+          bought here at once — no request, as they only change the
+          buyer's own screen. One in use shows on every page they open. #}
+      {% if game.themes %}
+        <h2 class="xp-sub" id="themes">Editor themes</h2>
+        <ul class="theme-cards">
+          {% for t in game.themes %}
+            <li class="theme-card {{ 'is-current' if t.current }} {{ 'is-locked' if not t.mine and not t.sale }}">
+              <div class="theme-swatch theme-swatch-{{ t.id }}"><span class="k">def</span> <span class="d">greet</span>(name):
+    <span class="c"># say hello</span>
+    print(<span class="s">"Hi, "</span> + name)</div>
+              <strong>{{ t.name }}</strong>
+              <span class="dim small">{{ t.description }}</span>
+              {% if t.current %}
+                <button class="btn js-theme" data-theme-id="" type="button">✓ In use — stop</button>
+              {% elif t.mine %}
+                <button class="btn btn-primary js-theme" data-theme-id="{{ t.id }}" type="button">Use it</button>
+              {% elif t.level %}
+                <button class="btn" type="button" disabled>🔒 Level {{ t.level }}</button>
+              {% elif t.sale %}
+                <button class="btn {{ 'btn-primary' if t.sale.cost <= game.free }} js-buy" type="button"
+                        data-item="{{ t.sale.item }}" {{ "disabled" if t.sale.cost > game.free }}>Buy · {{ t.sale.cost }} 🪙</button>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
       {% if game.requests %}
         <h2 class="xp-sub">Your requests</h2>
         <ul class="shop-requests">
@@ -210,6 +237,24 @@
       shopPost("/api/shop/request/" + b.closest("li").dataset.request + "/cancel").then(function () {
         location.reload();
       });
+    });
+  });
+
+  // Themes: buying spends the tokens at once; using one is saved to the
+  // account, and the page reloads so every colour on it changes.
+  document.querySelectorAll(".js-buy").forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (!confirm("Buy this theme? The tokens are spent now, and it's yours to keep.")) return;
+      b.disabled = true;
+      shopPost("/api/shop/buy", { item: b.dataset.item }).then(function (out) {
+        if (!out.ok) { document.getElementById("shop-state").textContent = out.d.error || "That didn't work."; b.disabled = false; return; }
+        location.reload();
+      }).catch(function () { b.disabled = false; });
+    });
+  });
+  document.querySelectorAll(".js-theme").forEach(function (b) {
+    b.addEventListener("click", function () {
+      shopPost("/api/me/theme", { theme: b.dataset.themeId }).then(function () { location.reload(); });
     });
   });
 

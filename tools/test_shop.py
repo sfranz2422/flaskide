@@ -71,6 +71,12 @@ def q(model, **by):
         db.close()
 
 
+def plain_items(**by):
+    """The teacher's ordinary items: editor themes are shop items too, but
+    stocked and sold their own way (test_editor_themes.py)."""
+    return [i for i in q(accounts.ShopItem, **by) if not i.theme]
+
+
 def used(uid):
     return q(accounts.User, id=uid)[0].tokens_used
 
@@ -87,17 +93,17 @@ for email in ("amy@school.org", "ben@school.org"):
 # ------------------------------------------------------------- stocking
 print("\nStocking the shop")
 page = teacher.get("/teacher/shop").get_data(as_text=True)
-items = q(accounts.ShopItem, teacher_id=TEACHER)
+items = plain_items(teacher_id=TEACHER)
 check("the first visit stocks it from the starter list",
       len(items) == len(xp.SHOP_STARTER) and "Late pass" in page, len(items))
 teacher.get("/teacher/shop")
-check("  once", len(q(accounts.ShopItem, teacher_id=TEACHER)) == len(xp.SHOP_STARTER))
+check("  once", len(plain_items(teacher_id=TEACHER)) == len(xp.SHOP_STARTER))
 for i in items:
     teacher.post("/api/shop/item/%d" % i.id, json={"active": False})
 teacher.get("/teacher/shop")
 check("a teacher who empties the shelf isn't stocked again",
-      len(q(accounts.ShopItem, teacher_id=TEACHER)) == len(xp.SHOP_STARTER)
-      and not q(accounts.ShopItem, teacher_id=TEACHER, active=1))
+      len(plain_items(teacher_id=TEACHER)) == len(xp.SHOP_STARTER)
+      and not plain_items(teacher_id=TEACHER, active=1))
 for i in items:
     teacher.post("/api/shop/item/%d" % i.id, json={"active": True})
 r = teacher.post("/api/shop/item", json={"name": "Pizza party", "cost": 4,

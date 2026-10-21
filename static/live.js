@@ -93,7 +93,12 @@
       && window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
 
-  function cmTheme() { return isDark() ? "material-darker" : "default"; }
+  // A theme bought in the shop has its own CodeMirror colours (xp.js).
+  var named = window.PyIDEXP ? window.PyIDEXP.namedTheme() : "";
+  function cmTheme() {
+    if (named) return "pyide-" + named;
+    return isDark() ? "material-darker" : "default";
+  }
 
   /* Read-only, and `readOnly: "nocursor"` rather than plain true: with a
      cursor the mirror can be focused and looks typeable, and a student who
@@ -1544,8 +1549,18 @@
       }
     }
 
-    apply(current(), false);
+    if (named) {
+      glyph.textContent = "🎨";
+      btn.title = "Your theme — click for ordinary light or dark";
+      btn.setAttribute("aria-label", btn.title);
+    } else {
+      apply(current(), false);
+    }
     btn.addEventListener("click", function () {
+      if (named) {
+        named = "";
+        window.PyIDEXP.clearTheme();
+      }
       apply(current() === "light" ? "dark" : "light", true);
     });
 
@@ -1553,6 +1568,7 @@
     if (window.matchMedia) {
       var mq = window.matchMedia("(prefers-color-scheme: light)");
       var onSystemChange = function () {
+        if (named) return;                    // a bought theme stays put
         var saved = null;
         try { saved = localStorage.getItem(THEME_KEY); } catch (e) { /* blocked */ }
         if (saved !== "light" && saved !== "dark") {

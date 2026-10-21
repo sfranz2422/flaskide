@@ -14,8 +14,8 @@
 <script src="{{ url_for('static', filename='pack.js') }}"></script>
 <script>
   try {
-    var saved = localStorage.getItem("flaskide-theme");
-    if (saved === "light" || saved === "dark") {
+    var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem("flaskide-theme");
+    if (saved) {
       document.documentElement.setAttribute("data-theme", saved);
     }
   } catch (e) {}

@@ -772,7 +772,18 @@ def user_context(db):
         "idle_seconds": (STUDENT_IDLE_SECONDS if user and not accounts.is_teacher(user.email)
                          else 0),
         "attend_class": None,
+        # The editor theme they chose, when it's still theirs to use
+        # (xp.theme_allowed). Every page's head script puts it on <html>
+        # before the first paint; "" leaves the ordinary light/dark.
+        "user_theme": _user_theme(db, user),
     }
+
+
+def _user_theme(db, user):
+    if user is None or not user.editor_theme:
+        return ""
+    level = xp.level_of(xp.total(db, user.id))
+    return user.editor_theme if xp.theme_allowed(user, user.editor_theme, level) else ""
 
 
 @app.context_processor
@@ -5244,6 +5255,7 @@ def _game_card(db, user):
     card["held"] = _held(db, user.id)
     card["free"] = max(0, card["tokens"] - card["held"])
     card["shops"] = _shops_for(db, user)
+    card["themes"] = _themes_for(db, user, card["level"])
     card["requests"] = [_request_out(r) for r in db.query(accounts.ShopRequest)
                         .filter_by(student_id=user.id)
                         .order_by(accounts.ShopRequest.created_at.desc()).limit(8)]
@@ -5393,6 +5405,19 @@ def _ensure_shop(db, teacher):
             db.add(accounts.ShopItem(teacher_id=teacher.id, name=name, cost=cost,
                                      description=what))
         db.commit()
+    # The editor themes sold for tokens, each once — added to a shop that
+    # was stocked before they existed too, and never again after the
+    # teacher takes one off the shelf (it is still a row).
+    have = {t for (t,) in db.query(accounts.ShopItem.theme).filter(
+        accounts.ShopItem.teacher_id == teacher.id, accounts.ShopItem.theme != "")}
+    added = False
+    for tid, name, how, what in xp.EDITOR_THEMES:
+        if how == "token" and tid not in have:
+            db.add(accounts.ShopItem(teacher_id=teacher.id, name="Theme: " + name,
+                                     cost=xp.THEME_PRICE, description=what, theme=tid))
+            added = True
+    if added:
+        db.commit()
 
 
 def _shop_items(db, teacher_id, everything=False):
@@ -5423,7 +5448,29 @@ def _shops_for(db, user):
         out.append({"teacher": teacher.display_name(), "teacher_id": tid,
                     "items": [{"id": i.id, "name": i.name, "cost": i.cost,
                                "description": i.description}
-                              for i in _shop_items(db, tid)]})
+                              for i in _shop_items(db, tid) if not i.theme]})
+    return out
+
+
+def _themes_for(db, user, level):
+    """Every editor theme as this student stands with it: in use, theirs
+    (bought, or unlocked by level), for sale in a teacher's shop (the
+    cheapest), or locked until a level. For their home page."""
+    sale = {}
+    for tid in sorted({c.teacher_id for c in _my_classes(db, user)}):
+        for i in _shop_items(db, tid):
+            if i.theme and (i.theme not in sale or i.cost < sale[i.theme]["cost"]):
+                sale[i.theme] = {"item": i.id, "cost": i.cost}
+    owned = set(xp.owned_themes(user))
+    current = _user_theme(db, user)
+    out = []
+    for tid, name, how, what in xp.EDITOR_THEMES:
+        lv = xp.theme_level(tid)
+        row = {"id": tid, "name": name, "description": what, "current": tid == current,
+               "mine": (lv is not None and level >= lv) or tid in owned,
+               "level": lv, "sale": sale.get(tid)}
+        if row["mine"] or lv is not None or row["sale"]:
+            out.append(row)
     return out
 
 
@@ -5525,7 +5572,8 @@ def shop_request():
         except (TypeError, ValueError):
             return jsonify(error="No such item."), 404
         item = db.query(accounts.ShopItem).filter_by(id=item_id, active=1).first()
-        if item is None or item.teacher_id not in {c.teacher_id for c in _my_classes(db, user)}:
+        if (item is None or item.theme
+                or item.teacher_id not in {c.teacher_id for c in _my_classes(db, user)}):
             return jsonify(error="That isn't in your teacher's shop."), 404
         free = _tokens_free(db, user)
         if free < item.cost:
@@ -5536,6 +5584,72 @@ def shop_request():
         db.add(row)
         db.commit()
         return jsonify(ok=True, request=_request_out(row), free=_tokens_free(db, user))
+    finally:
+        db.close()
+
+
+@app.post("/api/shop/buy")
+def shop_buy():
+    """Buy an editor theme: the tokens are spent at once and the theme is
+    theirs for good — no request, since it only changes their own screen.
+    Spent in one UPDATE that only happens if they have the tokens free,
+    counting what is on hold, and recorded as an approved request so the
+    teacher can see it was bought."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in first."), 401
+        if accounts.is_teacher(user.email):
+            return jsonify(error="Teachers don't spend tokens."), 403
+        try:
+            item_id = int((request.get_json(silent=True) or {}).get("item"))
+        except (TypeError, ValueError):
+            return jsonify(error="No such theme."), 404
+        item = db.query(accounts.ShopItem).filter_by(id=item_id, active=1).first()
+        if (item is None or not item.theme
+                or item.teacher_id not in {c.teacher_id for c in _my_classes(db, user)}):
+            return jsonify(error="That theme isn't in your teacher's shop."), 404
+        if item.theme in xp.owned_themes(user):
+            return jsonify(error="You already have that theme."), 409
+        earned = xp.tokens_earned(xp.total(db, user.id))
+        held = _held(db, user.id)
+        spent = (db.query(accounts.User)
+                   .filter(accounts.User.id == user.id,
+                           accounts.User.tokens_used + item.cost + held <= earned)
+                   .update({"tokens_used": accounts.User.tokens_used + item.cost},
+                           synchronize_session=False))
+        if not spent:
+            db.rollback()
+            return jsonify(error="That costs %d token%s; you have %d to spend."
+                           % (item.cost, "" if item.cost == 1 else "s",
+                              _tokens_free(db, user))), 409
+        db.refresh(user)
+        user.themes_owned = ",".join(xp.owned_themes(user) + [item.theme])
+        user.editor_theme = item.theme
+        db.add(accounts.ShopRequest(item_id=item.id, teacher_id=item.teacher_id,
+                                    student_id=user.id, name=item.name, cost=item.cost,
+                                    status="approved", decided_at=accounts.now()))
+        db.commit()
+        return jsonify(ok=True, theme=item.theme, free=_tokens_free(db, user))
+    finally:
+        db.close()
+
+
+@app.post("/api/me/theme")
+def choose_theme():
+    """Use one of their editor themes, or "" for the ordinary light/dark."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in first."), 401
+        want = str((request.get_json(silent=True) or {}).get("theme") or "")[:24]
+        if not xp.theme_allowed(user, want, xp.level_of(xp.total(db, user.id))):
+            return jsonify(error="That theme isn't yours yet."), 403
+        user.editor_theme = want
+        db.commit()
+        return jsonify(ok=True, theme=want)
     finally:
         db.close()
 

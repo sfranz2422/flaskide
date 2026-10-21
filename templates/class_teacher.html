@@ -14,8 +14,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.css">
 <script>
   try {
-    var saved = localStorage.getItem("flaskide-theme");
-    if (saved === "light" || saved === "dark") {
+    var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem("flaskide-theme");
+    if (saved) {
       document.documentElement.setAttribute("data-theme", saved);
     }
   } catch (e) {}

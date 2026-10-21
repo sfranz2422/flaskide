@@ -217,6 +217,52 @@ SHOP_STARTER = [
     ("Design a challenge", 5, "Write a challenge or quest for the whole class."),
 ]
 
+#: Editor themes: (id, name, how it's got, what it looks like). "level N" is
+#: free from that level; "token" is bought in the teacher's shop (its price
+#: is the shop item's, starting at THEME_PRICE). Each id has a block in
+#: static/style.css — [data-theme="<id>"] and .cm-s-pyide-<id> — and
+#: test_editor_themes.py checks it does, in every app, since a missing one
+#: would sell a theme that changes nothing.
+EDITOR_THEMES = [
+    ("contrast", "High contrast", "level 1", "White on black, bright yellow — the easiest to read."),
+    ("ocean", "Ocean", "level 2", "Deep blues and sea green."),
+    ("forest", "Forest", "level 3", "Greens and warm browns."),
+    ("solarized", "Solarized", "level 4", "The classic soft blue-grey."),
+    ("dracula", "Dracula", "token", "Purple and pink on near-black."),
+    ("monokai", "Monokai", "token", "The warm, bright code colors programmers love."),
+    ("synthwave", "Synthwave", "token", "Neon pink and cyan, straight out of the 80s."),
+    ("retro", "Retro terminal", "token", "Green on black, like a 1980s computer."),
+    ("sunset", "Sunset", "token", "Warm oranges and purples."),
+]
+THEME_PRICE = 1
+THEME_IDS = [t[0] for t in EDITOR_THEMES]
+
+
+def theme_level(theme_id):
+    """The level a free theme unlocks at, or None for one bought."""
+    for i, _, how, _ in EDITOR_THEMES:
+        if i == theme_id and how.startswith("level "):
+            return int(how.split()[1])
+    return None
+
+
+def owned_themes(user):
+    return [t for t in (user.themes_owned or "").split(",") if t in THEME_IDS]
+
+
+def theme_allowed(user, theme_id, level):
+    """Whether this person may use this theme now: "" (the ordinary light
+    and dark) always; a free one from its level; a bought one if owned."""
+    if not theme_id:
+        return True
+    if theme_id not in THEME_IDS:
+        return False
+    lv = theme_level(theme_id)
+    if lv is not None:
+        return level >= lv
+    return theme_id in owned_themes(user)
+
+
 #: The most one item can cost, and the most items a shop can hold.
 SHOP_MAX_COST = 100
 SHOP_MAX_ITEMS = 60

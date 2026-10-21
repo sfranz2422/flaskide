@@ -23,8 +23,8 @@
      with a flash of dark. No saved choice means follow the computer's. */
   (function () {
     try {
-      var saved = localStorage.getItem("flaskide-theme");
-      if (saved === "light" || saved === "dark") {
+      var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem("flaskide-theme");
+      if (saved) {
         document.documentElement.setAttribute("data-theme", saved);
       }
       var size = parseInt(localStorage.getItem("flaskide-code-size"), 10);

@@ -304,6 +304,18 @@ they have. The teacher answers on the class's XP & tokens page: Approve
 spends the tokens in one UPDATE conditional on them still being there,
 Decline spends nothing. `test_shop.py` is the same file in all three.
 
+**Editor themes** (`xp.EDITOR_THEMES`; the end of `style.css`). Looks
+beyond light/dark: some free from a level (high contrast from level 1, for
+whoever needs it), the rest sold in the teacher's shop as items with a
+`theme` — bought at once, no request, since they only change the buyer's
+own screen; owned for good (`users.themes_owned`). The chosen one
+(`users.editor_theme`) is checked by `_user_theme` on every page and put on
+`<html>` by each page's head script before the first paint, so a theme that
+stops being theirs stops showing. Each theme is a `[data-theme]` block, a
+`.cm-s-pyide-<id>` CodeMirror theme and a shop swatch, generated from one
+palette; `test_editor_themes.py` (the same in all three) fails on a theme
+missing any of them, since a missing block sells a theme that does nothing.
+
 ## Style
 
 Comments explain *why*, and name the silent failures. The two-kinds-of-project

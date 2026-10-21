@@ -12,8 +12,8 @@
 <script>
   // The editor's light/dark choice, so this page does not flash the other one.
   try {
-    var saved = localStorage.getItem("flaskide-theme");
-    if (saved === "light" || saved === "dark") {
+    var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem("flaskide-theme");
+    if (saved) {
       document.documentElement.setAttribute("data-theme", saved);
     }
   } catch (e) {}

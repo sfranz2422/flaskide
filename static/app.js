@@ -1063,7 +1063,16 @@
   function wireTheme() {
     var btn = $("theme"), glyph = $("theme-glyph");
     if (!btn) return;
+    /* A theme bought in the shop (xp.js namedTheme): its own CodeMirror
+       colours, and the button offers the way back to light/dark. */
+    var named = window.PyIDEXP ? window.PyIDEXP.namedTheme() : "";
     function paint() {
+      if (named) {
+        if (glyph) glyph.textContent = "🎨";
+        btn.title = "Your theme — click for ordinary light or dark";
+        if (editor) editor.setOption("theme", "pyide-" + named);
+        return;
+      }
       var light = document.documentElement.getAttribute("data-theme") === "light";
       if (glyph) glyph.textContent = light ? "☀" : "☾";
       if (editor) {
@@ -1072,6 +1081,10 @@
     }
     paint();
     btn.addEventListener("click", function () {
+      if (named) {
+        named = "";
+        window.PyIDEXP.clearTheme();
+      }
       var light = document.documentElement.getAttribute("data-theme") === "light";
       var next = light ? "dark" : "light";
       document.documentElement.setAttribute("data-theme", next);
