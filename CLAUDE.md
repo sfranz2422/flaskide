@@ -38,7 +38,7 @@ failing one, so a red suite cannot scroll past unnoticed — a bare
 `for ... do python3 "$t"; done` will let it.
 
 **`node` is required** by `test_complete.py`, `test_pack.py`, `test_quiz.py`,
-`test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py` and `test_xp.py`. `test_syntax.py`
+`test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py`, `test_xp.py` and `test_keep_place.py`. `test_syntax.py`
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
 `brew install node` if it is missing.

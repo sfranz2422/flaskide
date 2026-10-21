@@ -151,9 +151,12 @@
 </div>
 
 <script src="{{ url_for('static', filename='avatar.js') }}"></script>
+<script src="{{ url_for('static', filename='keep_place.js') }}"></script>
 <script>
 (function () {
   var api = "/api/class/{{ course.id }}";
+  // Back where they were after an approval or an event reloads the page.
+  window.KeepPlace("class-xp-scroll-{{ course.id }}");
   function post(path, body) {
     return fetch(api + path, { method: "POST", headers: { "Content-Type": "application/json" },
                                body: JSON.stringify(body || {}) })
