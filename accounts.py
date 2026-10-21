@@ -85,11 +85,10 @@ class User(Base):
     last_name = Column(String(80), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=now)
     last_seen = Column(DateTime, nullable=False, default=now)
-    #: XP's side of a student (xp.py). The avatar is JSON naming one part of
-    #: each kind — never a picture, never free text — and is cleaned against
-    #: xp.AVATAR_PARTS whenever it is saved, so what a leaderboard draws is
-    #: always something the parts list could have made. Empty is the default
-    #: face. `board_hidden` keeps them off every class's leaderboard; they
+    #: XP's side of a student (xp.py). The avatar is the id of one picture
+    #: from xp.AVATARS — never an upload, never free text — checked against
+    #: that list whenever it is saved and again whenever it is shown. Empty
+    #: (or anything no longer on the list) is a plain silhouette. `board_hidden` keeps them off every class's leaderboard; they
     #: still earn. `tokens_used` is how many of their tokens a teacher has
     #: pressed Use on: the tokens they have are those earned (one per
     #: xp.TOKEN_EVERY) less these, so nothing about tokens is stored but this.

@@ -29,7 +29,6 @@ Nothing here touches a grade. Tokens are redeemed by the teacher, by hand,
 outside the app; the Use button only lowers the count.
 """
 
-import json
 import secrets
 
 import accounts
@@ -193,119 +192,58 @@ def board_name(user):
 # Avatars
 # --------------------------------------------------------------------------
 
-#: Every part an avatar is built from, by kind, in the order the editor
-#: shows them: (id, label, level it unlocks at). static/avatar.js draws each
-#: id, and test_xp.py checks it can draw every one listed here.
+#: The pictures a student can be: (id, label, level it unlocks at). Each is
+#: static/avatars/<id>.webp — painted portraits the teacher made with an
+#: image generator, cropped square to head and shoulders and shrunk to 400px
+#: (about 30 KB each). test_xp.py checks every id here has its file and every
+#: file has an id, because a missing file is a broken image on the board.
 #:
-#: Two styles. A "character" is built from the parts below: fantasy
-#: classes and everyday clothes to start, armour, robes and magic as the
-#: levels come. A "picture" is one ready-made image instead: a sun, a flower, a
-#: dragon, a blocky figure. The blocky ones are drawn here, in the style of
-#: block games, and copy no game's actual characters. The background is
-#: shared by both. Changing style keeps the other style's choices, so a
-#: student can switch back without rebuilding their face.
-AVATAR_PARTS = {
-    "style": [("hero", "Character", 1), ("icon", "Picture", 1)],
-    "icon": [("sun", "Sun", 1), ("flower", "Flower", 1), ("moon", "Moon", 1),
-             ("mountain", "Mountain", 1), ("wave", "Wave", 1), ("star", "Star", 1),
-             ("blocky", "Blocky hero", 1), ("grass", "Grass block", 1),
-             ("sword", "Sword & shield", 1), ("potion", "Potion", 2),
-             ("pixsword", "Pixel sword", 2), ("pickaxe", "Pickaxe", 3),
-             ("crystal", "Crystal", 4), ("ore", "Diamond ore", 5),
-             ("dragon", "Fire dragon", 6), ("phoenix", "Phoenix", 8)],
-    "skin": [("s1", "Light", 1), ("s2", "Fair", 1), ("s3", "Medium", 1),
-             ("s4", "Tan", 1), ("s5", "Brown", 1), ("s6", "Deep", 1)],
-    "face": [("oval", "Oval", 1), ("square", "Angular", 1), ("round", "Round", 1)],
-    "hair": [("short", "Short", 1), ("buzz", "Buzz", 1), ("swept", "Swept", 1),
-             ("messy", "Messy", 1), ("curly", "Curly", 1), ("long", "Long", 1),
-             ("ponytail", "Ponytail", 1), ("braids", "Braids", 1),
-             ("none", "None", 1), ("spiky", "Spiky", 3), ("mohawk", "Mohawk", 5)],
-    "hair_color": [("black", "Black", 1), ("brown", "Brown", 1),
-                   ("auburn", "Auburn", 1), ("blonde", "Blonde", 1),
-                   ("red", "Red", 1), ("gray", "Gray", 1), ("blue", "Blue", 3),
-                   ("purple", "Purple", 3), ("white", "White", 5),
-                   ("gold", "Gold", 9)],
-    "beard": [("none", "None", 1), ("stubble", "Stubble", 1),
-              ("goatee", "Goatee", 1), ("full", "Beard", 1)],
-    "eyes": [("calm", "Calm", 1), ("focused", "Focused", 1), ("fierce", "Fierce", 1),
-             ("glow", "Glowing", 6), ("ember", "Ember", 8)],
-    "mouth": [("neutral", "Neutral", 1), ("smile", "Smile", 1),
-              ("smirk", "Smirk", 1), ("grin", "Grin", 1)],
-    "marks": [("none", "None", 1), ("freckles", "Freckles", 1),
-              ("scar", "Scar", 2), ("warpaint", "War paint", 3),
-              ("rune", "Glowing rune", 7)],
-    "glasses": [("none", "None", 1), ("round", "Round", 1),
-                ("square", "Square", 1), ("shades", "Shades", 2)],
-    "mask": [("none", "None", 1), ("cloth", "Rogue's mask", 2),
-             ("veil", "Shadow veil", 5)],
-    "hat": [("none", "None", 1), ("hood", "Hood", 1), ("bandana", "Bandana", 1),
-            ("beanie", "Beanie", 1), ("cap", "Backwards cap", 1),
-            ("headphones", "Headphones", 1), ("circlet", "Circlet", 4),
-            ("helmet", "Knight helmet", 6), ("wizard", "Wizard hat", 9),
-            ("crown", "Crown", 10)],
-    "outfit": [("duelist", "Duelist", 1), ("bard", "Bard", 1),
-               ("scout", "Scout", 1), ("hoodie", "Hoodie", 1),
-               ("tee", "T-shirt", 1), ("jacket", "Jacket", 1),
-               ("varsity", "Varsity jacket", 1), ("rogue", "Rogue", 2),
-               ("warrior", "Warrior", 2), ("knight", "Knight", 3),
-               ("mage", "Mage", 4), ("ranger", "Ranger", 5),
-               ("sorcerer", "Sorcerer", 6), ("darkknight", "Dark knight", 8),
-               ("paladin", "Paladin", 10)],
-    "effect": [("none", "None", 1), ("sparks", "Sparks", 2), ("fire", "Fire", 3),
-               ("frost", "Frost", 5), ("arcane", "Arcane", 6),
-               ("nature", "Nature", 7), ("lightning", "Lightning", 9)],
-    "background": [("falls", "Waterfalls", 1), ("forest", "Forest", 1),
-                   ("slate", "Slate", 1), ("midnight", "Midnight", 1),
-                   ("crimson", "Crimson", 1), ("sky", "Sky", 1),
-                   ("castle", "Castle", 2), ("night", "Starry night", 3),
-                   ("sunset", "Sunset", 4), ("lava", "Lava", 7),
-                   ("galaxy", "Galaxy", 8)],
-}
+#: A student picks one; nothing is uploaded and nothing is typed. The list
+#: is the only thing a choice is checked against, so adding a picture is a
+#: file in static/avatars and a line here, in all three repos.
+#:
+#: These replaced a builder that drew faces from parts in SVG. The teacher
+#: wanted this look, which SVG drawn in code could not reach.
+AVATARS = [
+    ("gamer-boy", "Gamer", 1),
+    ("gamer-girl", "Streamer", 1),
+    ("hacker", "Hacker", 1),
+    ("neon", "Neon", 1),
+    ("blocky", "Blocky warrior", 1),
+    ("robot", "Robot", 1),
+    ("fox", "Fox ranger", 1),
+    ("slime", "Glitch slime", 1),
+    ("mech", "Battle mech", 2),
+    ("wizard", "Cyber wizard", 3),
+    ("treant", "Treant", 5),
+    ("bloom", "Void bloom", 7),
+]
 
-AVATAR_KINDS = list(AVATAR_PARTS)
+AVATAR_IDS = [a[0] for a in AVATARS]
 
-#: What a student who never chose looks like: the first of each kind — a
-#: duelist in front of the waterfalls, nothing on their head.
-DEFAULT_AVATAR = {kind: parts[0][0] for kind, parts in AVATAR_PARTS.items()}
+#: Not chosen yet: avatar.js draws a plain silhouette for "".
+DEFAULT_AVATAR = ""
 
 
 def avatar_of(user):
-    """The avatar to draw for a person: their saved one, with anything
-    unreadable or unknown replaced by the default's part."""
-    out = dict(DEFAULT_AVATAR)
-    try:
-        saved = json.loads(user.avatar or "{}")
-    except (ValueError, TypeError):
-        saved = {}
-    if isinstance(saved, dict):
-        for kind, parts in AVATAR_PARTS.items():
-            if saved.get(kind) in {p[0] for p in parts}:
-                out[kind] = saved[kind]
-    return out
+    """The picture to show for a person, or "" for the silhouette. Anything
+    saved that is not on the list now — an avatar from the parts builder, a
+    picture since taken out — is the silhouette, not an error."""
+    saved = (user.avatar or "").strip()
+    return saved if saved in AVATAR_IDS else DEFAULT_AVATAR
 
 
 def clean_avatar(raw, level):
-    """(avatar, error or "") for what the editor sent. Only known parts,
-    and only parts this level has unlocked — the page greys the rest out,
-    but the page is not what decides."""
-    if not isinstance(raw, dict):
-        return None, "That avatar couldn't be read."
-    out = {}
-    for kind, parts in AVATAR_PARTS.items():
-        want = raw.get(kind, DEFAULT_AVATAR[kind])
-        found = [p for p in parts if p[0] == want]
-        if not found:
-            return None, "That avatar has a part that doesn't exist."
-        if found[0][2] > level:
-            return None, "%s unlocks at level %d." % (found[0][1], found[0][2])
-        out[kind] = want
-    return out, ""
+    """(id, error or "") for the picture the page sent: one on the list, and
+    unlocked at this level — the page greys the rest out, but the page is
+    not what decides."""
+    found = [a for a in AVATARS if a[0] == raw]
+    if not found:
+        return None, "That picture doesn't exist."
+    if found[0][2] > level:
+        return None, "%s unlocks at level %d." % (found[0][1], found[0][2])
+    return raw, ""
 
 
-def parts_for_page():
-    """The parts list as the avatar editor wants it. A list, not a dict:
-    Jinja's tojson sorts a dict's keys, and the editor came out Background,
-    Eyes, Face… instead of starting from the face."""
-    return [{"kind": kind,
-             "options": [{"id": i, "label": label, "level": lv} for i, label, lv in parts]}
-            for kind, parts in AVATAR_PARTS.items()]
+def avatars_for_page():
+    return [{"id": i, "label": label, "level": lv} for i, label, lv in AVATARS]
