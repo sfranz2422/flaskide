@@ -19,6 +19,7 @@ same database and already owns `projects`:
     classroom_posts  each Classroom class an assignment was posted to
     quiz_questions   the answer key to each question in an assignment's notes
     quiz_answers     a student's one answer to one of those questions
+    xp_awards        every piece of XP a student was given, once each (xp.py)
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -84,6 +85,17 @@ class User(Base):
     last_name = Column(String(80), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=now)
     last_seen = Column(DateTime, nullable=False, default=now)
+    #: XP's side of a student (xp.py). The avatar is JSON naming one part of
+    #: each kind — never a picture, never free text — and is cleaned against
+    #: xp.AVATAR_PARTS whenever it is saved, so what a leaderboard draws is
+    #: always something the parts list could have made. Empty is the default
+    #: face. `board_hidden` keeps them off every class's leaderboard; they
+    #: still earn. `tokens_used` is how many of their tokens a teacher has
+    #: pressed Use on: the tokens they have are those earned (one per
+    #: xp.TOKEN_EVERY) less these, so nothing about tokens is stored but this.
+    avatar = Column(Text, nullable=False, default="")
+    board_hidden = Column(Integer, nullable=False, default=0)
+    tokens_used = Column(Integer, nullable=False, default=0)
 
     def display_name(self) -> str:
         return self.name or self.email.split("@")[0]
@@ -145,6 +157,9 @@ class Assignment(Base):
     #: changed since it was made, which is true of every assignment from
     #: before the column existed; `changed` falls back to created_at.
     updated_at = Column(DateTime, nullable=True)
+    #: XP paid once to each student who gets full marks on it (xp.py). 0 is
+    #: no bonus, which is what every assignment is until a teacher sets one.
+    xp_bonus = Column(Integer, nullable=False, default=0)
 
     @property
     def changed(self):
@@ -322,6 +337,45 @@ class QuizAnswer(Base):
     #: not the same as 0. Unused for every other kind, which is marked
     #: against the key instead.
     score = Column(Float, nullable=True)
+
+
+# --------------------------------------------------------------------------
+# XP
+# --------------------------------------------------------------------------
+
+class XpAward(Base):
+    """One piece of XP given to one person. Their XP is the sum of these.
+
+    PER PERSON, NOT PER CLASS OR APP: a student's XP is one number across
+    every class and all three editors, which is what the teacher asked for
+    (a student in two of their classes earns in both). `app` only says where
+    it was earned, for the list of recent XP.
+
+    `source` names what it was for — "quiz:12:ab34cd", "all:12", "bonus:12",
+    "run:29012345", "grant:<random>" — and the unique constraint is what stops
+    anything being paid twice. Two workers taking the same answer, a page
+    sent twice, a teacher's double click: the second insert fails, and
+    xp.award treats that as already paid. Nothing ever updates a row, so a
+    total cannot drift from its history.
+
+    `detail` is for the award's own bookkeeping, never shown: for a run, a
+    hash of the code, because a run only pays when the code has changed.
+    `by_id` is the teacher who gave it by hand, NULL for everything earned.
+    """
+    __tablename__ = "xp_awards"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source", name="uq_xp_once"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    app = Column(String(16), nullable=False, default="pyide")
+    source = Column(String(80), nullable=False)
+    xp = Column(Integer, nullable=False, default=0)
+    reason = Column(String(200), nullable=False, default="")
+    detail = Column(String(64), nullable=False, default="")
+    by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=now, index=True)
 
 
 # --------------------------------------------------------------------------
@@ -845,6 +899,17 @@ LATER_COLUMNS = [
      "ALTER TABLE users ADD COLUMN first_name VARCHAR(80) NOT NULL DEFAULT ''"),
     ("users", "last_name",
      "ALTER TABLE users ADD COLUMN last_name VARCHAR(80) NOT NULL DEFAULT ''"),
+    # XP. Every default is true of everyone from before it: nobody had an
+    # avatar, hid from a board that didn't exist, or spent a token, and no
+    # assignment had a bonus.
+    ("users", "avatar",
+     "ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''"),
+    ("users", "board_hidden",
+     "ALTER TABLE users ADD COLUMN board_hidden INTEGER NOT NULL DEFAULT 0"),
+    ("users", "tokens_used",
+     "ALTER TABLE users ADD COLUMN tokens_used INTEGER NOT NULL DEFAULT 0"),
+    ("assignments", "xp_bonus",
+     "ALTER TABLE assignments ADD COLUMN xp_bonus INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
