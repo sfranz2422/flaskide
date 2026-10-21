@@ -1,6 +1,6 @@
-/* Avatars: one picture from a fixed set (xp.py's AVATARS), shown in any
- * element with data-avatar="<id>". An empty or unknown id is a plain
- * silhouette — a student who hasn't chosen yet.
+/* Avatars: one picture from a fixed set (xp.py's AVATARS) or a student's
+ * own approved photo, shown in any element with data-avatar="<id>". An
+ * empty or unknown id is a plain silhouette — a student who hasn't chosen.
  *
  * The id is checked against a pattern before it goes into a URL. The
  * server only ever saves ids from its list, but this is where an id turns
@@ -19,7 +19,11 @@ window.PyIDEAvatar = (function () {
     '<circle cx="50" cy="40" r="17" fill="#4a5466"/>' +
     '<path d="M16 100 Q18 66 50 64 Q82 66 84 100Z" fill="#4a5466"/></svg>';
 
+  /* A picture from the set, or "photo:<slug>" — the student's own, which
+     the server only ever stores once a teacher has approved it. */
   function url(id) {
+    var photo = /^photo:([a-z0-9]{4,16})$/.exec(id || "");
+    if (photo) return "/photo/" + photo[1];
     return /^[a-z0-9-]{1,40}$/.test(id || "") ? BASE + id + ".webp" : null;
   }
 

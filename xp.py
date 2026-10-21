@@ -29,6 +29,7 @@ Nothing here touches a grade. Tokens are redeemed by the teacher, by hand,
 outside the app; the Use button only lowers the count.
 """
 
+import re
 import secrets
 
 import accounts
@@ -368,12 +369,21 @@ AVATAR_IDS = [a[0] for a in AVATARS]
 DEFAULT_AVATAR = ""
 
 
+#: A student's own approved photo, as the avatar column holds it. The slug
+#: is accounts.new_id's alphabet; anything else is not one.
+PHOTO_AVATAR = re.compile(r"^photo:[a-z0-9]{4,16}$")
+
+
 def avatar_of(user):
     """The picture to show for a person, or "" for the silhouette. Anything
     saved that is not on the list now — an avatar from the parts builder, a
-    picture since taken out — is the silhouette, not an error."""
+    picture since taken out — is the silhouette, not an error. A photo is
+    only ever written here by a teacher's approval (app.py), so a well-
+    formed one is shown."""
     saved = (user.avatar or "").strip()
-    return saved if saved in AVATAR_IDS else DEFAULT_AVATAR
+    if saved in AVATAR_IDS or PHOTO_AVATAR.match(saved):
+        return saved
+    return DEFAULT_AVATAR
 
 
 def clean_avatar(raw, level):

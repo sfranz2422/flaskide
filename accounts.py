@@ -21,6 +21,7 @@ same database and already owns `projects`:
     quiz_answers     a student's one answer to one of those questions
     xp_awards        every piece of XP a student was given, once each (xp.py)
     class_events     each random event a teacher set off in a class
+    student_photos   pictures students uploaded as avatars, approved or waiting
 
 `snippets`, the existing share-link table, is not touched at all. Every link
 handed out before today keeps working, and turning work in reuses it to take
@@ -87,9 +88,10 @@ class User(Base):
     created_at = Column(DateTime, nullable=False, default=now)
     last_seen = Column(DateTime, nullable=False, default=now)
     #: XP's side of a student (xp.py). The avatar is the id of one picture
-    #: from xp.AVATARS — never an upload, never free text — checked against
-    #: that list whenever it is saved and again whenever it is shown. Empty
-    #: (or anything no longer on the list) is a plain silhouette. `board_hidden` keeps them off every class's leaderboard; they
+    #: from xp.AVATARS, or "photo:<slug>" for their own StudentPhoto once a
+    #: teacher approved it — never free text — checked whenever it is saved
+    #: and again whenever it is shown. Empty (or anything no longer on the
+    #: list) is a plain silhouette. `board_hidden` keeps them off every class's leaderboard; they
     #: still earn. `tokens_used` is how many of their tokens a teacher has
     #: pressed Use on: the tokens they have are those earned (one per
     #: xp.TOKEN_EVERY) less these, so nothing about tokens is stored but this.
@@ -376,6 +378,32 @@ class XpAward(Base):
     detail = Column(String(64), nullable=False, default="")
     by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=now, index=True)
+
+
+class StudentPhoto(Base):
+    """A picture a student uploaded to be their avatar. NOBODY ELSE SEES IT
+    UNTIL A TEACHER APPROVES IT: a leaderboard is shown to the whole class,
+    and what a student uploads is not checked by anything but a person.
+
+    "pending" is seen only by the student and the teachers of their classes
+    (/photo/<slug> checks), "approved" by anyone the board shows it to.
+    A student has at most one of each: a new upload replaces their pending
+    one, a new approval their approved one, and a rejected one is deleted,
+    picture and all. Not in `images`, whose pictures /img serves to anyone
+    with the address."""
+    __tablename__ = "student_photos"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(16), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    app = Column(String(16), nullable=False, default="pyide")
+    content_type = Column(String(40), nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    size = Column(Integer, nullable=False, default=0)
+    status = Column(String(16), nullable=False, default="pending", index=True)
+    created_at = Column(DateTime, nullable=False, default=now)
+    decided_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    decided_at = Column(DateTime, nullable=True)
 
 
 class ClassEvent(Base):
