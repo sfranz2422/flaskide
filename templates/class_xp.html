@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XP · {{ course.name }} — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{#  Before any other script: it wraps fetch so every JSON body goes past
+    Render's firewall (pack.js says why). #}
+<script src="{{ url_for('static', filename='pack.js') }}"></script>
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page class-teacher">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('teacher_home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">{{ course.name }} · XP &amp; tokens</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('student_class', class_id=course.id) }}#leaderboard">Leaderboard</a>
+    <a class="btn" href="{{ url_for('teacher_class', class_id=course.id) }}">Back to the class</a>
+  </div>
+</header>
+
+{#  Each student's XP is theirs across every class and editor, so the same
+    student shows the same total on each of your class pages. Rewards and
+    penalties go to the ticked students with a reason they see on their
+    home page and their XP history. A penalty never takes anyone below 0
+    (xp.penalty_for). A random event (xp.EVENTS) is applied as soon as it
+    is drawn, and shown big for the projector; Undo takes it back. #}
+<main class="sheet">
+  <div class="xp-top">
+    <div>
+      <h1 class="att-title">XP &amp; tokens</h1>
+      <p class="dim">One token for every {{ token_every }} XP. Press <strong>Use</strong> when a
+        student spends one; it only lowers the count. XP never goes below 0.</p>
+    </div>
+    <button id="event-btn" class="btn btn-primary xp-event-btn" type="button">🎲 Random event</button>
+  </div>
+
+  {#  Photos students uploaded, waiting for you. Nobody else sees one until
+      it is approved; rejecting deletes it. #}
+  {% if photos %}
+    <section class="xp-photos" id="photos">
+      <h2>Pictures to approve</h2>
+      <ul class="xp-photo-list">
+        {% for p in photos %}
+          <li data-photo="{{ p.id }}">
+            <img src="{{ p.url }}" alt="Uploaded by {{ p.name }}">
+            <span class="small">{{ p.name }}</span>
+            <span class="btns">
+              <button class="btn btn-primary js-photo" data-decision="approve" type="button">Approve</button>
+              <button class="btn js-photo" data-decision="reject" type="button">Reject</button>
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if students %}
+  <form id="give" class="xp-givebar">
+    <select id="give-preset" class="field" aria-label="Reason">
+      <option value="">Choose a reason…</option>
+      <optgroup label="Rewards">
+        {% for r, n in behaviors if n > 0 %}<option value="{{ n }}" data-reason="{{ r }}">+{{ n }} · {{ r }}</option>{% endfor %}
+      </optgroup>
+      <optgroup label="Penalties">
+        {% for r, n in behaviors if n < 0 %}<option value="{{ n }}" data-reason="{{ r }}">{{ n }} · {{ r }}</option>{% endfor %}
+      </optgroup>
+      <option value="custom">Something else…</option>
+    </select>
+    <input id="give-xp" class="field xp-amount" type="number" min="-{{ grant_limit }}" max="{{ grant_limit }}"
+           step="1" placeholder="XP" aria-label="XP" required>
+    <input id="give-reason" class="field xp-reason" type="text" maxlength="200" placeholder="Reason the student sees"
+           aria-label="Reason">
+    <button class="btn btn-primary" type="submit" id="give-btn" disabled>Give to 0 students</button>
+    <span id="give-state" class="dim small" role="status"></span>
+  </form>
+
+  <table class="xp-table">
+    <thead><tr>
+      <th class="xp-check"><input type="checkbox" id="pick-all" aria-label="Select everyone"></th>
+      <th>Student</th><th>Level</th><th>XP</th><th>Tokens</th></tr></thead>
+    <tbody>
+      {% for s in students %}
+        <tr data-student="{{ s.id or '' }}">
+          <td class="xp-check">{% if s.id %}<input type="checkbox" class="pick" value="{{ s.id }}" aria-label="Select {{ s.name }}">{% endif %}</td>
+          <td><label class="xp-who" {% if s.id %}for="pick-{{ s.id }}"{% endif %}>
+            <span class="avatar xp-board-avatar" data-avatar="{{ s.avatar or '' }}"></span>
+            <span>{{ s.name }}<br><span class="dim small">{{ s.email }}{% if s.hidden %} · hidden from the leaderboard{% endif %}</span></span>
+          </label></td>
+          {% if s.id %}
+            <td>{{ s.level }} <span class="dim small">{{ s.title }}</span></td>
+            <td class="js-xp">{{ s.xp }}</td>
+            <td><strong class="js-tokens">{{ s.tokens }}</strong>
+              <button class="btn js-use" type="button" {{ "disabled" if not s.tokens }}>Use</button></td>
+          {% else %}
+            <td colspan="3" class="dim">Hasn't signed in yet, so has no XP.</td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p class="dim">No students yet. Sync the roster on the class's page.</p>
+  {% endif %}
+
+  <section class="xp-events">
+    <h2>Recent events</h2>
+    <ul id="event-list" class="xp-event-list">
+      {% for e in events %}
+        <li data-event="{{ e.id }}" class="{{ 'undone' if e.undone }}">
+          <span class="xp-event-icon" aria-hidden="true">{{ e.icon }}</span>
+          <span class="xp-event-body"><strong>{{ e.title }}</strong>
+            <span class="dim small js-when" data-when="{{ e.when }}"></span><br>
+            <span class="small">{% for h in e.hits %}{{ h.name }} {{ "%+d"|format(h.xp) }}{{ ", " if not loop.last }}{% else %}Nobody had XP to lose.{% endfor %}</span>
+          </span>
+          {% if e.undone %}<span class="dim small">Undone</span>
+          {% else %}<button class="btn js-undo" type="button">Undo</button>{% endif %}
+        </li>
+      {% else %}
+        <li class="dim js-none">None yet. Press Random event at the start of class.</li>
+      {% endfor %}
+    </ul>
+  </section>
+</main>
+
+{#  The event, big, for the projector. #}
+<div id="event-card" class="xp-event-overlay" hidden>
+  <div class="xp-event-card" role="dialog" aria-modal="true" aria-labelledby="event-title">
+    <div class="xp-event-big" id="event-icon" aria-hidden="true"></div>
+    <h2 id="event-title"></h2>
+    <p id="event-text"></p>
+    <ul id="event-hits" class="xp-event-hits"></ul>
+    <div class="xp-event-actions">
+      <button class="btn" type="button" id="event-undo">Undo</button>
+      <button class="btn btn-primary" type="button" id="event-close">Done</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='avatar.js') }}"></script>
+<script>
+(function () {
+  var api = "/api/class/{{ course.id }}";
+  function post(path, body) {
+    return fetch(api + path, { method: "POST", headers: { "Content-Type": "application/json" },
+                               body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); });
+  }
+  function $(id) { return document.getElementById(id); }
+
+  // Times are UTC on the server; shown in this browser's own time.
+  document.querySelectorAll(".js-when").forEach(function (el) {
+    var t = new Date(el.dataset.when);
+    if (!isNaN(t)) el.textContent = t.toLocaleString([], { month: "short", day: "numeric",
+                                                         hour: "numeric", minute: "2-digit" });
+  });
+
+  // ---- Choosing students, and giving them XP
+  var picks = Array.prototype.slice.call(document.querySelectorAll(".pick"));
+  picks.forEach(function (box) { box.id = "pick-" + box.value; });
+  var giveBtn = $("give-btn");
+  function chosen() { return picks.filter(function (b) { return b.checked; }).map(function (b) { return b.value; }); }
+  function refreshGive() {
+    if (!giveBtn) return;
+    var n = chosen().length;
+    giveBtn.textContent = "Give to " + n + " student" + (n === 1 ? "" : "s");
+    giveBtn.disabled = n === 0;
+  }
+  picks.forEach(function (b) { b.addEventListener("change", refreshGive); });
+  if ($("pick-all")) $("pick-all").addEventListener("change", function (e) {
+    picks.forEach(function (b) { b.checked = e.target.checked; });
+    refreshGive();
+  });
+  if ($("give-preset")) $("give-preset").addEventListener("change", function (e) {
+    var opt = e.target.selectedOptions[0];
+    if (opt && opt.dataset.reason) {
+      $("give-xp").value = opt.value;
+      $("give-reason").value = opt.dataset.reason;
+    } else if (e.target.value === "custom") {
+      $("give-xp").value = ""; $("give-reason").value = ""; $("give-xp").focus();
+    }
+  });
+  if ($("give")) $("give").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var state = $("give-state");
+    state.textContent = "Saving…";
+    post("/xp", { students: chosen(), xp: $("give-xp").value, reason: $("give-reason").value })
+      .then(function (out) {
+        if (!out.ok) { state.textContent = out.d.error || "That didn't save."; return; }
+        Object.keys(out.d.students).forEach(function (id) {
+          var row = document.querySelector('tr[data-student="' + id + '"]');
+          var s = out.d.students[id];
+          row.querySelector(".js-xp").textContent = s.xp;
+          row.querySelector(".js-tokens").textContent = s.tokens;
+          row.querySelector(".js-use").disabled = !s.tokens;
+        });
+        state.textContent = "Given." + (out.d.skipped.length
+          ? " " + out.d.skipped.join(", ") + " had no XP to lose." : "");
+        picks.forEach(function (b) { b.checked = false; });
+        if ($("pick-all")) $("pick-all").checked = false;
+        refreshGive();
+      }).catch(function () { state.textContent = "That didn't save. Try again."; });
+  });
+
+  // ---- Tokens
+  document.querySelectorAll("tr[data-student]").forEach(function (row) {
+    var id = row.dataset.student, use = row.querySelector(".js-use");
+    if (!id || !use) return;
+    var tokens = row.querySelector(".js-tokens");
+    use.addEventListener("click", function () {
+      if (!confirm("Use one of this student's tokens?")) return;
+      use.disabled = true;
+      post("/tokens", { student: id }).then(function (out) {
+        if (!out.ok) { alert(out.d.error || "That didn't save."); }
+        else { tokens.textContent = out.d.tokens; }
+        use.disabled = !(out.ok ? out.d.tokens : +tokens.textContent);
+      }).catch(function () { use.disabled = false; alert("That didn't save. Try again."); });
+    });
+  });
+
+  // ---- Photos waiting for approval
+  document.querySelectorAll(".js-photo").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var li = b.closest("li"), decision = b.dataset.decision;
+      if (decision === "reject" && !confirm("Reject and delete this picture?")) return;
+      post("/photo/" + li.dataset.photo + "/" + decision).then(function (out) {
+        if (!out.ok) { alert(out.d.error || "That didn't work."); return; }
+        location.reload();
+      }).catch(function () { alert("That didn't work. Try again."); });
+    });
+  });
+
+  // ---- Random events
+  var card = $("event-card"), shown = null;
+  function hitsText(hits) {
+    return hits.length ? hits : [{ name: "Nobody had XP to lose.", xp: 0 }];
+  }
+  function showEvent(ev) {
+    shown = ev;
+    $("event-icon").textContent = ev.icon;
+    $("event-title").textContent = ev.title;
+    $("event-text").textContent = ev.text;
+    var list = $("event-hits");
+    list.innerHTML = "";
+    hitsText(ev.hits).forEach(function (h) {
+      var li = document.createElement("li");
+      li.textContent = h.name + (h.xp ? "  " + (h.xp > 0 ? "+" : "") + h.xp + " XP" : "");
+      if (h.xp) li.className = h.xp > 0 ? "xp-plus" : "xp-minus";
+      list.appendChild(li);
+    });
+    card.hidden = false;
+    $("event-close").focus();
+  }
+  $("event-btn").addEventListener("click", function () {
+    var b = this;
+    b.disabled = true;
+    post("/event").then(function (out) {
+      b.disabled = false;
+      if (!out.ok) { alert(out.d.error || "That didn't work."); return; }
+      showEvent(out.d.event);
+    }).catch(function () { b.disabled = false; alert("That didn't work. Try again."); });
+  });
+  function undo(id) {
+    if (!confirm("Undo this event? Everyone's XP from it goes back.")) return Promise.resolve(false);
+    return post("/event/" + id + "/undo").then(function (out) {
+      if (!out.ok) { alert(out.d.error || "That didn't work."); return false; }
+      return true;
+    });
+  }
+  $("event-close").addEventListener("click", function () { location.reload(); });
+  $("event-undo").addEventListener("click", function () {
+    undo(shown.id).then(function (done) { if (done) location.reload(); });
+  });
+  document.querySelectorAll(".js-undo").forEach(function (b) {
+    b.addEventListener("click", function () {
+      undo(b.closest("li").dataset.event).then(function (done) { if (done) location.reload(); });
+    });
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !card.hidden) location.reload();
+  });
+})();
+</script>
+</body>
+</html>

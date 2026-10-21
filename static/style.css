@@ -2351,3 +2351,198 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
 .view-link-label { font-weight: 600; }
 .view-link #view-url { flex: 1 1 320px; min-width: 0; font-family: "IBM Plex Mono", monospace; font-size: 13px; }
 .view-link .dim { flex-basis: 100%; }
+
+/* XP (xp.py). An avatar is a picture put into any .avatar (avatar.js), a
+   rounded square like a character card, sized by whoever holds it. */
+.avatar { display: inline-block; border-radius: 22%; overflow: hidden; flex: none;
+  width: 40px; height: 40px; background: var(--bg-head); line-height: 0; }
+.avatar svg, .avatar img { width: 100%; height: 100%; display: block; object-fit: cover; }
+
+/* The student's home: avatar, level and bar, then badges and recent XP
+   beside it — stacked on a phone. */
+.xp-card { display: grid; grid-template-columns: auto 1fr minmax(240px, 360px); gap: 20px;
+  align-items: start; border: 1px solid var(--line); border-top: 4px solid var(--brand);
+  border-radius: 10px; background: var(--bg-panel); padding: 18px 20px; margin: 0 0 24px; }
+.xp-avatar { width: 96px; height: 96px; box-shadow: 0 0 0 3px var(--line); }
+.xp-avatar:hover, .xp-avatar:focus-visible { box-shadow: 0 0 0 3px var(--brand); outline: none; }
+.xp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.xp-level { font-size: 24px; font-weight: 600; }
+.xp-title { color: var(--muted); }
+.xp-total { margin-left: auto; font-family: var(--mono); font-size: 18px; font-weight: 500; }
+.xp-bar { height: 12px; border-radius: 6px; background: var(--bg-head); overflow: hidden;
+  margin: 10px 0 6px; border: 1px solid var(--line); }
+.xp-bar span { display: block; height: 100%; background: var(--green); border-radius: 6px; }
+.xp-next { margin: 0 0 12px; }
+.xp-facts { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.xp-tokens { font-size: 16px; }
+.xp-rank { font-size: 14px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--text); text-decoration: none; }
+.xp-rank:hover { border-color: var(--brand); }
+.xp-side h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin: 0 0 8px; }
+.xp-side h2 + * { margin-bottom: 14px; }
+.xp-badges { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.xp-badges li { display: flex; flex-direction: column; align-items: center; gap: 2px;
+  text-align: center; padding: 6px 2px; border-radius: 8px; border: 1px solid var(--line); }
+.xp-badges li.locked { opacity: .35; filter: grayscale(1); }
+.xp-badge-icon { font-size: 22px; line-height: 1.1; }
+.xp-badge-name { font-size: 11px; line-height: 1.2; }
+.xp-recent { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.xp-recent li { padding: 3px 0; border-bottom: 1px solid var(--line); }
+.xp-recent li:last-child { border-bottom: 0; }
+.xp-plus { color: var(--green); font-family: var(--mono); }
+.xp-minus { color: var(--red); font-family: var(--mono); }
+.xp-hide { display: flex; gap: 6px; align-items: center; color: var(--muted); cursor: pointer; }
+.xp-hide input { accent-color: var(--accent); }
+@media (max-width: 860px) {
+  .xp-card { grid-template-columns: auto 1fr; }
+  .xp-side { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  .xp-card { grid-template-columns: 1fr; justify-items: start; }
+  .xp-total { margin-left: 0; }
+}
+
+/* A class's leaderboard. */
+.xp-board { margin-top: 28px; max-width: 720px; }
+.xp-boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 0 24px;
+  max-width: 1300px; }
+.xp-boards .xp-board { max-width: none; }
+.xp-board-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line);
+  border-radius: 10px; overflow: hidden; background: var(--bg-panel); }
+.xp-board-list li { display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  border-bottom: 1px solid var(--line); }
+.xp-board-list li:last-child { border-bottom: 0; }
+.xp-board-list li.me { background: color-mix(in srgb, var(--brand) 16%, transparent); }
+.xp-place { width: 2.2em; text-align: right; font-family: var(--mono); font-weight: 500; }
+/* By place, not by row: two students tied for third are both third. */
+.xp-board-list li.top .xp-place { color: var(--amber); }
+.xp-board-avatar { width: 36px; height: 36px; }
+.xp-board-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.xp-board-xp { font-family: var(--mono); white-space: nowrap; }
+
+/* The teacher's XP page. */
+.xp-table { width: 100%; border-collapse: collapse; }
+.xp-table th, .xp-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line);
+  vertical-align: middle; }
+.xp-who { display: flex; gap: 10px; align-items: center; }
+.xp-give { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.xp-give .xp-amount { width: 6em; }
+.xp-give .xp-reason { width: 14em; }
+
+/* The avatar picker: the chosen picture large, and a grid of the rest. */
+.avatar-editor { display: grid; grid-template-columns: 240px 1fr; gap: 28px; align-items: start; }
+.avatar-preview { position: sticky; top: calc(var(--bar-h) + 16px); display: flex;
+  flex-direction: column; gap: 10px; align-items: flex-start; }
+.avatar-preview .avatar { width: 220px; height: 220px; box-shadow: 0 0 0 4px var(--line); }
+.avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.avatar-option { position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: 8px 8px 10px; border: 2px solid var(--line); border-radius: 14px;
+  background: var(--bg-panel); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
+.avatar-option .avatar { width: 100%; height: auto; aspect-ratio: 1; }
+.avatar-option:hover:not(:disabled) { border-color: var(--hover-line); }
+.avatar-option[aria-pressed="true"] { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand); }
+.avatar-option:disabled { cursor: not-allowed; }
+.avatar-option:disabled .avatar { filter: grayscale(1) brightness(.45); }
+.avatar-lock { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+  padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .7); color: #fff;
+  font-size: 13px; font-weight: 600; white-space: nowrap; }
+@media (max-width: 700px) {
+  .avatar-editor { grid-template-columns: 1fr; }
+  .avatar-preview { position: static; }
+  .avatar-preview .avatar { width: 160px; height: 160px; }
+  .avatar-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+}
+
+/* "+5 XP", for a moment, bottom right. */
+.xp-toast { position: fixed; right: 18px; bottom: 18px; z-index: 1000; padding: 10px 16px;
+  border-radius: 999px; background: var(--green); color: var(--on-green); font-weight: 600;
+  box-shadow: 0 4px 14px var(--shadow); opacity: 0; transform: translateY(10px);
+  pointer-events: none; }
+.xp-toast.show { animation: xp-toast 3.2s ease forwards; }
+@keyframes xp-toast {
+  0% { opacity: 0; transform: translateY(10px); }
+  10%, 80% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xp-toast.show { animation-duration: 3.2s; animation-timing-function: steps(1, end); }
+}
+
+/* Random events and rewards (class_xp.html, the class page, My XP). */
+.xp-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.xp-event-btn { font-size: 16px; padding: 10px 18px; }
+.xp-givebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0;
+  padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-panel); }
+.xp-givebar select { max-width: 100%; }
+.xp-check { width: 2em; }
+.xp-check input { width: 18px; height: 18px; accent-color: var(--accent); }
+label.xp-who { cursor: pointer; }
+.xp-events { margin-top: 28px; }
+.xp-event-list { list-style: none; margin: 0; padding: 0; }
+.xp-event-list li { display: flex; align-items: center; gap: 12px; padding: 10px 0;
+  border-bottom: 1px solid var(--line); }
+.xp-event-list li.undone { opacity: .5; }
+.xp-event-body { flex: 1; min-width: 0; }
+.xp-event-icon { font-size: 28px; line-height: 1; }
+.xp-event-overlay { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center;
+  background: rgba(0, 0, 0, .7); padding: 16px; }
+.xp-event-overlay[hidden] { display: none; }
+.xp-event-card { width: min(720px, 100%); text-align: center; padding: 32px 28px; border-radius: 18px;
+  background: var(--bg-panel); border: 1px solid var(--line); border-top: 6px solid var(--brand);
+  box-shadow: 0 20px 60px var(--shadow); }
+.xp-event-big { font-size: 96px; line-height: 1.1; }
+.xp-event-card h2 { font-size: clamp(26px, 4vw, 40px); margin: 10px 0; text-transform: none; color: var(--text); }
+.xp-event-card p { font-size: clamp(17px, 2.2vw, 22px); margin: 0 0 16px; }
+.xp-event-hits { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-wrap: wrap;
+  justify-content: center; gap: 8px; font-size: 18px; font-weight: 600; }
+.xp-event-hits li { padding: 4px 12px; border-radius: 999px; background: var(--bg-head); }
+.xp-event-actions { display: flex; justify-content: center; gap: 10px; }
+.xp-latest-event { display: flex; gap: 14px; align-items: flex-start; margin: 0 0 20px; padding: 14px 18px;
+  border: 1px solid var(--line); border-left: 4px solid var(--amber); border-radius: 10px;
+  background: var(--bg-panel); }
+.xp-latest-event p { margin: 4px 0 0; }
+.xp-hits { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.xp-all { float: right; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.xp-history { max-width: 860px; }
+.xp-table td.num, .xp-table th.num { text-align: right; white-space: nowrap; }
+
+/* Quests, and the leaderboards on a student's home page. */
+.badge-quest { color: var(--amber); border-color: var(--amber); }
+.badge-quest.done { color: #2f9e6b; border-color: #2f9e6b; }
+.kind-quest { color: var(--amber); }
+.xp-sub { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  margin: 16px 0 8px; }
+.xp-quests { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.xp-quests a { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.xp-quests a:hover { border-color: var(--amber); }
+.xp-quest-xp { flex: none; font-family: var(--mono); font-weight: 600; color: var(--amber); }
+.xp-home-boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px; margin: 0 0 28px; }
+.xp-home-board { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-panel);
+  padding: 14px 16px; }
+.xp-home-board-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  margin-bottom: 10px; }
+.xp-home-board-head h2 { margin: 0; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--text); }
+.xp-home-board .xp-board-list { background: var(--bg); }
+.xp-board-gap { justify-content: center; color: var(--muted); padding: 2px 0 !important; }
+.xp-home-board-all { display: inline-block; margin-top: 10px; }
+
+/* Students' own photos: uploading one, and the teacher approving it. */
+.avatar-upload { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  padding: 14px 16px; border: 1px dashed var(--hover-line); border-radius: 14px; }
+.avatar-upload .avatar { width: 96px; height: 96px; }
+.avatar-upload-text { flex: 1; min-width: 220px; }
+.avatar-upload-text p { margin: 4px 0 0; }
+.xp-photos { margin: 18px 0; padding: 14px 16px; border: 1px solid var(--amber); border-radius: 10px;
+  background: var(--bg-panel); }
+.xp-photos h2 { margin: 0 0 10px; }
+.xp-photo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 14px; }
+.xp-photo-list li { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 150px;
+  text-align: center; }
+.xp-photo-list img { width: 140px; height: 140px; object-fit: cover; border-radius: 22%; }
+.xp-photo-list .btns { display: flex; gap: 6px; }
+.count-pill { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px;
+  background: var(--amber); color: #1a1200; font-size: 11px; font-weight: 700; }

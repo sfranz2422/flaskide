@@ -56,6 +56,22 @@
     {% if course.banner %}<div class="md banner-body" data-md="{{ course.banner }}">{{ course.banner }}</div>{% endif %}
   </section>
 
+  {#  The class's last random event, for a day (_latest_event): what
+      happened and to whom. A student hidden from the leaderboard is "A
+      classmate" here too. #}
+  {% if latest_event and not visitor %}
+    <section class="xp-latest-event">
+      <span class="xp-event-icon" aria-hidden="true">{{ latest_event.icon }}</span>
+      <div>
+        <strong>{{ latest_event.title }}</strong>
+        <p>{{ latest_event.text }}</p>
+        {% if latest_event.hits %}
+          <p class="small xp-hits">{% for h in latest_event.hits %}<span class="{{ 'xp-plus' if h.xp > 0 else 'xp-minus' }}">{{ h.name }} {{ "%+d"|format(h.xp) }}</span>{% endfor %}</p>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+
   {#  The class's page as the teacher arranged it: a group is a heading with
       its own words under it; an assignment is a card — its name (which opens
       what they last turned in, or their copy), where they stand, the
@@ -87,6 +103,8 @@
               <a class="card-title" href="{{ url_for('class_view_item', token=visitor, slug=r.slug) if visitor else r.open_url }}"
                  {% if r.turned_in %}title="What you turned in"{% endif %}>{{ r.title }}</a>
               <span class="card-badges">
+                {% if r.quest_xp %}<span class="badge badge-quest {{ 'done' if r.quest_done }}"
+                  title="{{ 'Quest XP earned' if r.quest_done else 'Full marks earn the XP' }}">{{ "✓ Quest complete" if r.quest_done else "⚔️ Quest · +%d XP" % r.quest_xp }}</span>{% endif %}
                 {% if r.on_air %}<span class="live-pill">● Live now</span>{% endif %}
                 {% if r.grade %}<span class="badge badge-grade">{{ r.grade }}{% if r.out_of %} / {{ r.out_of }}{% endif %}</span>{% endif %}
                 {% if r.turned_in %}<span class="badge badge-done">✓ Turned in</span>{% endif %}
@@ -117,7 +135,38 @@
       <p>Your teacher hasn't put anything in this class yet.</p>
     </div>
   {% endif %}
+
+  {#  The class's leaderboard (_board): its students by their whole XP,
+      first name and last initial, never an email. Not on the view-only
+      link — an administrator's page draws no student names it doesn't
+      need. #}
+  {% if board is defined and not visitor %}
+    <div class="xp-boards">
+      <section class="xp-board" id="leaderboard">
+        <h2>Leaderboard</h2>
+        {% if board_hidden %}
+          <p class="dim small">You're hidden from the leaderboards. You still earn XP —
+            <a href="{{ url_for('my_classes') }}">change it on your home page</a>.</p>
+        {% endif %}
+        {% if board %}
+          <ol class="xp-board-list">{% for b in board %}{% include "_board_row.html" %}{% endfor %}</ol>
+        {% else %}
+          <p class="dim">Nobody is on it yet. Answer questions and run your programs to earn XP.</p>
+        {% endif %}
+      </section>
+      {#  Everyone in all of this teacher's classes here (_all_classes_board):
+          Programming 1 against both Intro periods. Not shown when the
+          teacher has only this class — it would be the same board. #}
+      {% if all_board %}
+        <section class="xp-board" id="all-classes">
+          <h2>All classes</h2>
+          <ol class="xp-board-list">{% for b in all_board %}{% include "_board_row.html" %}{% endfor %}</ol>
+        </section>
+      {% endif %}
+    </div>
+  {% endif %}
 </main>
+<script src="{{ url_for('static', filename='avatar.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script src="{{ url_for('static', filename='embeds.js') }}"></script>
 <script>

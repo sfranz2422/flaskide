@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your avatar — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{#  Before any other script: it wraps fetch so every JSON body goes past
+    Render's firewall (pack.js says why). #}
+<script src="{{ url_for('static', filename='pack.js') }}"></script>
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">Your avatar</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ back }}">Back</a>
+  </div>
+</header>
+
+{#  One picture from a fixed set (xp.AVATARS); nothing uploaded, nothing
+    typed. A picture above the student's level shows locked, with the level
+    it opens at; the server refuses it too, so the lock is not only in this
+    page. #}
+<main class="sheet avatar-editor">
+  <div class="avatar-preview">
+    <span class="avatar" id="preview" data-avatar="{{ avatar }}"></span>
+    <p class="dim small">Level {{ level }}. More pictures unlock as you level up.</p>
+    <button id="save" class="btn btn-primary">Save avatar</button>
+    <span id="state" class="dim small" role="status"></span>
+  </div>
+  <div class="avatar-grid" id="pictures">
+    {#  Their own photo: chosen like any picture once approved; while one
+        waits, they see it here and nobody else sees it anywhere. #}
+    {% if can_upload %}
+      <div class="avatar-upload">
+        {% if photo %}
+          <button type="button" class="avatar-option" data-id="photo"
+                  aria-pressed="{{ 'true' if avatar == photo else 'false' }}">
+            <span class="avatar" data-avatar="{{ photo }}"></span><span>My photo</span>
+          </button>
+        {% endif %}
+        {% if pending %}<span class="avatar" data-avatar="{{ pending }}" title="Waiting for approval"></span>{% endif %}
+        <div class="avatar-upload-text">
+          <strong>Use your own picture</strong>
+          <p class="dim small" id="photo-note">{% if pending %}Waiting for your teacher to approve it. Until then, everyone else sees your current avatar.{% else %}Your teacher approves it before anyone else can see it. Keep it school-appropriate.{% endif %}</p>
+          <p><label class="btn">Upload a picture<input type="file" id="photo-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>
+            <span id="photo-state" class="dim small" role="status"></span></p>
+        </div>
+      </div>
+    {% endif %}
+    {% for p in pictures %}
+      <button type="button" class="avatar-option" data-id="{{ p.id }}"
+              aria-pressed="{{ 'true' if p.id == avatar else 'false' }}"
+              {% if p.level > level %}disabled title="Unlocks at level {{ p.level }}"{% endif %}>
+        <span class="avatar" data-avatar="{{ p.id }}"></span>
+        <span>{{ p.label }}</span>
+        {% if p.level > level %}<span class="avatar-lock">🔒 Level {{ p.level }}</span>{% endif %}
+      </button>
+    {% endfor %}
+  </div>
+</main>
+
+<script src="{{ url_for('static', filename='avatar.js') }}"></script>
+<script>
+(function () {
+  var chosen = {{ avatar|tojson }};
+  var state = document.getElementById("state");
+  var preview = document.getElementById("preview");
+  var buttons = document.querySelectorAll("#pictures .avatar-option");
+  {% if photo %}if (chosen === {{ photo|tojson }}) chosen = "photo";{% endif %}
+  Array.prototype.forEach.call(buttons, function (b) {
+    b.addEventListener("click", function () {
+      chosen = b.dataset.id;
+      preview.innerHTML = window.FlaskIDEAvatar.html(chosen === "photo" ? {{ (photo or "")|tojson }} : chosen);
+      Array.prototype.forEach.call(buttons, function (o) {
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      });
+      state.textContent = "";
+    });
+  });
+  /* A photo is cut to the middle square and shrunk to 400px here, before
+     it is sent: phones take 4000px pictures, and the server caps what it
+     will keep (PHOTO_MAX_BYTES). */
+  var file = document.getElementById("photo-file");
+  if (file) file.addEventListener("change", function () {
+    var f = file.files[0], st = document.getElementById("photo-state");
+    if (!f) return;
+    st.textContent = "Sending…";
+    var img = new Image();
+    img.onload = function () {
+      var side = Math.min(img.width, img.height), c = document.createElement("canvas");
+      c.width = c.height = 400;
+      c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2,
+                                   side, side, 0, 0, 400, 400);
+      URL.revokeObjectURL(img.src);
+      c.toBlob(function (blob) {
+        var form = new FormData();
+        form.append("photo", blob, "photo.jpg");
+        fetch("/api/me/photo", { method: "POST", body: form })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (out) {
+            if (!out.ok) { st.textContent = out.d.error || "That didn't send."; return; }
+            location.reload();
+          })
+          .catch(function () { st.textContent = "That didn't send. Try again."; });
+      }, "image/jpeg", 0.85);
+    };
+    img.onerror = function () { st.textContent = "That file isn't a picture this browser can open."; };
+    img.src = URL.createObjectURL(f);
+  });
+
+  document.getElementById("save").addEventListener("click", function () {
+    if (!chosen) { state.textContent = "Pick a picture first."; return; }
+    state.textContent = "Saving…";
+    fetch("/api/me/avatar", { method: "POST", headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ avatar: chosen }) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (out) {
+        state.textContent = out.ok ? "Saved." : (out.d.error || "That didn't save.");
+      })
+      .catch(function () { state.textContent = "That didn't save. Try again."; });
+  });
+})();
+</script>
+{% include "_idle.html" %}
+</body>
+</html>

@@ -38,7 +38,7 @@ failing one, so a red suite cannot scroll past unnoticed — a bare
 `for ... do python3 "$t"; done` will let it.
 
 **`node` is required** by `test_complete.py`, `test_pack.py`, `test_quiz.py`,
-`test_rescue.py`, `test_sighint.py`, `test_syntax.py` and `test_tabstops.py`. `test_syntax.py`
+`test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py` and `test_xp.py`. `test_syntax.py`
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
 `brew install node` if it is missing.
@@ -194,6 +194,77 @@ assignment opens on its notes, except for its author, who gets Edit source.
 
 **The rescue** (`static/rescue.js`, identical in all three apps). Work typed
 while signed out is kept in the browser and restored after signing in.
+
+**XP** (`xp.py`; "XP" in `app.py`; `static/xp.js`, `static/avatar.js`).
+Students earn XP for questions the notes mark themselves (`XP_PER_POINT` a
+point, part for part right), for answering every question in the notes, for
+full marks on an assignment with an `xp_bonus`, from the teacher by hand
+(`/teacher/class/<id>/xp`, negative takes it back), and for a program that
+ran without an error. It makes levels, badges and tokens (one per 500 XP),
+all worked out from the total and never stored; `users.tokens_used` is the
+only token state, lowered by Use with a conditional UPDATE. **Nothing here
+touches a grade** — the teacher trades tokens for points by hand.
+
+One total per *person*, across every class and all three apps, so **`xp.py`,
+`avatar.js`, `xp.js`, `static/avatars/` and `tools/test_xp.py` are shared
+like `accounts.py`**: the same in all three repos, PyIDE's the original. XP is rows in `xp_awards`, never updated, and
+the unique `(user_id, source)` is what stops anything paying twice — a
+double click, two workers, a page sent twice. `xp.award` commits on its own
+and is called *after* the thing it pays for is committed.
+
+**The server cannot see a run.** In FlaskIDE a run that worked is the
+student's app importing without an error, or a SQL project's queries all
+running (`reportRun` in `app.js` and `live.js`). The page posts a hash of
+its code files (never the code), and the server pays `RUN_XP` only after
+`RUN_EVERY_SECONDS` of *working* time since the last paid run, never twice
+in that much clock time across all three apps, and only when the hash
+changed. Working time is `session["busy"]`, counted in
+`_sign_out_idle_student` as `act` moves — one `BUSY_STEP_SECONDS` at most per
+gap, and never for a GET to `/api/`. A faked claim earns what a real one
+would, which is the whole defence.
+
+A class's leaderboard (`_board`) shows its roster's signed-in students by
+their whole XP, **first name and last initial only** (`xp.board_name`),
+never an email, and not on the view-only link. Students can hide and still
+earn. Their home page (`/classes`) shows all of it. An avatar is one
+picture from `xp.AVATARS` — `static/avatars/<id>.webp`, painted portraits
+the teacher made with Gemini, cropped square and shrunk to 400px — never an
+upload or text, checked by `xp.clean_avatar` against the level that unlocks
+it. Adding one is a file and a line in `AVATARS`, in all three repos;
+`test_xp.py` fails on a picture without its file or a file without its
+line. (A parts builder drawn in SVG came first and was replaced: it could
+not reach the look the teacher wanted.)
+
+**Rewards, penalties and random events** (`xp.BEHAVIORS`, `xp.EVENTS`; the
+XP & tokens page). The teacher ticks students and picks a programming-themed
+reason, or types one; a random event (Classcraft's, renamed for code) is
+applied the moment it is drawn and shown big for the projector. **XP never
+goes below 0** (`xp.penalty_for`): a penalty takes only what a student has.
+An event's XP is `XpAward` rows sourced `event:<ClassEvent id>:<user id>`,
+which is how Undo removes exactly those — the one place award rows are
+deleted. The class page shows the last event for a day, a hidden student as
+"A classmate"; `/me/xp` is a student's every award and its reason. Events
+move XP only, never tokens, because tokens become real points.
+
+**Quests** are assignments with an `xp_bonus` ("Quest reward" on the
+assignment page), paid once on full marks. "Complete" is not stored: it is
+that student having the `bonus:<assignment id>` award (`_quests_done`). The
+class page marks quests, and a student's home page lists their open ones
+(`_open_quests`: not hidden, archived or closed).
+
+**Leaderboards** come in two sizes: a class's own, and — when its teacher
+has more than one class here — all of that teacher's classes together
+(`_all_classes_board`), so Programming 1 sees both Intro periods. A
+student's home page shows the top five of each, plus their own row.
+
+**Students' own photos need the teacher's approval first**
+(`accounts.StudentPhoto`, `/photo/<slug>`). A waiting photo is served only
+to its student and the teachers of their classes, never cached, and is on
+no board; approving makes it their avatar (`"photo:<slug>"`), rejecting
+deletes it. They are not `images`, because `/img/<slug>` serves anyone with
+the address. The page crops and shrinks a photo to 400px before sending.
+
+The XP pages load `pack.js` first like every page here that sends JSON.
 
 ## Style
 

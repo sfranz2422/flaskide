@@ -114,6 +114,18 @@
       <span id="out-of-state" class="dim small"></span>
     </div>
     <p class="dim small">Leave it empty for an assignment you don't grade.</p>
+    {#  A quest: XP for full marks (_full_marks_xp), paid once to each
+        student who reaches Out of — or, ungraded, gets every question's
+        points. Setting it pays those already there. Students see it marked
+        as a quest on the class page and listed on their home page. #}
+    <div class="grade-line">
+      <label for="xp-bonus">⚔️ Quest reward</label>
+      <input id="xp-bonus" class="field out-of" type="number" min="0" max="1000"
+             value="{{ assignment.xp_bonus or '' }}" placeholder="0">
+      <span>XP for full marks. Any amount makes this a quest; 0 makes it an ordinary assignment.</span>
+      <button id="xp-bonus-save" class="btn">Save</button>
+      <span id="xp-bonus-state" class="dim small" role="status"></span>
+    </div>
     {% if quiz_count %}
       <p class="small">The notes have <strong>{{ quiz_count }} question{{ "" if quiz_count == 1 else "s" }}</strong>
         worth <strong>{{ quiz_points }} point{{ "" if quiz_points == "1" else "s" }}</strong>.
@@ -453,6 +465,18 @@
         if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
         if (out.d.note) { alert(out.d.note); }
         location.reload();
+      }).catch(function () { state.textContent = "Not saved — check your connection"; });
+  });
+
+  // The full-marks XP bonus. No reload: nothing else on the page depends on it.
+  document.getElementById("xp-bonus-save").addEventListener("click", function () {
+    var state = document.getElementById("xp-bonus-state");
+    state.textContent = "Saving…";
+    post(base + "/xp-bonus", { xp: document.getElementById("xp-bonus").value })
+      .then(function (out) {
+        if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
+        state.textContent = "Saved." + (out.d.paid ? " Paid to " + out.d.paid +
+          " student" + (out.d.paid === 1 ? "" : "s") + " who already had full marks." : "");
       }).catch(function () { state.textContent = "Not saved — check your connection"; });
   });
 

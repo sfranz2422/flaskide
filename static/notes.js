@@ -725,6 +725,7 @@ window.FlaskIDENotes = (function () {
         delete pending[q.id];
         paintAll(q.id);
         announceTurnIn(out.d);
+        announceXp(out.d);
       }).catch(function () {
         send.disabled = false;
         note.textContent = "No connection — your answer wasn't sent. Try again.";
@@ -946,6 +947,7 @@ window.FlaskIDENotes = (function () {
         delete pending[q.id];
         paintAll(q.id);
         announceTurnIn(out.d);
+        announceXp(out.d);
       }).catch(function () {
         send.disabled = false;
         note.textContent = "No connection — your answer wasn't sent. It's kept here; try again.";
@@ -954,6 +956,12 @@ window.FlaskIDENotes = (function () {
 
     loadMine().then(function () { box.paint(); });
     return box;
+  }
+
+  /* XP the answer earned (app.py, _quiz_xp), shown the way a run's is.
+     Only where the page has xp.js; the answer never depends on it. */
+  function announceXp(reply) {
+    if (reply && reply.xp > 0 && window.PyIDEXP) window.PyIDEXP.toast("+" + reply.xp + " XP");
   }
 
   /* Answering a question turns the work in (the server's _auto_turn_in).

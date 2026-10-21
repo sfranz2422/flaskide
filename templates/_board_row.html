@@ -1,0 +1,9 @@
+{#  One row of a leaderboard (_board's dicts): place, picture, first name
+    and last initial, level, XP. The class page and the home page both. #}
+<li class="{{ 'me' if b.me }} {{ 'top' if b.place <= 3 }}">
+  <span class="xp-place">{{ b.place }}</span>
+  <span class="avatar xp-board-avatar" data-avatar="{{ b.avatar }}"></span>
+  <span class="xp-board-name">{{ b.name }}{% if b.me %} <span class="dim small">(you)</span>{% endif %}</span>
+  <span class="xp-board-level dim small">Level {{ b.level }}</span>
+  <span class="xp-board-xp">{{ b.xp }} XP</span>
+</li>

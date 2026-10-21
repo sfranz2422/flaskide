@@ -412,6 +412,16 @@
      empty page, as if it were the program. */
   var hasRun = false;
 
+  /* XP for a run that worked (xp.js): the app imported without an error —
+     or a SQL project's queries all ran. Only a signed-in student's own
+     work; the server decides whether it pays. */
+  var XP_CODE = /\.(py|html?|css|js|sql)$/i;
+  function reportRun(files) {
+    if (!window.FLASKIDE.signedIn || window.FLASKIDE.viewOnly || window.FLASKIDE.readonly ||
+        window.FLASKIDE.isTeacher || !window.PyIDEXP) return;
+    window.PyIDEXP.ran(files, XP_CODE);
+  }
+
   async function run() {
     if (running) return;
     // Run with the notes up would run into a pane nobody can see, and look
@@ -456,6 +466,7 @@
         say("\n" + res.error + "\n", "err");
         return;
       }
+      reportRun(project.files);
 
       if (!res.routes.length) {
         say("Your app has no routes yet.\n\n", "dim");
@@ -509,6 +520,7 @@
       }
 
       paintSql(res.results, res.tables);
+      reportRun(project.files);
       var n = res.results.length;
       say(n === 1 ? "1 statement.\n" : n + " statements.\n", "dim");
       if (!n) {

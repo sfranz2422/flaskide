@@ -1355,6 +1355,11 @@
     });
   }
 
+  /* XP for their own run working (xp.js), as in the editor. */
+  function reportRun(files) {
+    if (L.signedIn && window.PyIDEXP) window.PyIDEXP.ran(files, /\.(py|html?|css|js|sql)$/i);
+  }
+
   async function run() {
     if (running) return;
     // Their Run, their console and their app.
@@ -1389,6 +1394,7 @@
            before an error is still shown, as the editor does — a typo in the
            fifth query should not hide the first four. */
         writeSqlResults(out.results);
+        if (out.ok) reportRun(project);
         if (!out.ok) {
           write("\n" + out.error + "\n", "err");
           if (out.statement) {
@@ -1424,6 +1430,7 @@
         write("\n" + res.error + "\n", "err");
         return;
       }
+      reportRun(project);
       if (!res.routes.length) {
         write("Your app has no routes yet.\n", "dim");
         return;

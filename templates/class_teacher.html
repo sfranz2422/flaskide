@@ -32,6 +32,8 @@
        title="This page as the class sees it: hidden ones left out">Student view</a>
     <a class="btn" href="{{ url_for('class_attendance', class_id=course.id) }}"
        title="Who came into this class, day by day">Attendance</a>
+    <a class="btn" href="{{ url_for('class_xp', class_id=course.id) }}"
+       title="Each student's XP and tokens: use a token, give XP, approve pictures">XP &amp; tokens{% if photos_waiting %} <span class="count-pill">{{ photos_waiting }} to approve</span>{% endif %}</a>
     <a class="btn" href="{{ url_for('teacher_home') }}">All classes</a>
     <a class="btn" href="{{ url_for('logout') }}">Sign out</a>
   </div>
@@ -203,6 +205,7 @@
                 {#  What it is — the three kinds the Add form makes — and whether
                     it was posted to Google Classroom (and to which, on hover). #}
                 <span class="kind-tag">{{ "lesson" if r.kind == 'lesson' else "code" }}</span>
+                {% if r.quest_xp %}<span class="kind-tag kind-quest" title="Full marks earn {{ r.quest_xp }} XP">⚔️ quest +{{ r.quest_xp }}</span>{% endif %}
                 {% if r.posted %}
                   <span class="kind-tag tag-classroom" title="Posted to {{ r.posted | join(', ') }}">✓ Classroom</span>
                 {% else %}

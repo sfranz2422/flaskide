@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My XP — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧪</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{#  Before any other script: it wraps fetch so every JSON body goes past
+    Render's firewall (pack.js says why). #}
+<script src="{{ url_for('static', filename='pack.js') }}"></script>
+<script>
+  try {
+    var saved = localStorage.getItem("flaskide-theme");
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  } catch (e) {}
+</script>
+</head>
+<body class="class-page">
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">My XP</span></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('my_classes') }}">Back</a>
+  </div>
+</header>
+
+{#  Every piece of XP, newest first, with the reason — questions, runs,
+    the teacher's rewards and penalties, random events. Students asked why
+    their XP moved; this is the whole answer. #}
+<main class="sheet xp-history">
+  <h1 class="att-title">My XP</h1>
+  <p class="dim">Level {{ game.level }} · {{ game.xp }} XP · {{ game.tokens }} token{{ "" if game.tokens == 1 else "s" }}</p>
+  {% if rows %}
+    <table class="xp-table">
+      <thead><tr><th>When</th><th>Why</th><th class="num">XP</th></tr></thead>
+      <tbody>
+        {% for a in rows %}
+          <tr>
+            <td class="dim small">{{ a.created_at|local('%b %d, %I:%M %p') }}</td>
+            <td>{{ a.reason }}</td>
+            <td class="num"><strong class="{{ 'xp-minus' if a.xp < 0 else 'xp-plus' }}">{{ "%+d"|format(a.xp) }}</strong></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="dim">No XP yet. Answer questions in your assignments and run your programs to earn some.</p>
+  {% endif %}
+</main>
+{% include "_idle.html" %}
+</body>
+</html>

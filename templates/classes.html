@@ -42,6 +42,88 @@
     whole card is the link — the button is how it looks, not the only place
     that works. #}
 <main class="sheet">
+  {#  Their XP, first thing: level, tokens, badges, where they stand in each
+      class, and what the last few points were for. All of it is worked out
+      from their awards (_game_card) — nothing here is stored as shown. #}
+  <section class="xp-card" aria-label="Your XP">
+    <a class="xp-avatar avatar" href="{{ url_for('avatar_page') }}" title="Change your avatar"
+       data-avatar="{{ game.avatar }}"></a>
+    <div class="xp-main">
+      <div class="xp-head">
+        <span class="xp-level">Level {{ game.level }}</span>
+        <span class="xp-title">{{ game.title }}</span>
+        <span class="xp-total">{{ game.xp }} XP</span>
+      </div>
+      <div class="xp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+           aria-valuenow="{{ game.progress }}" aria-label="Progress to level {{ game.level + 1 }}">
+        <span style="width: {{ game.progress }}%"></span>
+      </div>
+      <p class="xp-next dim small">{{ game.to_next }} XP to level {{ game.level + 1 }}
+        {%- if game.run_minutes %} · run a program in about {{ game.run_minutes }} min for +{{ game.run_xp }} XP
+        {%- else %} · your next program that runs (with changed code) earns +{{ game.run_xp }} XP{% endif %}</p>
+      <div class="xp-facts">
+        <span class="xp-tokens" title="One for every 500 XP. Your teacher turns them into bonus points.">🪙 <strong>{{ game.tokens }}</strong> token{{ "" if game.tokens == 1 else "s" }}</span>
+        <a class="btn" href="{{ url_for('avatar_page') }}">Edit avatar</a>
+      </div>
+      {% if game.quests %}
+        <h2 class="xp-sub">Quests</h2>
+        <ul class="xp-quests">
+          {% for q in game.quests %}
+            <li><a href="{{ q.url }}"><span class="xp-quest-xp">+{{ q.xp }} XP</span>
+              <span>{{ q.title }}<br><span class="dim small">{{ q.class }} · full marks completes it</span></span></a></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+    <div class="xp-side">
+      <h2>Badges</h2>
+      <ul class="xp-badges">
+        {% for b in game.badges %}
+          <li class="{{ 'have' if b.have else 'locked' }}" title="{{ b.name }} — {{ b.xp }} XP{% if not b.have %} (not yet){% endif %}">
+            <span class="xp-badge-icon" aria-hidden="true">{{ b.icon }}</span>
+            <span class="xp-badge-name">{{ b.name }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+      {% if game.recent %}
+        <h2>Recent XP <a class="xp-all small" href="{{ url_for('my_xp') }}">See all</a></h2>
+        <ul class="xp-recent">
+          {% for a in game.recent %}
+            <li><strong class="{{ 'xp-minus' if a.xp < 0 else 'xp-plus' }}">{{ "%+d"|format(a.xp) }}</strong> {{ a.reason }}
+              <span class="dim small">{{ a.when|local('%b %d') }}</span></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <label class="xp-hide small">
+        <input type="checkbox" id="board-hidden" {{ "checked" if game.hidden }}>
+        Hide me from the class leaderboards
+      </label>
+    </div>
+  </section>
+
+  {#  Each class's leaderboard, the top five and their own row (_game_card). #}
+  {% if game.ranks %}
+    <section class="xp-home-boards">
+      {% for r in game.ranks %}
+        <div class="xp-home-board">
+          <div class="xp-home-board-head">
+            <h2>🏆 {{ r.name }}</h2>
+            <span class="dim small">{% if r.place %}You're #{{ r.place }} of {{ r.of }}{% else %}You're hidden{% endif %}</span>
+          </div>
+          {% if r.top %}
+            <ol class="xp-board-list">
+              {% for b in r.top %}{% include "_board_row.html" %}{% endfor %}
+              {% if r.me_row %}<li class="xp-board-gap" aria-hidden="true">⋯</li>{% with b = r.me_row %}{% include "_board_row.html" %}{% endwith %}{% endif %}
+            </ol>
+          {% else %}
+            <p class="dim small">Nobody is on it yet.</p>
+          {% endif %}
+          <a class="xp-home-board-all small" href="{{ r.url }}">Full leaderboard →</a>
+        </div>
+      {% endfor %}
+    </section>
+  {% endif %}
+
   {% if enrolled %}
     <h1 class="enrolled-title">Currently enrolled classes</h1>
     <p class="enrolled-sub">Choose a class to see its assignments and lessons.</p>
@@ -66,6 +148,17 @@
     </div>
   {% endif %}
 </main>
+<script src="{{ url_for('static', filename='avatar.js') }}"></script>
+<script>
+  // Hiding is saved at once; still earning XP and badges either way.
+  document.getElementById("board-hidden").addEventListener("change", function (e) {
+    var box = e.target;
+    fetch("/api/me/board", { method: "POST", headers: { "Content-Type": "application/json" },
+                             body: JSON.stringify({ hidden: box.checked }) })
+      .then(function (r) { if (!r.ok) throw new Error(); location.reload(); })
+      .catch(function () { box.checked = !box.checked; alert("That didn't save. Try again."); });
+  });
+</script>
 {% include "_idle.html" %}
 </body>
 </html>
