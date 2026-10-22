@@ -436,6 +436,26 @@ check("fixed work is paid for the tests that now pass, and only those",
       0 < before < 9 * xp.XP_PER_POINT and test_xp(BEN) == 9 * xp.XP_PER_POINT,
       (before, test_xp(BEN)))
 
+# ------------------------------------------------------------ live lessons
+print("\nCheck my work in a live lesson")
+LIVE = teacher.post("/api/live/start", json={"body": "x", "filename": "app.py",
+                                            "title": "Live"}).get_json()["code"]
+teacher.post("/api/live/%s/push" % LIVE, json={
+    "body": "x", "seq": 5000, "filename": "app.py",
+    "notes": "# Steps\n\n---\n\n## Step 1\n\n```tests\nuses for\n```\n"})
+polled = amy.get("/api/live/%s" % LIVE).get_json() or {}
+check("the tests reach the class with the notes",
+      "```tests\nuses for" in (polled.get("notes") or ""), polled.get("notes"))
+livepage = amy.get("/live/%s" % LIVE).get_data(as_text=True)
+check("the live page has Check my work, and the tests to run",
+      'id="check"' in livepage and "autograde.js" in livepage)
+livejs = open(os.path.join(ROOT, "static", "live.js")).read()
+at = livejs.find("async function checkWork")
+body = re.sub(r"//[^\n]*", "", livejs[at:livejs.find("\n  }\n", at)]) if at >= 0 else ""
+check("  which runs THEIR code, never the mirror, under slide headings",
+      body and "allFiles()" in body and "mirror" not in body.lower() and ".places(" in body
+      and 'checkBtn.addEventListener("click", checkWork)' in livejs, body[:80])
+
 print()
 failed = results.count(False)
 print("%d checks, %s" % (len(results), "all ok" if not failed else "%d FAILED" % failed))

@@ -96,6 +96,21 @@ missing = [os.path.basename(p) for p in heads if "user_theme" not in open(p).rea
 check("every page with the light/dark script uses user_theme (%d pages)" % len(heads),
       heads and not missing, missing)
 
+print("\nThe light/dark button never loses a theme")
+xpjs = open(os.path.join(ROOT, "static", "xp.js")).read()
+clear = xpjs[xpjs.find("function clearTheme"):xpjs.find("function lastTheme")]
+check("leaving a theme remembers it in this browser",
+      "localStorage.setItem(LAST_KEY" in clear and "restoreTheme: restoreTheme" in xpjs)
+for page in ("app.js", "live.js"):
+    js = open(os.path.join(ROOT, "static", page)).read()
+    check("  and %s's button brings it back (theme, light, dark, theme)" % page,
+          "clearTheme()" in js and "restoreTheme()" in js)
+live = open(os.path.join(ROOT, "static", "live.js")).read()
+# The live page set its button up before reading the theme, and painted
+# plain light/dark over every bought theme without a word.
+check("the live page reads the theme before setting up its button",
+      0 <= live.find("var named = ") < live.find("\n  themeSwitch();"))
+
 # ------------------------------------------------------------- the shop
 TEACHER = add(accounts.User(google_sub="t", email="teacher@school.org", name="Mr Franz"))
 AMY = add(accounts.User(google_sub="a", email="amy@school.org", name="Amy Adams"))

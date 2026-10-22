@@ -1077,27 +1077,45 @@
     function paint() {
       if (named) {
         if (glyph) glyph.textContent = "🎨";
-        btn.title = "Your theme — click for ordinary light or dark";
+        btn.title = "Your theme — click for light, then dark, then back";
         if (editor) editor.setOption("theme", "pyide-" + named);
         return;
       }
       var light = document.documentElement.getAttribute("data-theme") === "light";
       if (glyph) glyph.textContent = light ? "☀" : "☾";
+      btn.title = "";
+      // In dark, the next click brings their theme back (xp.js), so say so.
+      if (!light && window.PyIDEXP && window.PyIDEXP.lastTheme()) {
+        if (glyph) glyph.textContent = "🎨";
+        btn.title = "Back to your theme";
+      }
       if (editor) {
         editor.setOption("theme", light ? "default" : "material-darker");
       }
     }
+    function set(next) {
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("flaskide-theme", next); } catch (e) {}
+      paint();
+    }
     paint();
+    /* Theme -> light -> dark -> theme (xp.js says why). */
     btn.addEventListener("click", function () {
       if (named) {
         named = "";
         window.PyIDEXP.clearTheme();
+        set("light");
+        return;
       }
       var light = document.documentElement.getAttribute("data-theme") === "light";
-      var next = light ? "dark" : "light";
-      document.documentElement.setAttribute("data-theme", next);
-      try { localStorage.setItem("flaskide-theme", next); } catch (e) {}
-      paint();
+      if (!light && window.PyIDEXP && window.PyIDEXP.lastTheme()) {
+        window.PyIDEXP.restoreTheme().then(function (t) {
+          if (t) { named = t; paint(); }
+          else set("light");
+        });
+        return;
+      }
+      set(light ? "dark" : "light");
     });
   }
 

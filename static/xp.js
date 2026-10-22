@@ -79,14 +79,49 @@ window.PyIDEXP = (function () {
     var t = document.documentElement.getAttribute("data-theme") || "";
     return /^[a-z]{2,20}$/.test(t) && t !== "light" && t !== "dark" ? t : "";
   }
-  /* Back to ordinary light/dark from the editor's button: saved to the
-     account, or the next page would put the theme straight back. */
+  /* The editor's light/dark button goes theme -> light -> dark -> theme.
+     Leaving the theme is saved to the account, or the next page would put
+     it straight back — and the theme left is remembered in this browser, so
+     the third click can bring it back. The button once just cleared it, and
+     a student who pressed it to see what it did lost their theme until they
+     found it again on their home page. */
+  var LAST_KEY = "editor-theme-last";
+
   function clearTheme() {
+    var t = namedTheme();
+    if (t) { try { localStorage.setItem(LAST_KEY, t); } catch (e) {} }
     try {
       fetch("/api/me/theme", { method: "POST", headers: { "Content-Type": "application/json" },
                                body: JSON.stringify({ theme: "" }) }).catch(function () {});
     } catch (e) {}
   }
 
-  return { ran: ran, hash: hash, toast: toast, namedTheme: namedTheme, clearTheme: clearTheme };
+  function lastTheme() {
+    var t = "";
+    try { t = localStorage.getItem(LAST_KEY) || ""; } catch (e) {}
+    return /^[a-z]{2,20}$/.test(t) && t !== "light" && t !== "dark" ? t : "";
+  }
+
+  /* The theme clearTheme left, back on: on the account, then on <html>.
+     Resolves its name, or "" when there is none or it is no longer theirs
+     (the server says — a level theme goes with the level), and then it is
+     forgotten so the button stops offering it. */
+  function restoreTheme() {
+    var t = lastTheme();
+    if (!t) return Promise.resolve("");
+    return fetch("/api/me/theme", { method: "POST", headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ theme: t }) })
+      .then(function (r) {
+        if (!r.ok) {
+          try { localStorage.removeItem(LAST_KEY); } catch (e) {}
+          return "";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+        return t;
+      })
+      .catch(function () { return ""; });
+  }
+
+  return { ran: ran, hash: hash, toast: toast, namedTheme: namedTheme, clearTheme: clearTheme,
+           lastTheme: lastTheme, restoreTheme: restoreTheme };
 })();
