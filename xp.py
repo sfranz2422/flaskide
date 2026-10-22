@@ -233,6 +233,9 @@ EDITOR_THEMES = [
     ("synthwave", "Synthwave", "token", "Neon pink and cyan, straight out of the 80s."),
     ("retro", "Retro terminal", "token", "Green on black, like a 1980s computer."),
     ("sunset", "Sunset", "token", "Warm oranges and purples."),
+    ("christmas", "Christmas", "token", "Deep green, red and gold."),
+    ("winter", "Winter", "token", "Icy blues and frost white."),
+    ("flower", "Flower", "token", "Soft pinks, leaf green and sunny yellow."),
 ]
 THEME_PRICE = 1
 THEME_IDS = [t[0] for t in EDITOR_THEMES]
@@ -436,8 +439,10 @@ AVATARS = [
     ("robot", "Robot", 1),
     ("fox", "Fox ranger", 1),
     ("slime", "Glitch slime", 1),
+    ("crimson", "Crimson", 2),
     ("mech", "Battle mech", 2),
     ("wizard", "Cyber wizard", 3),
+    ("wolf", "Wolf warrior", 4),
     ("treant", "Treant", 5),
     ("bloom", "Void bloom", 7),
 ]
