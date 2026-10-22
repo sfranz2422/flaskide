@@ -8,6 +8,10 @@
     the student's sitting in it open, which is what attendance's "last seen"
     is made of. #}
 {% if idle_seconds %}
+{#  XP that reaches them from elsewhere — a reward, an event — pops up on
+    whatever page they're on (xp.js, watch). #}
+<script src="{{ url_for('static', filename='xp.js') }}"></script>
+<script>if (window.PyIDEXP) window.PyIDEXP.watch();</script>
 <script>
 (function () {
   "use strict";

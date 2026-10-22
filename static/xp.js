@@ -13,7 +13,9 @@
  * Same file in all three editors, like xp.py; each says what a run that
  * worked is (app.js) and which files are its code.
  */
-window.PyIDEXP = (function () {
+/* Loaded twice on some pages — by the page, and by _idle.html for the XP
+   popup — so the second load keeps the first's object, and its popup queue. */
+window.PyIDEXP = window.PyIDEXP || (function () {
   "use strict";
 
   // FNV-1a, twice with different starting points, for 64 bits: enough that
@@ -41,7 +43,7 @@ window.PyIDEXP = (function () {
   }
 
   var toastEl = null;
-  function toast(text) {
+  function show(text, loss) {
     if (!toastEl) {
       toastEl = document.createElement("div");
       toastEl.className = "xp-toast";
@@ -49,9 +51,83 @@ window.PyIDEXP = (function () {
       document.body.appendChild(toastEl);
     }
     toastEl.textContent = text;
+    toastEl.classList.toggle("is-loss", !!loss);     // a penalty, in red
     toastEl.classList.remove("show");
     void toastEl.offsetWidth;          // restart the animation on a second toast
     toastEl.classList.add("show");
+  }
+
+  /* One at a time, each for as long as its animation (style.css, 3.2s):
+     a teacher rewarding three behaviours at once would otherwise show only
+     the last. */
+  var queue = [], showing = false;
+  function say(text, loss) {
+    queue.push({ text: text, loss: loss });
+    if (!showing) next();
+  }
+  function next() {
+    var item = queue.shift();
+    showing = item !== undefined;
+    if (!showing) return;
+    show(item.text, item.loss);
+    setTimeout(next, 3400);
+  }
+
+  /* XP the page itself earned — a run, an answer. An answer's reply counts
+     the quest reward it completed, so a "bonus" in the news just after
+     is the same XP and isn't said twice (watch). */
+  var quietBonusUntil = 0;
+  function toast(text) {
+    quietBonusUntil = Date.now() + 15000;
+    say(text);
+  }
+
+  /* XP that reached the student from elsewhere — the teacher's rewards and
+     penalties, a random event, tests their Check all passed — popped up on
+     whatever page they're on (/api/me/xp/news says what's left out, and
+     why). Started by _idle.html, so every page a signed-in student works on
+     has it and a teacher's never does. Asks every 20 seconds while the tab
+     is in front, and as it comes back; a hidden tab asks nothing, so two
+     tabs don't both say it.
+
+     Where to count from is kept in this browser, with whose it is: on a
+     shared Chromebook the next student starts from their own latest, not
+     from the last student's. Blocked storage keeps it for this page only,
+     which still says what arrives while it's open. */
+  var NEWS_KEY = "xp-news";
+  var newsHere = null, watching = false;
+  function newsMark(set) {
+    if (set) {
+      newsHere = set;
+      try { localStorage.setItem(NEWS_KEY, JSON.stringify(set)); } catch (e) {}
+      return set;
+    }
+    try { return JSON.parse(localStorage.getItem(NEWS_KEY) || "null") || newsHere; } catch (e) { return newsHere; }
+  }
+  function news() {
+    var mark = newsMark();
+    var after = mark && typeof mark.after === "number" ? mark.after : null;
+    fetch("/api/me/xp/news" + (after !== null ? "?after=" + after : ""), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.user) return;
+        if (after !== null && mark.user === d.user) {
+          (d.awards || []).forEach(function (a) {
+            if (a.kind === "bonus" && Date.now() < quietBonusUntil) return;
+            say((a.xp > 0 ? "+" + a.xp : "−" + Math.abs(a.xp)) + " XP" +
+                (a.reason ? " · " + a.reason : ""), a.xp < 0);
+          });
+        }
+        newsMark({ user: d.user, after: d.latest });
+      })
+      .catch(function () {});
+  }
+  function watch() {
+    if (watching) return;
+    watching = true;
+    news();
+    setInterval(function () { if (!document.hidden) news(); }, 20000);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) news(); });
   }
 
   /* `files`: every file in the project, name → text; `code`, a pattern for
@@ -122,6 +198,6 @@ window.PyIDEXP = (function () {
       .catch(function () { return ""; });
   }
 
-  return { ran: ran, hash: hash, toast: toast, namedTheme: namedTheme, clearTheme: clearTheme,
+  return { ran: ran, hash: hash, toast: toast, watch: watch, namedTheme: namedTheme, clearTheme: clearTheme,
            lastTheme: lastTheme, restoreTheme: restoreTheme };
 })();

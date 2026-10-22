@@ -195,6 +195,33 @@ assignment opens on its notes, except for its author, who gets Edit source.
 **The rescue** (`static/rescue.js`, identical in all three apps). Work typed
 while signed out is kept in the browser and restored after signing in.
 
+**An assignment's notes follow the teacher's edits** (`_current_notes`,
+`_keep_notes` in `app.py`). A draft copies the assignment's files, notes
+included, but every page that shows a student their draft swaps in the
+assignment's notes as they are now. Saving never writes notes into a draft:
+the automatic turn-in compares the draft with what was handed in, so new notes
+there would turn everyone's work in again over a typo. Every `.md` counts as
+notes. `test_notes_follow.py` pins it.
+
+**Signed out after two idle hours** (`_sign_out_idle_student` in `app.py`,
+`templates/_idle.html`). Students only: signing a teacher out would end their
+live lesson. Polls (any GET to `/api/`) must never count as activity, or an
+open tab keeps itself signed in forever, which is the bug this exists for.
+The page sends a beat to `/api/alive` at most every 5 minutes while it is
+used, and gives up 2 minutes before the server does, so it always notices
+first. A new page a student works on needs `{% include "_idle.html" %}`.
+Time up, it goes straight to Google's sign-in and back to the page — no card.
+Chrome reopens yesterday's tabs from its cache without asking the server, so
+signed-in pages are `no-store`, the page GETs `/api/alive` (not activity) as
+it opens and on focus, and an idle student opening a page is redirected to
+`/login?next=` rather than shown it signed out.
+
+**Attendance** (`accounts.Visit`, table `class_visits`;
+`/teacher/class/<id>/attendance`). One row per sitting: made when a
+signed-in student opens the class's page, one of its assignments or its live
+lesson (`_attend`), kept open by the beat, and split by a 20-minute gap.
+Times are UTC, and the page groups them into days in the teacher's browser.
+
 **XP** (`xp.py`; "XP" in `app.py`; `static/xp.js`, `static/avatar.js`).
 Students earn XP for questions the notes mark themselves (`XP_PER_POINT` a
 point, part for part right), for answering every question in the notes, for

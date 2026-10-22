@@ -2471,6 +2471,10 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
   box-shadow: 0 4px 14px var(--shadow); opacity: 0; transform: translateY(10px);
   pointer-events: none; }
 .xp-toast.show { animation: xp-toast 3.2s ease forwards; }
+/* XP from elsewhere says why (xp.js, watch), so it can be long; a penalty
+   is red. */
+.xp-toast { max-width: min(460px, calc(100vw - 36px)); border-radius: 18px; }
+.xp-toast.is-loss { background: var(--red); color: var(--on-red); }
 @keyframes xp-toast {
   0% { opacity: 0; transform: translateY(10px); }
   10%, 80% { opacity: 1; transform: none; }

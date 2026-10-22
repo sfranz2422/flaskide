@@ -5309,6 +5309,46 @@ def xp_run():
         db.close()
 
 
+@app.get("/api/me/xp/news")
+def xp_news():
+    """XP this student was given since award `after`, for the popup every
+    page they work on shows (xp.js, watch; _idle.html starts it). A GET to
+    /api/, so polling it is never activity and can't keep them signed in.
+
+    Leaves out what the page they were on already said, as it happened: a
+    run that paid, and a question's XP (an answer's reply carries it, quest
+    reward included — xp.js holds its own popup for a "bonus:" just after).
+    What is left is what reached them from elsewhere: the teacher's rewards
+    and penalties, random events, tests their Check all passed, a quest
+    completed by a mark the teacher gave.
+
+    `user` is said so a shared Chromebook's browser doesn't count from the
+    last student's awards; `latest` is where to count from next. No `after`
+    (a browser that has never asked) gives `latest` and nothing to show,
+    so a student's first page isn't a flood of their whole history."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if not _earns_xp(user):
+            return jsonify(user=None, latest=0, awards=[])
+        mine = db.query(accounts.XpAward).filter(accounts.XpAward.user_id == user.id)
+        newest = mine.order_by(accounts.XpAward.id.desc()).first()
+        latest = newest.id if newest is not None else 0
+        try:
+            after = int(request.args.get("after", ""))
+        except ValueError:
+            return jsonify(user=user.id, latest=latest, awards=[])
+        awards = []
+        for a in mine.filter(accounts.XpAward.id > after).order_by(accounts.XpAward.id).limit(10):
+            kind = a.source.split(":", 1)[0]
+            if kind in ("run", "quiz", "all"):
+                continue
+            awards.append({"xp": a.xp, "reason": a.reason, "kind": kind})
+        return jsonify(user=user.id, latest=latest, awards=awards)
+    finally:
+        db.close()
+
+
 @app.post("/api/me/board")
 def me_board():
     """Hide from, or come back to, every class's leaderboard."""

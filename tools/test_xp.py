@@ -787,6 +787,38 @@ for table, column in (("users", "avatar"), ("users", "board_hidden"),
     check("  %s.%s is added to an existing table" % (table, column),
           any(t == table and c == column for t, c, _ in accounts.LATER_COLUMNS))
 
+# --------------------------------------------- XP popping up on any page
+print("\nXP from elsewhere pops up on whatever page they're on")
+first = ben.get("/api/me/xp/news").get_json()
+check("a browser that never asked starts from now, with nothing to show",
+      first["user"] == BEN and first["awards"] == [] and first["latest"] > 0, first)
+xp.award(P.SessionLocal(), BEN, "run:999999", xp.RUN_XP, "Ran a program", "pyide")
+xp.award(P.SessionLocal(), BEN, "quiz:1:popup", 10, "Question in Loops", "pyide")
+teacher.post("/api/class/%d/xp" % CLASS, json={"student": BEN, "xp": 15, "reason": "Great question"})
+teacher.post("/api/class/%d/xp" % CLASS, json={"student": BEN, "xp": -5, "reason": "Off task"})
+got = ben.get("/api/me/xp/news?after=%d" % first["latest"]).get_json()
+check("the teacher's reward and penalty come, with their reasons",
+      [(a["xp"], a["reason"]) for a in got["awards"]] == [(15, "Great question"), (-5, "Off task")],
+      got["awards"])
+check("  not a run's or an answer's, which the page said itself",
+      not any(a["kind"] in ("run", "quiz", "all") for a in got["awards"]))
+check("  and the next ask, from the latest, has nothing",
+      ben.get("/api/me/xp/news?after=%d" % got["latest"]).get_json()["awards"] == [])
+check("only their own", amy.get("/api/me/xp/news?after=%d" % first["latest"]).get_json()["awards"] == [])
+check("a teacher gets none", teacher.get("/api/me/xp/news?after=0").get_json()["user"] is None)
+c = client(BEN, act=int(time.time()) - 120, busy=0)
+c.get("/api/me/xp/news?after=0")
+with c.session_transaction() as sess:
+    check("asking is never activity, or an open tab would keep itself signed in",
+          sess.get("busy", 0) == 0, sess.get("busy"))
+idle = open(os.path.join(PYIDE, "templates", "_idle.html")).read()
+xpjs = open(os.path.join(PYIDE, "static", "xp.js")).read()
+check("every page a student works on starts it (_idle.html)",
+      "filename='xp.js'" in idle and "PyIDEXP.watch()" in idle
+      and idle.find("{% if idle_seconds %}") < idle.find("PyIDEXP.watch()"))
+check("  loading xp.js twice keeps the first, and its queue",
+      "window.PyIDEXP = window.PyIDEXP || (function" in xpjs)
+
 print()
 failed = results.count(False)
 print("%d checks, %s" % (len(results), "all ok" if not failed else "%d FAILED" % failed))
