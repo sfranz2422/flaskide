@@ -304,7 +304,7 @@ or, in a SQL project, the last query's result (`returns 3 rows`,
 (`_flaskide_load`) and each request goes through Flask's test client, under
 a time limit. **They run in a browser, never on the server.** A student's
 Check my work runs in theirs — feedback, which could be faked, so it is kept
-(`TestResult`, kind "self") for the teacher to see and counts for nothing.
+(`TestResult`, kind "self") for the teacher to see and counts toward no grade. Each test it finds passing for the first time pays `SELF_TEST_XP` (2), once per test ever (`_self_tests_xp`, source `selftest:<assignment>:<label hash>`), and only for a label the notes really have, so a faked check takes at most that times the tests there are.
 The teacher's Check all loads Python and Flask in the TEACHER's browser,
 runs every turned-in snapshot, and posts kind "verified", which is added to
 the grade through `_earned` — every total goes through it, so Classroom,

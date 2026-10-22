@@ -351,6 +351,36 @@ check("a student's own check is kept", r.status_code == 200 and r.get_json()["ea
 page = teacher.get("/teacher/" + SLUG).get_data(as_text=True)
 check("  and counts for nothing: no grade from it", "Tests not checked" in page
       and "(their check 9 / 9)" in page)
+def self_xp(uid):
+    db = P.SessionLocal()
+    try:
+        return sum(a.xp for a in db.query(accounts.XpAward).filter(
+            accounts.XpAward.user_id == uid, accounts.XpAward.source.like("selftest:%")))
+    finally:
+        db.close()
+
+
+check("  but each test it passes pays a little XP",
+      r.get_json()["xp"] == len(ALL_RIGHT) * xp.SELF_TEST_XP == self_xp(AMY),
+      (r.get_json(), self_xp(AMY)))
+again = amy.post("/api/tests/self", json={"assignment": SLUG, "results": ALL_RIGHT}).get_json()
+check("    once per test: checking again pays nothing",
+      again["xp"] == 0 and self_xp(AMY) == len(ALL_RIGHT) * xp.SELF_TEST_XP, again)
+made_up = [{"label": "Prints a million dollars", "ok": True, "detail": "", "points": 100}]
+check("    and a test the notes don't have pays nothing",
+      amy.post("/api/tests/self", json={"assignment": SLUG, "results": made_up}).get_json()["xp"] == 0)
+FAILING = [dict(x, ok=False) for x in ALL_RIGHT]
+check("    nor does one that failed",
+      ben.post("/api/tests/self", json={"assignment": SLUG, "results": FAILING}).get_json()["xp"] == 0
+      and self_xp(BEN) == 0)
+check("    and the XP popup leaves it to the page, which said it already",
+      not [a for a in amy.get("/api/me/xp/news?after=0").get_json()["awards"]
+           if a["kind"] == "selftest"])
+for page in ("app.js", "live.js"):
+    js = open(os.path.join(ROOT, "static", page)).read()
+    at = js.find('fetch("/api/tests/self"')
+    check("    and " + page + " pops it up", at >= 0 and "d.xp > 0" in js[at:at + 700]
+          and "PyIDEXP.toast(" in js[at:at + 700])
 check("  not on the class page either",
       "badge-grade" not in amy.get("/class/%d" % CLASS).get_data(as_text=True))
 

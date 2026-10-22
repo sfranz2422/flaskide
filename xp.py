@@ -38,6 +38,11 @@ XP_PER_POINT = 10
 ALL_ANSWERED_XP = 20
 RUN_XP = 2
 RUN_EVERY_SECONDS = 30 * 60
+#: A test in the notes passing the student's own Check my work, once per
+#: test, ever. Small on purpose: that check runs in their browser and could
+#: be faked, so the most a fake can take is this times the tests there are.
+#: The teacher's Check all still pays XP_PER_POINT a point on top.
+SELF_TEST_XP = 2
 #: The XP a token costs. Was 500; raised to 1000 on 2026-10-21 by the
 #: teacher. Tokens are worked out from XP, never stored (summary), so the
 #: new price applies to everyone at once — a student who had earned tokens

@@ -2336,10 +2336,33 @@ def _tests_xp(db, item, student_id, row):
     return got
 
 
+def _self_tests_xp(db, item, student_id, row):
+    """XP for each test the student's OWN Check my work found passing:
+    xp.SELF_TEST_XP, once per test ever (its source is the label), and only
+    for a test that is really in the assignment's notes now. A page can say
+    anything, so a label the notes don't have pays nothing, and the most a
+    faked check can take is the small amount times the tests there are.
+    Separate from _tests_xp: the teacher's check pays a test's points on
+    top of this, from its own source."""
+    student = db.query(accounts.User).filter_by(id=student_id).first()
+    if not _earns_xp(student):
+        return 0
+    real = {t["label"] for t in autograde.file_tests(item.file_map())[0]}
+    got = 0
+    for r in json.loads(row.details or "[]"):
+        if r.get("ok") and r.get("label") in real:
+            key = hashlib.sha1(r["label"].encode("utf-8")).hexdigest()[:12]
+            got += xp.award(db, student_id, "selftest:%d:%s" % (item.id, key),
+                            xp.SELF_TEST_XP,
+                            ("Passed a test in %s: %s" % (item.title, r["label"]))[:200], APP_NAME)
+    return got
+
+
 @app.post("/api/tests/self")
 def tests_self():
     """A student's own Check my work, kept for the teacher to see. It counts
-    toward nothing."""
+    toward no grade; each test it finds passing pays a little XP, once
+    (_self_tests_xp), which the page pops up."""
     db = SessionLocal()
     try:
         user = current_user(db)
@@ -2352,7 +2375,8 @@ def tests_self():
         if user.id == item.teacher_id or accounts.is_teacher(user.email):
             return jsonify(ok=True, practice=True)
         row = _keep_result(db, item, user.id, "self", data)
-        return jsonify(ok=True, earned=row.earned, possible=row.possible)
+        gained = _self_tests_xp(db, item, user.id, row)
+        return jsonify(ok=True, earned=row.earned, possible=row.possible, xp=gained)
     finally:
         db.close()
 
@@ -5316,7 +5340,7 @@ def xp_news():
     /api/, so polling it is never activity and can't keep them signed in.
 
     Leaves out what the page they were on already said, as it happened: a
-    run that paid, and a question's XP (an answer's reply carries it, quest
+    run that paid, a test their own check passed, and a question's XP (an answer's reply carries it, quest
     reward included — xp.js holds its own popup for a "bonus:" just after).
     What is left is what reached them from elsewhere: the teacher's rewards
     and penalties, random events, tests their Check all passed, a quest
@@ -5341,7 +5365,7 @@ def xp_news():
         awards = []
         for a in mine.filter(accounts.XpAward.id > after).order_by(accounts.XpAward.id).limit(10):
             kind = a.source.split(":", 1)[0]
-            if kind in ("run", "quiz", "all"):
+            if kind in ("run", "quiz", "all", "selftest"):
                 continue
             awards.append({"xp": a.xp, "reason": a.reason, "kind": kind})
         return jsonify(user=user.id, latest=latest, awards=awards)
