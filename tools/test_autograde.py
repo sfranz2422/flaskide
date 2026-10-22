@@ -122,6 +122,33 @@ for i, (s, j) in enumerate(zip(samples, js)):
           "" if same else "js=%r py=%r" % (j, py))
 
 # ----------------------------------------- running them on the real bridge
+# ------------------------------------------- results headed by their slide
+print("\nCheck my work heads the results with their slide")
+SLIDES_MD = ("theme: arcade\n# Lesson\n\n```tests\nuses for\n```\n\n---\n\n"
+             "```python\n# not the title\n```\n\n## Step 1 — show_title\n\n```text\n---\n```\n\n"
+             "```tests\ndefines show_title\n```\n\n---\n\n---\n\n## Step 2 — round_header\n\n"
+             "```tests\ndefines show_title\ndefines round_header\n```\n")
+script = ("global.window={};const fs=require('fs');"
+          "eval(fs.readFileSync(%s,'utf8'));eval(fs.readFileSync(%s,'utf8'));"
+          "const T=window.%s,N=window.%s,md=%s;"
+          "process.stdout.write(JSON.stringify([T.places({'notes.md':md,'main.py':''},N),"
+          "T.places({'notes.md':'```tests\\nuses for\\n```'},N)]))"
+          % (json.dumps(os.path.join(ROOT, "static", "notes.js")), json.dumps(AUTOGRADE),
+             "PyIDETests", "FlaskIDENotes", json.dumps(SLIDES_MD)))
+out = subprocess.run([node, "-e", script], capture_output=True, text=True)
+try:
+    placed, flat = json.loads(out.stdout)
+except ValueError:
+    placed, flat = None, None
+check("each test is given the slide it's on, numbered as the viewer numbers",
+      [(p or {}).get("slide") for p in placed or []] == [1, 2, 3, 3], (placed, out.stderr[-300:]))
+check("  under that slide's heading, not a # in its code",
+      [(p or {}).get("title") for p in placed or []]
+      == ["Lesson", "Step 1 — show_title", "Step 2 — round_header", "Step 2 — round_header"], placed)
+check("  and notes without slides get no headings", flat == [None], flat)
+appjs = open(os.path.join(ROOT, "static", "app.js")).read()
+check("Check my work shows the headings", ".places(" in appjs and '"slide-head"' in appjs)
+
 print("\nRunning the tests (flask.js's Python, on real Flask)")
 # The bridge as JavaScript hands it to Python: node evaluates flask.js's
 # template literal, so every escape is undone exactly as in the browser.

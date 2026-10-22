@@ -486,6 +486,16 @@ page = amy.get("/me/avatar").get_data(as_text=True)
 check("the avatar page shows every picture, locked ones marked",
       all(('data-id="%s"' % i) in page for i in xp.AVATAR_IDS)
       and "Unlocks at level 3" in page)
+# avatar.js is shared, so it has one name — PyIDEAvatar — in all three apps.
+# WebIDE's and FlaskIDE's pickers called WebIDEAvatar and FlaskIDEAvatar,
+# which don't exist: every click threw before the picture was shown or
+# marked, and the student saw nothing happen.
+named = set(re.findall(r"window\.(\w+Avatar)\b", page))
+defined = set(re.findall(r"window\.(\w+Avatar)\s*=", open(os.path.join(PYIDE, "static", "avatar.js")).read()))
+check("the avatar page calls avatar.js by the name it has",
+      named and named <= defined, (named, defined))
+check("  and a click saves, with no Save button to miss",
+      "/api/me/avatar" in page and 'id="save"' not in page)
 check("the leaderboard shows the picture",
       'data-avatar="mech"' in amy.get("/class/%d" % CLASS).get_data(as_text=True))
 

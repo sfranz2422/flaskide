@@ -452,7 +452,15 @@
       await runtime.boot(function (note) { if (note) say(note + "\n", "dim"); });
       var got = await window.PyIDETests.run(runtime, project.files, tests);
       clearOutput();
-      got.results.forEach(function (r) {
+      /* Under the slide each test is on (places): students check after
+         every step, and want the step they're on. */
+      var where = window.PyIDETests.places(project.files, window.FlaskIDENotes) || [], last = null;
+      got.results.forEach(function (r, i) {
+        var w = where[i];
+        if (w && w !== last) {
+          say((i ? "\n" : "") + "Slide " + w.slide + (w.title ? " — " + w.title : "") + "\n", "slide-head");
+          last = w;
+        }
         say((r.ok ? "✓ " : "✗ ") + r.label + "\n", r.ok ? "" : "err");
         if (!r.ok && r.detail) say("    " + r.detail + "\n", "dim");
       });

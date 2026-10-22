@@ -136,6 +136,52 @@ window.PyIDETests = (function () {
     return { tests: tests, errors: errors };
   }
 
+  /* Which slide each of fromFiles(files)'s tests is written on, in the same
+     order: [{slide, title}] (slide from 1, as the slide counter shows it;
+     title the slide's first heading), null for a test in notes with no
+     slides. Check my work heads its results with these, so a student told
+     "check after every step" sees the step they are on, not one long list.
+
+     The notes are cut by `Notes` (notes.js's slides()), the viewer's own
+     cutter, so the numbers can't differ from the ones on screen. If the
+     count comes out different from fromFiles' anyway, it returns null and
+     the results are shown as one list — an unheaded list beats headings
+     over the wrong tests. */
+  /* A slide's first heading, skipping fenced code: "# a comment" in a
+     Python example is not the slide's title. */
+  function heading(text) {
+    var fence = null, lines = text.split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var f = /^ {0,3}(`{3,}|~{3,})/.exec(lines[i]);
+      if (f) {
+        if (fence === null) fence = f[1];
+        else if (f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+        continue;
+      }
+      var h = fence === null && /^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/.exec(lines[i]);
+      if (h) return h[1];
+    }
+    return "";
+  }
+
+  function places(files, Notes) {
+    if (!Notes || !Notes.slides) return null;
+    var out = [];
+    Object.keys(files || {}).sort().forEach(function (name) {
+      if (!/\.md$/i.test(name)) return;
+      var cut = Notes.slides(files[name]);
+      if (!cut.length) {
+        parse(files[name]).tests.forEach(function () { out.push(null); });
+        return;
+      }
+      cut.forEach(function (text, i) {
+        var where = { slide: i + 1, title: heading(text) };
+        parse(text).tests.forEach(function () { out.push(where); });
+      });
+    });
+    return out.length === fromFiles(files).tests.length ? out : null;
+  }
+
   /* The Python that runs the tests, defined once per Pyodide after flask.js's
      bridge (it uses _flaskide_load, _flaskide_app and _flaskide_run_sql).
      A plain string, not a template literal: nothing in it is JavaScript's to
@@ -357,6 +403,6 @@ window.PyIDETests = (function () {
     });
   }
 
-  return { parse: parse, parseBlock: parseBlock, fromFiles: fromFiles, run: run,
+  return { parse: parse, parseBlock: parseBlock, fromFiles: fromFiles, places: places, run: run,
            renderBlocks: renderBlocks, HARNESS: HARNESS };
 })();

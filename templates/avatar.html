@@ -39,8 +39,7 @@
   <div class="avatar-preview">
     <span class="avatar" id="preview" data-avatar="{{ avatar }}"></span>
     <p class="dim small">Level {{ level }}. More pictures unlock as you level up.</p>
-    <button id="save" class="btn btn-primary">Save avatar</button>
-    <span id="state" class="dim small" role="status"></span>
+    <span id="state" class="avatar-state" role="status">Click a picture to make it your avatar.</span>
   </div>
   <div class="avatar-grid" id="pictures">
     {#  Their own photo: chosen like any picture once approved; while one
@@ -82,14 +81,44 @@
   var preview = document.getElementById("preview");
   var buttons = document.querySelectorAll("#pictures .avatar-option");
   {% if photo %}if (chosen === {{ photo|tojson }}) chosen = "photo";{% endif %}
+  /* A click saves. There was a Save button under the preview, and students
+     clicked a picture, saw it big, and left — nothing saved, and they only
+     found out on the page they went back to. Shown at once, put back if the
+     server refuses, so the page never says a picture is theirs when it isn't. */
+  function show(id) {
+    preview.innerHTML = window.PyIDEAvatar.html(id === "photo" ? {{ (photo or "")|tojson }} : id);
+    Array.prototype.forEach.call(buttons, function (o) {
+      o.setAttribute("aria-pressed", o.dataset.id === id ? "true" : "false");
+    });
+  }
   Array.prototype.forEach.call(buttons, function (b) {
     b.addEventListener("click", function () {
-      chosen = b.dataset.id;
-      preview.innerHTML = window.FlaskIDEAvatar.html(chosen === "photo" ? {{ (photo or "")|tojson }} : chosen);
-      Array.prototype.forEach.call(buttons, function (o) {
-        o.setAttribute("aria-pressed", o === b ? "true" : "false");
-      });
-      state.textContent = "";
+      var was = chosen, id = b.dataset.id;
+      if (id === was) { state.textContent = "✓ That's already your avatar."; return; }
+      chosen = id;
+      show(id);
+      state.className = "avatar-state";
+      state.textContent = "Saving…";
+      fetch("/api/me/avatar", { method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ avatar: id }) })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+        .then(function (out) {
+          if (chosen !== id) return;          // clicked another meanwhile; its answer says
+          if (out.ok) {
+            state.className = "avatar-state is-saved";
+            state.textContent = "✓ Saved — that's your avatar now.";
+            return;
+          }
+          throw new Error(out.d.error || "That didn't save.");
+        })
+        .catch(function (e) {
+          if (chosen !== id) return;
+          chosen = was;
+          show(was);
+          state.className = "avatar-state is-error";
+          state.textContent = (e && e.message && e.message !== "Failed to fetch")
+            ? e.message : "That didn't save. Try again.";
+        });
     });
   });
   /* A photo is cut to the middle square and shrunk to 400px here, before
@@ -123,17 +152,6 @@
     img.src = URL.createObjectURL(f);
   });
 
-  document.getElementById("save").addEventListener("click", function () {
-    if (!chosen) { state.textContent = "Pick a picture first."; return; }
-    state.textContent = "Saving…";
-    fetch("/api/me/avatar", { method: "POST", headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ avatar: chosen }) })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-      .then(function (out) {
-        state.textContent = out.ok ? "Saved." : (out.d.error || "That didn't save.");
-      })
-      .catch(function () { state.textContent = "That didn't save. Try again."; });
-  });
 })();
 </script>
 {% include "_idle.html" %}
