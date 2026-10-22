@@ -456,6 +456,26 @@ check("  which runs THEIR code, never the mirror, under slide headings",
       body and "allFiles()" in body and "mirror" not in body.lower() and ".places(" in body
       and 'checkBtn.addEventListener("click", checkWork)' in livejs, body[:80])
 
+# ------------------------------------------- the step's slide, beside its results
+print("\nA student sees the notes beside the results, opened at their slide")
+for page in ("app.js", "live.js"):
+    js = open(os.path.join(ROOT, "static", page)).read()
+    at = js.find("async function checkWork")
+    body = js[at:js.find("\n  }\n", at)] if at >= 0 else ""
+    check("  " + page + "'s results open at the slide the student is on",
+          "function scrollToSlide" in js and "scrollToSlide(heads)" in body and "heads.push(" in body)
+appjs = open(os.path.join(ROOT, "static", "app.js")).read()
+fn = appjs[appjs.find("function showPreview() {"):]
+fn = fn[:fn.find("\n  }\n")]
+guard, hide = fn.find("if (notesBeside()"), fn.find("hidden = true")
+check("the editor keeps a student's notes up when it shows the preview",
+      "function notesBeside() { return !cfg.authoring; }" in appjs
+      and guard >= 0 and (hide < 0 or guard < hide), fn[:160])
+editor_html = open(os.path.join(ROOT, "templates", "index.html")).read()
+cut = editor_html.find('<div id="notes-view"')
+check("  with a handle between them",
+      'data-split="editor-page"' in editor_html[max(0, cut - 400):cut])
+
 print()
 failed = results.count(False)
 print("%d checks, %s" % (len(results), "all ok" if not failed else "%d FAILED" % failed))

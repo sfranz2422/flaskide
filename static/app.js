@@ -161,7 +161,7 @@
     var view = $("notes-view"), body = $("notes-body");
     if (!view || !body) return;
     $("notes-name").textContent = name;
-    $("preview-view").hidden = true;
+    if (!notesBeside()) $("preview-view").hidden = true;
     view.hidden = false;
     slidesView().show(name === current && editor ? editor.getValue() : files[name]);
     paintSwitch();
@@ -182,7 +182,25 @@
     paintTabs();
   }
 
+  /* A STUDENT SEES BOTH: the preview and the notes, the notes under it, as
+     on the live page. They took turns, and a student told to check after
+     every step lost the step's slide each time they pressed Run or Check my
+     work, and lost the results each time they went back to the slide. So
+     for them showPreview() leaves the notes up, and only the notes button
+     (hideNotes) takes them down. Whoever is writing the notes keeps the
+     turns: their .md opens in the editor (Edit source), and the teacher's
+     editor has "Class sees" under it while live. */
+  function notesBeside() { return !cfg.authoring; }
+
   function showPreview() {
+    if (notesBeside() && notesShown) {
+      if ($("preview-view")) $("preview-view").hidden = false;
+      return;
+    }
+    hideNotes();
+  }
+
+  function hideNotes() {
     notesShown = null;
     if ($("notes-view")) $("notes-view").hidden = true;
     if ($("preview-view")) $("preview-view").hidden = false;
@@ -195,7 +213,7 @@
   function refreshNotes() {
     mdSource = false;
     if (notesShown && notesShown in files) showNotes(notesShown);
-    else showPreview();
+    else hideNotes();
   }
 
   /* The switch is in both pane heads, so it is always where the eye is. Only
@@ -204,7 +222,7 @@
     var has = notesFiles().length > 0;
     Array.prototype.forEach.call(document.querySelectorAll(".view-switch"),
       function (sw) {
-        sw.hidden = !has;
+        sw.hidden = !has || notesBeside();     // both are up: nothing to switch
         sw.querySelector('[data-view="notes"]').classList.toggle("is-on", !!notesShown);
         var pv = sw.querySelector('[data-view="preview"]');
         pv.classList.toggle("is-on", !notesShown);
@@ -215,7 +233,7 @@
   document.addEventListener("click", function (e) {
     var b = e.target.closest && e.target.closest(".view-switch [data-view]");
     if (!b) return;
-    if (b.dataset.view === "preview") { showPreview(); return; }
+    if (b.dataset.view === "preview") { hideNotes(); return; }
     var md = notesFiles();
     if (md.length && !notesShown) showNotes(md[0]);
   });
@@ -260,9 +278,9 @@
       var on = name === notesShown;
       b.setAttribute("aria-pressed", String(on));
       b.textContent = name.replace(/\.(md|markdown)$/i, "");
-      b.title = on ? "Back to the preview" : "Show " + name;
+      b.title = on ? (notesBeside() ? "Hide " + name : "Back to the preview") : "Show " + name;
       b.addEventListener("click", function () {
-        if (notesShown === name) showPreview();
+        if (notesShown === name) hideNotes();
         else openFile(name);
       });
       bar.appendChild(b);
@@ -316,7 +334,7 @@
           if (!window.confirm("Delete " + name + "? This cannot be undone."))
             return;
           delete files[name];
-          if (notesShown === name) { mdSource = false; showPreview(); }
+          if (notesShown === name) { mdSource = false; hideNotes(); }
           if (current === name) openFile(tabOrder()[0]);
           else paintTabs();
           applyKind();
@@ -437,6 +455,17 @@
     if (b) b.hidden = !testsHere().length;
   }
 
+  /* Check my work's results open at the slide the student is reading — the
+     step they just did — rather than at the end of a long list. That slide's
+     heading, or the last one before it when it has no tests of its own. */
+  function scrollToSlide(heads) {
+    var view = $("notes-view"), sl = notesSlides;
+    if (!heads.length || !out || !view || view.hidden || !sl || sl.count() < 2) return;
+    var on = sl.at() + 1, pick = heads[0];
+    heads.forEach(function (h) { if (h.slide <= on) pick = h; });
+    out.scrollTop += pick.el.getBoundingClientRect().top - out.getBoundingClientRect().top;
+  }
+
   async function checkWork() {
     if (running) return;
     var project = readProject(), tests = testsHere();
@@ -455,10 +484,12 @@
       /* Under the slide each test is on (places): students check after
          every step, and want the step they're on. */
       var where = window.PyIDETests.places(project.files, window.FlaskIDENotes) || [], last = null;
+      var heads = [];
       got.results.forEach(function (r, i) {
         var w = where[i];
         if (w && w !== last) {
           say((i ? "\n" : "") + "Slide " + w.slide + (w.title ? " — " + w.title : "") + "\n", "slide-head");
+          heads.push({ slide: w.slide, el: out.lastChild });
           last = w;
         }
         say((r.ok ? "✓ " : "✗ ") + r.label + "\n", r.ok ? "" : "err");
@@ -468,6 +499,7 @@
           (got.earned === got.possible ? " — every test passes." : ".") + "\n");
       say("This check is for you. What counts is your teacher's check of what " +
           "you turn in.\n", "dim");
+      scrollToSlide(heads);
       if (cfg.signedIn && cfg.assignmentSlug && !cfg.viewOnly) {
         fetch("/api/tests/self", {
           method: "POST", headers: { "Content-Type": "application/json" },

@@ -513,8 +513,8 @@ check("  each named for its file, without .md",
 check("  and taken out of the tab strip for them",
       re.search(r"function paintTabs\(\) \{[\s\S]{0,250}"
                 r"return !\(notesAsButtons\(\) && isNotes\(name\)\);", _app_js) is not None)
-check("  a second press goes back to the preview",
-      "if (notesShown === name) showPreview();" in _app_js)
+check("  a second press hides them",
+      "if (notesShown === name) hideNotes();" in _app_js)
 check("  and the class's teacher pane names them without .md",
       'data.filename.replace(/\\.(md|markdown)$/i, "") : data.filename' in _live_js
       and "live.filename.rsplit('.', 1)[0]" in _live_html)

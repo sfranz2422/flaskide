@@ -1619,6 +1619,9 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
  * the console printed took height from the notes. The same 38% as the
  * class's own Notes pane, so the teacher sees them the size the class does. */
 .pane-right #preview-view { flex: 1 1 0; }
+/* A student's notes under the preview share the column evenly (app.js,
+   notesBeside); an auto basis would let a long slide take it all. */
+.pane-right #notes-view { flex: 1 1 0; }
 
 /* Hide code, in the dialog a teacher's Share opens: the one question there. */
 .share-hide {
