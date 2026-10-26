@@ -21,8 +21,9 @@
 
 /* ------------------------------------------------- every look: shapes */
 :root {
+  /* --heading-font, not --heading: slide themes use --heading for a colour. */
   --sans: "Source Sans 3", "Source Sans Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --heading: "Ubuntu", "Source Sans 3", system-ui, sans-serif;
+  --heading-font: "Ubuntu", "Source Sans 3", system-ui, sans-serif;
   --bar-h: 64px;
   /* What a bought theme gets: its own colours. The default looks below put
      GameIDE's in their place. */
@@ -186,13 +187,19 @@
 }
 
 /* ------------------------------------------------- the page */
+/* SLIDES KEEP THEIR OWN LOOK. A slide theme (theme: halloween) sets its
+   colours on the slide, and the assignment page's preview is "what students
+   see": a site rule for buttons, boxes or headings reaching into a slide
+   painted light steel buttons with light text on a dark theme. So every
+   rule below that could match inside one ends in
+   :not(.notes-body *, .slide-nav *, .slide-themed *). */
 html { background: var(--bg); }
 body {
   background: var(--page-bg);
   font-size: 15px;
   line-height: 1.45;
 }
-h1, h2, h3, .brand, .pagetitle { font-family: var(--heading); }
+h1:not(.notes-body *, .slide-nav *, .slide-themed *), h2:not(.notes-body *, .slide-nav *, .slide-themed *), h3:not(.notes-body *, .slide-nav *, .slide-themed *), .brand, .pagetitle { font-family: var(--heading-font); }
 .bar { padding: 0 22px; gap: 18px; }
 .brand { font-size: 19px; font-weight: 700; letter-spacing: 0; }
 .pagetitle { font-size: 17px; font-weight: 500; }
@@ -201,7 +208,7 @@ h1, h2, h3, .brand, .pagetitle { font-family: var(--heading); }
   max-width: 1060px;
   padding: 34px 32px 80px;
 }
-.sheet h2 {
+.sheet h2:not(.notes-body *, .slide-nav *, .slide-themed *) {
   font-size: 22px;
   font-weight: 500;
   letter-spacing: 0;
@@ -209,18 +216,18 @@ h1, h2, h3, .brand, .pagetitle { font-family: var(--heading); }
   color: var(--text);
   margin: 36px 0 14px;
 }
-.sheet h3 { font-weight: 500; }
-a { color: var(--accent); }
+.sheet h3:not(.notes-body *, .slide-nav *, .slide-themed *) { font-weight: 500; }
+a:not(.notes-body *, .slide-nav *, .slide-themed *) { color: var(--accent); }
 
 /* ------------------------------------------------- buttons */
-.btn {
+.btn:not(.notes-body *, .slide-nav *, .slide-themed *) {
   border-radius: 5px;
   background: var(--btn-bg);
   border-color: var(--btn-line);
   font-size: 14px;
   padding: 7px 14px;
 }
-.btn:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--accent); }
+.btn:not(.notes-body *, .slide-nav *, .slide-themed *):hover:not(:disabled) { background: var(--btn-hover); border-color: var(--accent); }
 /* style.css makes the bar's buttons see-through on its black; in the default
    looks they are the steel buttons too. (A bought theme keeps the black bar,
    and with it the see-through buttons.) */
@@ -228,17 +235,17 @@ a { color: var(--accent); }
 :root:is(:not([data-theme]), [data-theme="dark"], [data-theme="light"]) .bar .btn:not(.btn-primary):not(.btn-stop):not(.btn-run):hover:not(:disabled) { background: var(--btn-hover); }
 /* The button that does the thing: green, as GameIDE's are (a bought theme's
    own --brand instead). */
-.btn-primary,
+.btn-primary:not(.notes-body *, .slide-nav *, .slide-themed *),
 .bar .btn-primary {
   background: var(--go);
   border-color: transparent;
   color: var(--on-go);
 }
-.btn-primary:hover:not(:disabled) { background: var(--go-hover); border-color: transparent; }
+.btn-primary:not(.notes-body *, .slide-nav *, .slide-themed *):hover:not(:disabled) { background: var(--go-hover); border-color: transparent; }
 
 /* Row actions (Edit, Hide, Archive…) were small capitals in the text's
    colour; here they are GameIDE's small steel buttons, in plain words. */
-.linkbtn {
+.linkbtn:not(.notes-body *, .slide-nav *, .slide-themed *) {
   display: inline-block;
   padding: 3px 9px;
   border-radius: 5px;
@@ -252,15 +259,15 @@ a { color: var(--accent); }
   text-decoration: none;
   line-height: 1.4;
 }
-.linkbtn:hover { background: var(--btn-hover); color: var(--text); }
-.linkbtn.danger { color: var(--red); }
-.rowactions .linkbtn { margin-left: 5px; }
+.linkbtn:not(.notes-body *, .slide-nav *, .slide-themed *):hover { background: var(--btn-hover); color: var(--text); }
+.linkbtn.danger:not(.notes-body *, .slide-nav *, .slide-themed *) { color: var(--red); }
+.rowactions .linkbtn:not(.notes-body *, .slide-nav *, .slide-themed *) { margin-left: 5px; }
 
 /* ------------------------------------------------- boxes */
-.field,
-.sheet input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
-.sheet select,
-.sheet textarea {
+.field:not(.notes-body *, .slide-nav *, .slide-themed *),
+.sheet input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.notes-body *, .slide-nav *, .slide-themed *),
+.sheet select:not(.notes-body *, .slide-nav *, .slide-themed *),
+.sheet textarea:not(.notes-body *, .slide-nav *, .slide-themed *) {
   background: var(--field-bg);
   border-radius: 6px;
 }
@@ -280,8 +287,8 @@ a { color: var(--accent); }
 }
 .listing tr:hover td { background: color-mix(in srgb, var(--bg-panel) 70%, transparent); }
 
-.kind-tag { border-radius: 20px; padding-inline: 8px; }
+.kind-tag:not(.notes-body *, .slide-nav *, .slide-themed *) { border-radius: 20px; padding-inline: 8px; }
 
 /* A card's own heading: the card's padding is its room above. */
-.sheet section > h2:first-child,
-.sheet section :first-child > h2:first-child { margin-top: 0; }
+.sheet section > h2:first-child:not(.notes-body *, .slide-nav *, .slide-themed *),
+.sheet section :first-child > h2:first-child:not(.notes-body *, .slide-nav *, .slide-themed *) { margin-top: 0; }

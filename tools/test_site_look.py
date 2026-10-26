@@ -17,6 +17,11 @@ WHAT IS BEING GUARDED
       would paint over every bought theme, silently: the theme would still be
       sold and chosen, and simply stop showing on these pages.
 
+  Slides keep their own look. A slide theme sets its colours on the slide,
+      and the assignment page's preview is what students see: every rule for
+      buttons, boxes, links or headings leaves slides alone (a site button
+      rule once made light buttons with light text on a dark theme).
+
   site_look.css is the same in all three (checked when the other repos are
       beside this one, skipped when not).
 """
@@ -79,6 +84,36 @@ top = [d for s, d in rules if s.strip() == ":root"]
 check("a bought theme's buttons are its own brand colour", top and "--go: var(--brand)" in top[0])
 check("the bar is only GameIDE's in the default looks",
       re.search(r':root:is\(:not\(\[data-theme\]\), \[data-theme="dark"\], \[data-theme="light"\]\) \.bar \{', CSS))
+
+print("slides keep their own look")
+
+
+def top_level(selector):
+    """A selector list split at its own commas, not the ones inside :not(…)."""
+    parts, depth, cur = [], 0, ""
+    for ch in selector:
+        depth += ch == "("
+        depth -= ch == ")"
+        if ch == "," and depth == 0:
+            parts.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    return parts + [cur]
+
+
+SPARE = ":not(.notes-body *, .slide-nav *, .slide-themed *)"
+REACHES = re.compile(r"(\.btn|\.linkbtn|\.field|\binput\b|\bselect\b|\btextarea\b|(^|\s)h[123]\b|^a\b|\.kind-tag)")
+reaching = []
+for sel, _ in rules:
+    for part in top_level(" ".join(sel.split())):
+        part = part.strip()
+        if part.startswith(":root") or part.startswith(".bar") or not REACHES.search(part):
+            continue
+        reaching.append(part)
+check("there are rules for buttons, boxes and headings", len(reaching) > 10, len(reaching))
+leaky = [p for p in reaching if SPARE not in p]
+check("every one of them leaves slides alone", not leaky, leaky[:3])
 
 print("the same in all three")
 mine = open(os.path.join(ROOT, "static", "site_look.css"), "rb").read()

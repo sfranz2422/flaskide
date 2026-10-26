@@ -2183,6 +2183,11 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
   font-family: "Creepster", var(--sans); font-weight: 400; letter-spacing: .04em;
   text-shadow: 0 0 12px rgba(255, 117, 24, .45);
 }
+/* The moon is the slide's own background, and a question's card is
+   see-through: on a short slide the card's top-right corner, where the
+   points are, sat on the moon — pale text on pale yellow. An opaque night
+   under the card's tint keeps it readable. */
+.slide-theme-halloween .quiz { background: linear-gradient(var(--bg-panel), var(--bg-panel)), #1f0d33; }
 .slide-theme-halloween h1 { font-size: 2.3em; }
 .slide-theme-halloween h2 { font-size: 1.8em; }
 .slide-theme-halloween h3 { font-size: 1.4em; }
