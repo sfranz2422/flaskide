@@ -20,11 +20,16 @@
    would paint over a bought theme: don't. */
 
 /* ------------------------------------------------- every look: shapes */
-:root {
-  /* --heading-font, not --heading: slide themes use --heading for a colour. */
+/* The site's fonts, on <body> like its colours, so <html> keeps the
+   editor's for slides (--orig-sans). --heading-font, not --heading: slide
+   themes use --heading for a colour. */
+body {
   --sans: "Source Sans 3", "Source Sans Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --heading-font: "Ubuntu", "Source Sans 3", system-ui, sans-serif;
   --bar-h: 64px;
+}
+:root {
+  --orig-sans: var(--sans);
   /* What a bought theme gets: its own colours. The default looks below put
      GameIDE's in their place. */
   --page-bg: var(--bg);
@@ -35,11 +40,43 @@
   --go-hover: var(--brand-hover);
   --on-go: var(--on-brand);
   --field-bg: var(--bg);
+  /* style.css's own colours, as the editor has them, kept under another
+     name: here on <html> nothing has replaced them yet (the site's colours
+     go on <body>, below). Slides put them back (the end of this file). */
+  --orig-bg: var(--bg);
+  --orig-bg-panel: var(--bg-panel);
+  --orig-bg-head: var(--bg-head);
+  --orig-line: var(--line);
+  --orig-text: var(--text);
+  --orig-muted: var(--muted);
+  --orig-accent: var(--accent);
+  --orig-accent-hover: var(--accent-hover);
+  --orig-on-accent: var(--on-accent);
+  --orig-brand: var(--brand);
+  --orig-brand-hover: var(--brand-hover);
+  --orig-on-brand: var(--on-brand);
+  --orig-green: var(--green);
+  --orig-green-hover: var(--green-hover);
+  --orig-on-green: var(--on-green);
+  --orig-red: var(--red);
+  --orig-on-red: var(--on-red);
+  --orig-amber: var(--amber);
+  --orig-purple: var(--purple);
+  --orig-hover-bg: var(--hover-bg);
+  --orig-hover-line: var(--hover-line);
+  --orig-banner-bg: var(--banner-bg);
+  --orig-banner-line: var(--banner-line);
+  --orig-banner-text: var(--banner-text);
+  --orig-chip-game-bg: var(--chip-game-bg);
+  --orig-chip-game-line: var(--chip-game-line);
+  --orig-check-a: var(--check-a);
+  --orig-check-b: var(--check-b);
+  --orig-shadow: var(--shadow);
 }
 
 /* ------------------------------------------------- the default looks */
-:root:not([data-theme]),
-:root[data-theme="dark"] {
+:root:not([data-theme]) body,
+:root[data-theme="dark"] body {
   --bg: hsl(200, 20%, 11%);
   --page-bg: linear-gradient(135deg, hsl(200, 35%, 16%), hsl(200, 20%, 11%)) fixed;
   --bg-panel: hsl(200, 20%, 16%);
@@ -83,7 +120,7 @@
 /* Light, as the other pages decide it: the computer's setting with nothing
    chosen, or the sun/moon button. */
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme]) {
+  :root:not([data-theme]) body {
     --bg: #eef2f7;
     --page-bg: #eef2f7;
     --bg-panel: #ffffff;
@@ -124,7 +161,7 @@
     color-scheme: light;
   }
 }
-:root[data-theme="light"] {
+:root[data-theme="light"] body {
   --bg: #eef2f7;
   --page-bg: #eef2f7;
   --bg-panel: #ffffff;
@@ -164,6 +201,10 @@
   --field-bg: #ffffff;
   color-scheme: light;
 }
+
+/* The site's colours are on <body>, not <html>, so that <html> still holds
+   style.css's, copied above as --orig-*: a slide preview here must look
+   like the editor, where students see it. */
 
 /* The bar. style.css keeps it black with a stripe under it in every theme,
    with dark tokens of its own; in the default looks it is GameIDE's instead,
@@ -292,3 +333,43 @@ a:not(.notes-body *, .slide-nav *, .slide-themed *) { color: var(--accent); }
 /* A card's own heading: the card's padding is its room above. */
 .sheet section > h2:first-child:not(.notes-body *, .slide-nav *, .slide-themed *),
 .sheet section :first-child > h2:first-child:not(.notes-body *, .slide-nav *, .slide-themed *) { margin-top: 0; }
+
+/* ------------------------------------------------- slides: the editor's colours
+   A slide preview is "what students see", and students see slides in the
+   editor, in style.css's colours. So inside a preview the site's colours go
+   back to the copies made on <html>. :where() weighs nothing, so a slide
+   theme (theme: halloween), set on the same element, still wins. */
+:where(.notes-preview-scroll, .notes-body, .slide-nav) {
+  --sans: var(--orig-sans);
+  --bg: var(--orig-bg);
+  --bg-panel: var(--orig-bg-panel);
+  --bg-head: var(--orig-bg-head);
+  --line: var(--orig-line);
+  --text: var(--orig-text);
+  --muted: var(--orig-muted);
+  --accent: var(--orig-accent);
+  --accent-hover: var(--orig-accent-hover);
+  --on-accent: var(--orig-on-accent);
+  --brand: var(--orig-brand);
+  --brand-hover: var(--orig-brand-hover);
+  --on-brand: var(--orig-on-brand);
+  --green: var(--orig-green);
+  --green-hover: var(--orig-green-hover);
+  --on-green: var(--orig-on-green);
+  --red: var(--orig-red);
+  --on-red: var(--orig-on-red);
+  --amber: var(--orig-amber);
+  --purple: var(--orig-purple);
+  --hover-bg: var(--orig-hover-bg);
+  --hover-line: var(--orig-hover-line);
+  --banner-bg: var(--orig-banner-bg);
+  --banner-line: var(--orig-banner-line);
+  --banner-text: var(--orig-banner-text);
+  --chip-game-bg: var(--orig-chip-game-bg);
+  --chip-game-line: var(--orig-chip-game-line);
+  --check-a: var(--orig-check-a);
+  --check-b: var(--orig-check-b);
+  --shadow: var(--orig-shadow);
+}
+:where(.notes-preview-scroll) { background: var(--bg); color: var(--text); }
+:where(.notes-body, .slide-nav) { color: var(--text); font-family: var(--sans); }

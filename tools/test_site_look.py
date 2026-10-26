@@ -22,6 +22,12 @@ WHAT IS BEING GUARDED
       buttons, boxes, links or headings leaves slides alone (a site button
       rule once made light buttons with light text on a dark theme).
 
+  …and in the editor's colours. Students see slides in the editor, so a
+      slide preview here puts back style.css's colours: the site's go on
+      <body>, <html> keeps the editor's as --orig-*, and every colour the
+      site changes is restored inside a preview. One left out shows the
+      site's colour in a preview and nowhere says so.
+
   site_look.css is the same in all three (checked when the other repos are
       beside this one, skipped when not).
 """
@@ -55,7 +61,8 @@ for p in PAGES:
     html = template(p)
     look, style = html.find("site_look.css"), html.find("filename='style.css'")
     check("%s loads it after style.css" % p, look > style >= 0)
-    check("  with Ubuntu and Source Sans 3", "family=Ubuntu" in html and "family=Source+Sans+3" in html)
+    check("  with Ubuntu and Source Sans 3, and IBM Plex Sans for its slides",
+          "family=Ubuntu" in html and "family=Source+Sans+3" in html and "family=IBM+Plex+Sans" in html)
 for p in EDITORS:
     if os.path.exists(os.path.join(ROOT, "templates", p + ".html")):
         check("the editor page %s doesn't" % p, "site_look.css" not in template(p))
@@ -63,7 +70,7 @@ for p in EDITORS:
 print("a bought theme keeps its colours")
 # The rules, comments out: selector and body.
 body = re.sub(r"/\*.*?\*/", "", CSS, flags=re.S)
-DEFAULT = re.compile(r':root(:not\(\[data-theme\]\)|\[data-theme="(dark|light)"\])$')
+DEFAULT = re.compile(r':root(:not\(\[data-theme\]\)|\[data-theme="(dark|light)"\]) body$')
 COLOUR = re.compile(r"#[0-9a-fA-F]{3,8}\b|\b(rgba?|hsla?)\(|\b(white|black)\b")
 rules = re.findall(r"([^{}]+)\{([^{}]*)\}", re.sub(r"@media[^{]*\{", "", body))
 check("there are rules to look at", len(rules) > 20, len(rules))
@@ -114,6 +121,16 @@ for sel, _ in rules:
 check("there are rules for buttons, boxes and headings", len(reaching) > 10, len(reaching))
 leaky = [p for p in reaching if SPARE not in p]
 check("every one of them leaves slides alone", not leaky, leaky[:3])
+
+site_tokens = set(re.findall(r"--([a-z0-9-]+):", dict(rules)[next(sel for sel, _ in rules if " ".join(sel.split()).startswith(':root:not([data-theme]) body, :root[data-theme="dark"] body'))]))
+site_only = {"page-bg", "btn-bg", "btn-line", "btn-hover", "go", "go-hover", "on-go", "field-bg"}
+restore = next((d for sel, d in rules if ".notes-body" in sel and sel.strip().startswith(":where")), "")
+root = next((d for sel, d in rules if sel.strip() == ":root"), "")
+unrestored = sorted(t for t in site_tokens - site_only
+                    if f"--{t}: var(--orig-{t})" not in restore or f"--orig-{t}: var(--{t})" not in root)
+check("the site changes colours", len(site_tokens - site_only) > 20, len(site_tokens - site_only))
+check("  and a slide preview gets every one of them back", not unrestored, unrestored[:4])
+check("  without outweighing a slide theme (:where)", restore and ":where(" in CSS)
 
 print("the same in all three")
 mine = open(os.path.join(ROOT, "static", "site_look.css"), "rb").read()
