@@ -354,6 +354,16 @@ stops being theirs stops showing. Each theme is a `[data-theme]` block, a
 palette; `test_editor_themes.py` (the same in all three) fails on a theme
 missing any of them, since a missing block sells a theme that does nothing.
 
+**The class pages look like GameIDE's** (`static/site_look.css`, the same
+in all three). The teacher's and students' pages — dashboard, class,
+assignment, XP & tokens, shop, attendance, material, a student's classes,
+My work, their XP and avatar — load it after `style.css`; the editors never
+do. It sets colours only for the default looks (no `data-theme`, or
+`dark`/`light`), so **a student's bought theme still wins** there: a colour
+written outright anywhere else in it would quietly paint over every theme
+sold. `test_site_look.py` (the same in all three) fails on that, on a page
+that stops loading it, and on an editor that starts.
+
 ## Style
 
 Comments explain *why*, and name the silent failures. The two-kinds-of-project

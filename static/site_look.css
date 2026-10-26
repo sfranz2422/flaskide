@@ -1,0 +1,287 @@
+/* The class pages' look: GameIDE's, on the teacher's and students' pages
+   (the dashboard, a class, an assignment, XP and tokens, the shop,
+   attendance, a student's classes, My work, their XP and avatar) — never
+   the editors, which keep their own.
+
+   THE SAME FILE IN PYIDE, WEBIDE AND FLASKIDE. Change it in one, copy it to
+   the others. Loaded after style.css, on those pages only.
+
+   GameIDE's look: everything on one hue, 200 — a deep blue-teal gradient
+   behind, steel-blue buttons, green for the button that does the thing,
+   rounded cards, Ubuntu headings over Source Sans, and room to breathe.
+
+   A STUDENT'S OWN THEME WINS. Themes bought in the token shop or unlocked
+   by level (xp.EDITOR_THEMES) are put on <html> as data-theme="ocean" and
+   so on, and must look like themselves here too, or a bought theme quietly
+   stops showing on half the site. So every colour below is set only for
+   the default looks — no data-theme, or "dark"/"light" from the editor's
+   sun/moon button — and the shapes below draw from the theme's own colours
+   whatever it is. A rule that names a colour outright instead of a token
+   would paint over a bought theme: don't. */
+
+/* ------------------------------------------------- every look: shapes */
+:root {
+  --sans: "Source Sans 3", "Source Sans Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --heading: "Ubuntu", "Source Sans 3", system-ui, sans-serif;
+  --bar-h: 64px;
+  /* What a bought theme gets: its own colours. The default looks below put
+     GameIDE's in their place. */
+  --page-bg: var(--bg);
+  --btn-bg: var(--bg);
+  --btn-line: var(--line);
+  --btn-hover: var(--hover-bg);
+  --go: var(--brand);
+  --go-hover: var(--brand-hover);
+  --on-go: var(--on-brand);
+  --field-bg: var(--bg);
+}
+
+/* ------------------------------------------------- the default looks */
+:root:not([data-theme]),
+:root[data-theme="dark"] {
+  --bg: hsl(200, 20%, 11%);
+  --page-bg: linear-gradient(135deg, hsl(200, 35%, 16%), hsl(200, 20%, 11%)) fixed;
+  --bg-panel: hsl(200, 20%, 16%);
+  --bg-head: hsl(200, 22%, 13%);
+  --line: hsl(200, 25%, 24%);
+  --text: hsl(200, 12%, 92%);
+  --muted: hsl(200, 10%, 68%);
+  --accent: hsl(200, 60%, 62%);
+  --accent-hover: hsl(200, 65%, 72%);
+  --on-accent: hsl(200, 40%, 10%);
+  --brand: hsl(200, 45%, 42%);
+  --brand-hover: hsl(200, 45%, 50%);
+  --on-brand: #ffffff;
+  --green: hsl(160, 55%, 50%);
+  --green-hover: hsl(160, 55%, 58%);
+  --on-green: hsl(160, 60%, 10%);
+  --red: hsl(0, 70%, 68%);
+  --on-red: hsl(0, 60%, 12%);
+  --amber: hsl(38, 90%, 62%);
+  --purple: hsl(260, 75%, 80%);
+  --hover-bg: hsl(200, 22%, 20%);
+  --hover-line: hsl(200, 25%, 40%);
+  --banner-bg: hsl(200, 30%, 18%);
+  --banner-line: hsl(200, 30%, 32%);
+  --banner-text: hsl(200, 40%, 88%);
+  --chip-game-bg: hsl(260, 25%, 20%);
+  --chip-game-line: hsl(260, 25%, 36%);
+  --check-a: hsl(200, 18%, 15%);
+  --check-b: hsl(200, 18%, 19%);
+  --shadow: rgba(0, 0, 0, .45);
+  --btn-bg: hsl(200, 30%, 30%);
+  --btn-line: transparent;
+  --btn-hover: hsl(200, 30%, 38%);
+  --go: hsl(160, 50%, 36%);
+  --go-hover: hsl(160, 50%, 44%);
+  --on-go: #ffffff;
+  --field-bg: hsl(200, 25%, 8%);
+  color-scheme: dark;
+}
+
+/* Light, as the other pages decide it: the computer's setting with nothing
+   chosen, or the sun/moon button. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #eef2f7;
+    --page-bg: #eef2f7;
+    --bg-panel: #ffffff;
+    --bg-head: #ffffff;
+    --line: #d6deea;
+    --text: #172033;
+    --muted: #55637a;
+    --accent: #1d5fd1;
+    --accent-hover: #1749a3;
+    --on-accent: #ffffff;
+    --brand: hsl(205, 55%, 38%);
+    --brand-hover: hsl(205, 55%, 31%);
+    --on-brand: #ffffff;
+    --green: #15803d;
+    --green-hover: #126c34;
+    --on-green: #ffffff;
+    --red: #b91c1c;
+    --on-red: #ffffff;
+    --amber: #b45309;
+    --purple: #6b21a8;
+    --hover-bg: #e4ebf4;
+    --hover-line: #a9b6ca;
+    --banner-bg: #e3edf8;
+    --banner-line: #b6cbe4;
+    --banner-text: #12305a;
+    --chip-game-bg: #f0e9fb;
+    --chip-game-line: #cdb6ea;
+    --check-a: #eef2f7;
+    --check-b: #e2e8f0;
+    --shadow: rgba(24, 34, 54, .14);
+    --btn-bg: #e4ebf4;
+    --btn-line: transparent;
+    --btn-hover: #d6e0ee;
+    --go: hsl(160, 60%, 30%);
+    --go-hover: hsl(160, 60%, 25%);
+    --on-go: #ffffff;
+    --field-bg: #ffffff;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #eef2f7;
+  --page-bg: #eef2f7;
+  --bg-panel: #ffffff;
+  --bg-head: #ffffff;
+  --line: #d6deea;
+  --text: #172033;
+  --muted: #55637a;
+  --accent: #1d5fd1;
+  --accent-hover: #1749a3;
+  --on-accent: #ffffff;
+  --brand: hsl(205, 55%, 38%);
+  --brand-hover: hsl(205, 55%, 31%);
+  --on-brand: #ffffff;
+  --green: #15803d;
+  --green-hover: #126c34;
+  --on-green: #ffffff;
+  --red: #b91c1c;
+  --on-red: #ffffff;
+  --amber: #b45309;
+  --purple: #6b21a8;
+  --hover-bg: #e4ebf4;
+  --hover-line: #a9b6ca;
+  --banner-bg: #e3edf8;
+  --banner-line: #b6cbe4;
+  --banner-text: #12305a;
+  --chip-game-bg: #f0e9fb;
+  --chip-game-line: #cdb6ea;
+  --check-a: #eef2f7;
+  --check-b: #e2e8f0;
+  --shadow: rgba(24, 34, 54, .14);
+  --btn-bg: #e4ebf4;
+  --btn-line: transparent;
+  --btn-hover: #d6e0ee;
+  --go: hsl(160, 60%, 30%);
+  --go-hover: hsl(160, 60%, 25%);
+  --on-go: #ffffff;
+  --field-bg: #ffffff;
+  color-scheme: light;
+}
+
+/* The bar. style.css keeps it black with a stripe under it in every theme,
+   with dark tokens of its own; in the default looks it is GameIDE's instead,
+   a quiet strip in the page's own colours. `inherit` hands the bar the
+   page's values back. A bought theme keeps style.css's bar. */
+:root:is(:not([data-theme]), [data-theme="dark"], [data-theme="light"]) .bar {
+  --text: inherit;
+  --muted: inherit;
+  --bg: inherit;
+  --bg-panel: inherit;
+  --bg-head: inherit;
+  --line: inherit;
+  --hover-bg: inherit;
+  --hover-line: inherit;
+  --accent: inherit;
+  --accent-hover: inherit;
+  color-scheme: inherit;
+  background: color-mix(in srgb, var(--bg-head) 82%, transparent);
+  color: var(--text);
+  border-bottom: 1px solid var(--line);
+}
+
+/* ------------------------------------------------- the page */
+html { background: var(--bg); }
+body {
+  background: var(--page-bg);
+  font-size: 15px;
+  line-height: 1.45;
+}
+h1, h2, h3, .brand, .pagetitle { font-family: var(--heading); }
+.bar { padding: 0 22px; gap: 18px; }
+.brand { font-size: 19px; font-weight: 700; letter-spacing: 0; }
+.pagetitle { font-size: 17px; font-weight: 500; }
+
+.sheet {
+  max-width: 1060px;
+  padding: 34px 32px 80px;
+}
+.sheet h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  margin: 36px 0 14px;
+}
+.sheet h3 { font-weight: 500; }
+a { color: var(--accent); }
+
+/* ------------------------------------------------- buttons */
+.btn {
+  border-radius: 5px;
+  background: var(--btn-bg);
+  border-color: var(--btn-line);
+  font-size: 14px;
+  padding: 7px 14px;
+}
+.btn:hover:not(:disabled) { background: var(--btn-hover); border-color: var(--accent); }
+/* style.css makes the bar's buttons see-through on its black; in the default
+   looks they are the steel buttons too. (A bought theme keeps the black bar,
+   and with it the see-through buttons.) */
+:root:is(:not([data-theme]), [data-theme="dark"], [data-theme="light"]) .bar .btn:not(.btn-primary):not(.btn-stop):not(.btn-run) { background: var(--btn-bg); }
+:root:is(:not([data-theme]), [data-theme="dark"], [data-theme="light"]) .bar .btn:not(.btn-primary):not(.btn-stop):not(.btn-run):hover:not(:disabled) { background: var(--btn-hover); }
+/* The button that does the thing: green, as GameIDE's are (a bought theme's
+   own --brand instead). */
+.btn-primary,
+.bar .btn-primary {
+  background: var(--go);
+  border-color: transparent;
+  color: var(--on-go);
+}
+.btn-primary:hover:not(:disabled) { background: var(--go-hover); border-color: transparent; }
+
+/* Row actions (Edit, Hide, Archive…) were small capitals in the text's
+   colour; here they are GameIDE's small steel buttons, in plain words. */
+.linkbtn {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 5px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-line);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: none;
+  line-height: 1.4;
+}
+.linkbtn:hover { background: var(--btn-hover); color: var(--text); }
+.linkbtn.danger { color: var(--red); }
+.rowactions .linkbtn { margin-left: 5px; }
+
+/* ------------------------------------------------- boxes */
+.field,
+.sheet input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+.sheet select,
+.sheet textarea {
+  background: var(--field-bg);
+  border-radius: 6px;
+}
+.card,
+.class-banner,
+.view-link,
+.sheet section.classroom {
+  border-radius: 12px;
+}
+.card { padding: 18px 20px; }
+.class-banner { border-top-color: var(--accent); }
+
+.listing th {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.listing tr:hover td { background: color-mix(in srgb, var(--bg-panel) 70%, transparent); }
+
+.kind-tag { border-radius: 20px; padding-inline: 8px; }
+
+/* A card's own heading: the card's padding is its room above. */
+.sheet section > h2:first-child,
+.sheet section :first-child > h2:first-child { margin-top: 0; }
