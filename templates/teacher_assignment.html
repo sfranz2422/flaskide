@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <script>
   // The editor's light/dark choice, so this page matches it rather than the
@@ -39,6 +41,40 @@
 </header>
 
 <main class="sheet">
+
+  {#  The notes, first: most visits here are to change them. Saved alone
+      (save_assignment_notes) — the code isn't on this page to change. A
+      lesson's notes are its lesson page, which presents them too. #}
+  <section class="assignment-notes" id="notes">
+    {% if assignment.kind == 'lesson' %}
+      <h2>Notes</h2>
+      <p>This lesson's notes are written on <a class="btn" href="{{ url_for('edit_lesson', slug=assignment.slug) }}">its lesson page</a>, where you can present them too.</p>
+    {% else %}
+      <div class="notes-head">
+        <h2>Notes</h2>
+        <span class="dim small">What students read in the notes pane: <code>---</code> on its own line starts a slide,
+          <code>```quiz</code> a question, <code>```tests</code> checks ·
+          <a href="{{ url_for('help_questions') }}" target="_blank" rel="noopener">formats</a></span>
+        <span class="notes-actions">
+          <button id="notes-pic" class="linkbtn" type="button"
+                  title="Upload a picture into the notes at the cursor — or paste one, or drop it on the notes">Add picture</button>
+          <span id="notes-saved" class="savestate" aria-live="polite">Saved</span>
+          <button id="notes-save" class="btn btn-primary" type="button" title="Save (Ctrl+S)">Save notes</button>
+        </span>
+      </div>
+      <div class="lesson-write notes-write">
+        <div class="pane lesson-src-pane">
+          <div class="editor-wrap"><textarea id="notes-src" aria-label="Notes">{{ notes }}</textarea></div>
+        </div>
+        <div class="pane lesson-preview-pane">
+          <div class="pane-head"><span>What students see</span></div>
+          <div class="subpane notes-preview-scroll">
+            <div id="notes-preview" class="notes-body prose lesson-body"></div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </section>
 
   {#  Its class. Move takes it (on top) to another class's page; Copy makes
       another period its own copy — own links, own live lesson, own results. #}
@@ -1000,6 +1036,19 @@
   });
 })();
 </script>
+{% endif %}
+{% if assignment.kind != 'lesson' %}
+<script>
+  window.NOTES_T = {
+    ns: "FlaskIDE",
+    saveUrl: "{{ url_for('save_assignment_notes', slug=assignment.slug) }}"
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='pictures.js') }}"></script>
+<script src="{{ url_for('static', filename='assignment_notes.js') }}"></script>
 {% endif %}
 </body>
 </html>

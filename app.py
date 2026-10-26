@@ -2590,6 +2590,62 @@ def save_lesson(slug):
         db.close()
 
 
+# --------------------------------------------------------------------------
+# An assignment's notes, from its page
+# --------------------------------------------------------------------------
+# Nine times out of ten a teacher opening an assignment wants its notes, not
+# its code: the instructions, a slide, a question. So the assignment's page
+# has the notes editor (assignment_notes.js, the same in all three editors),
+# and this saves them ALONE — the starter code and data files are never sent
+# from that page, so nothing else can be changed by it. Like any edit to an
+# assignment it is what students see from now on: students already working
+# see the new notes too (_current_notes), with the answer keys taken out.
+
+def _notes_name(item):
+    """Which file an assignment's notes are: a lesson's lesson.md, else its
+    first .md file (the one its link opens first) — or notes.md, for one
+    that has none yet."""
+    if _is_lesson(item):
+        return LESSON_FILE
+    return next((n for n in item.file_map() if _is_notes(n)), "notes.md")
+
+
+@app.post("/api/assignment/<slug>/notes")
+def save_assignment_notes(slug):
+    """Save an assignment's notes. Emptied, the notes file goes, as it was
+    before there were any — except a lesson's, which is all the lesson is."""
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        notes = (request.get_json(silent=True) or {}).get("notes")
+        if not isinstance(notes, str):
+            return jsonify(error="Nothing to save."), 400
+        name = _notes_name(item)
+        files = item.file_map()
+        if notes.strip() or _is_lesson(item):
+            files[name] = notes
+        else:
+            files.pop(name, None)
+        if _is_lesson(item):
+            # A lesson is its notes and nothing else — no program for
+            # validate_files to insist on — so only their size is checked,
+            # as save_lesson does.
+            problem = "Those notes are too large to save." if len(notes.encode("utf-8")) > MAX_FILE_BYTES else None
+        else:
+            files, problem = validate_files(files)
+        if problem:
+            return jsonify(error=problem), 413 if "large" in problem else 400
+        item.files = json.dumps(files)
+        item.updated_at = accounts.now()
+        db.commit()
+        _store_quiz_keys(db, item.id, [notes])
+        return jsonify(ok=True, name=name)
+    finally:
+        db.close()
+
+
 @app.post("/api/lesson/<slug>/turnin")
 def turn_in_lesson(slug):
     """A student saying they are done. Nothing is copied — the work IS the
@@ -3039,6 +3095,9 @@ def teacher_assignment(slug):
         ctx.update(assignment=item, handed_in=handed_in, not_yet=not_yet,
                    share_url=url_for("open_assignment", slug=item.slug,
                                      _external=True, _scheme=_scheme()))
+        # The notes, to edit right here (save_assignment_notes): the whole
+        # file, answer keys and all — this page is the teacher's.
+        ctx.update(notes=item.file_map().get(_notes_name(item), ""), notes_name=_notes_name(item))
         return render_template("teacher_assignment.html", **ctx)
     finally:
         db.close()

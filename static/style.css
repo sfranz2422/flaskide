@@ -3120,3 +3120,13 @@ a.xp-tokens { color: var(--text); text-decoration: none; }
 .theme-swatch-winter .k { color: #9ad8ff; } .theme-swatch-winter .d { color: #c7b8ff; } .theme-swatch-winter .s { color: #b8f2e6; } .theme-swatch-winter .c { color: #93abc8; }
 .theme-swatch-flower { background: #2a1a24; border-color: #664459; }
 .theme-swatch-flower .k { color: #ff8fc8; } .theme-swatch-flower .d { color: #a8e6a3; } .theme-swatch-flower .s { color: #ffd479; } .theme-swatch-flower .c { color: #c6a2b6; }
+
+/* An assignment's notes on its page (assignment_notes.js): the lesson
+   page's two panes, in a box of their own height on a page that scrolls. */
+.assignment-notes .notes-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.assignment-notes .notes-head h2 { margin-right: 4px; }
+.assignment-notes .notes-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.assignment-notes .savestate.is-dirty { color: var(--amber, var(--accent)); }
+.notes-write { height: 560px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-top: 8px; }
+.notes-preview-scroll { overflow: auto; padding: 4px 16px 16px; }
+@media (max-width: 900px) { .notes-write { height: auto; } .notes-write .editor-wrap { height: 50vh; } }

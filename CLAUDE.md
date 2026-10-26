@@ -195,6 +195,17 @@ assignment opens on its notes, except for its author, who gets Edit source.
 **The rescue** (`static/rescue.js`, identical in all three apps). Work typed
 while signed out is kept in the browser and restored after signing in.
 
+**An assignment's notes are edited on its page** (`assignment_notes.js`,
+the same file in all three editors; `save_assignment_notes`). Most visits to
+an assignment are to change its notes, not its code, so its page opens with
+them: markdown on the left, the slides as students get them on the right,
+Add picture / paste / drop, Save or Ctrl+S. The route saves the notes ALONE
+— the notes file is a lesson's `lesson.md`, else the first `.md`, else a new
+`notes.md` (emptied, it goes) — so the code and data files can't be changed
+from there; keys are stored as for any save, and students already working
+see the new notes (`_current_notes`). A lesson's page links to its lesson
+page instead. `test_notes_page.py` is the same in all three.
+
 **An assignment's notes follow the teacher's edits** (`_current_notes`,
 `_keep_notes` in `app.py`). A draft copies the assignment's files, notes
 included, but every page that shows a student their draft swaps in the
