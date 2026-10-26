@@ -1,11 +1,12 @@
 """
 XP, levels, badges, tokens and avatars — the rules, in one place.
 
-ONE FILE IN THREE REPOS, like accounts.py. A student's XP is one number
-across PyIDE, WebIDE and FlaskIDE (accounts.XpAward says why), so the level
-it makes, the badges it earns, the tokens it is worth and the avatar parts
-it unlocks have to be the same whichever editor is showing them. Change it
-here and copy it to the other two, byte for byte.
+ONE FILE IN FOUR REPOS, like accounts.py. A student's XP is one number
+across PyIDE, WebIDE, FlaskIDE and GameIDE (accounts.XpAward says why), so
+the level it makes, the badges it earns, the tokens it is worth and the
+avatar parts it unlocks have to be the same whichever editor is showing
+them. Change it here and copy it to the other three, byte for byte.
+(GameIDE keeps it in backend/; there a game that ran is what RUN_XP pays.)
 
 WHAT PAYS, and why each is safe to pay:
 
