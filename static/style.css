@@ -1173,7 +1173,9 @@ body:not(.is-authoring) .notes-body .snippet-guess,
 .prose .pop-box { border-left: 4px solid var(--accent); padding: 8px 12px; margin: 0 0 1em; border-radius: 8px;
                   background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .prose .pop-box > :last-child { margin-bottom: 0; }
-.reveal-skip[hidden] { display: none; }
+.reveal-skip[hidden], .reveal-replay[hidden] { display: none; }
+/* A pause (`^`) in played notes: a place to wait, never shown. */
+.reveal-pause { display: none; }
 @media (prefers-reduced-motion: reduce) { .reveal-pop { animation: none; } }
 
 /* Predict the output (type: predict): a box for a few lines, then Run it. */

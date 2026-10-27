@@ -55,10 +55,14 @@ CASES = {
     "words": "animate: words\n# Hi",
     "both": "theme: ocean\nanimate: type\n# Hi",
     "swapped": "animate: on\ntheme: forest\n\n# Hi",
-    "unknown": "animate: fast\n# Hi",
+    "unknown": "animate: quick\n# Hi",
     "late": "# Hi\nanimate: words",
     "deck": "animate: words\n# One\n...\nmore\n---\n# Two",
     "plain_deck": "# One\n...\nmore\n---\n# Two",
+    "slow": "animate: words slow\n# Hi",
+    "alone": "animate: slow\n# Hi",
+    "type_fast": "theme: ocean\nanimate: type fast\n# Hi",
+    "bad_speed": "animate: words quickly\n# Hi",
 }
 SECTIONS = {
     "split": "A\n...\nB\n\n...\nC",
@@ -76,6 +80,9 @@ Object.keys(cases).forEach(function (k) {
 });
 Object.keys(secs).forEach(function (k) { out.sections[k] = N.sections(secs[k]); });
 out.theme = N.takeTheme(cases.both);
+out.speeds = N.SPEEDS;
+out.pauses = [N.pauseLines("One\\n^\\nTwo"), N.pauseLines("One\\n\\n^^\\n\\nTwo"), N.pauseLines("- a\\n\\n^\\n- b"),
+              N.pauseLines("```\\n^\\n```\\nx"), N.pauseLines("x ^ y"), N.pauseLines(":::pop\\nLook\\n:::\\n^\\nx"), N.pauseLines(N.popMarks("A\\n\\n^\\n:::pop\\nLook\\n:::"))];
 out.pops = N.popMarks(":::pop\\nLook!\\n:::\\n```\\n:::pop\\n```\\n::: pop\\nx");
 console.log(JSON.stringify(out));
 """ % (GLOBAL, json.dumps(CASES), json.dumps(SECTIONS))
@@ -88,14 +95,33 @@ check("node ran notes.js", got is not None, res.stderr[-300:])
 if got:
     h = got["header"]
     print("\nThe header lines")
-    check("animate: words is taken out, and named", h["words"] == {"theme": "", "animate": "words", "body": "# Hi"}, h["words"])
+    check("animate: words is taken out, and named", h["words"] == {"theme": "", "animate": "words", "speed": "normal", "body": "# Hi"}, h["words"])
     check("  beside a theme, in either order; on means words, type a typewriter",
-          h["both"] == {"theme": "ocean", "animate": "type", "body": "# Hi"}
+          h["both"] == {"theme": "ocean", "animate": "type", "speed": "normal", "body": "# Hi"}
           and h["swapped"]["theme"] == "forest" and h["swapped"]["animate"] == "words"
           and h["swapped"]["body"].strip() == "# Hi", (h["both"], h["swapped"]))
     check("  a name it doesn't know stays in, as text, so the typo shows",
-          h["unknown"]["animate"] == "" and h["unknown"]["body"].startswith("animate: fast"), h["unknown"])
+          h["unknown"]["animate"] == "" and h["unknown"]["body"].startswith("animate: quick"), h["unknown"])
     check("  and only at the top counts", h["late"]["animate"] == "" and "animate: words" in h["late"]["body"], h["late"])
+    print("\nSpeed")
+    check("a speed after the kind: animate: words slow, animate: type fast",
+          (h["slow"]["animate"], h["slow"]["speed"]) == ("words", "slow")
+          and (h["type_fast"]["animate"], h["type_fast"]["speed"], h["type_fast"]["theme"]) == ("type", "fast", "ocean"),
+          (h["slow"], h["type_fast"]))
+    check("  a speed alone means words at that speed; none is normal",
+          (h["alone"]["animate"], h["alone"]["speed"], h["alone"]["body"]) == ("words", "slow", "# Hi")
+          and h["words"]["speed"] == "normal", (h["alone"], h["words"]))
+    check("  a speed it doesn't know stays in, as text", h["bad_speed"]["animate"] == ""
+          and h["bad_speed"]["body"].startswith("animate: words quickly"), h["bad_speed"])
+    sp = got["speeds"]
+    check("  slow is slower than normal, normal than fast — and normal is slow enough to read along "
+          "(70 ms a word was not)",
+          all(sp["slow"][k] > sp["normal"][k] > sp["fast"][k] for k in ("word", "letter", "block"))
+          and sp["normal"]["word"] >= 200, sp)
+    check("  and the slide plays at the notes' speed",
+          "animateIn(part, mode, body, ctl, speed)" in NOTES_JS and "speed = head.speed;" in NOTES_JS
+          and "var ms = SPEEDS[speed] || SPEEDS.normal;" in NOTES_JS)
+    print()
     check("takeTheme still gives the theme, and the notes without both lines",
           got["theme"] == {"name": "ocean", "body": "# Hi"}, got["theme"])
     check("the animate: line never changes how many slides there are",
@@ -149,6 +175,28 @@ check("someone who asks for reduced motion gets each section at once",
 check("Skip shows the part playing at once, or between parts the whole slide — and only where it's offered",
       "if (playing && playing.finish) playing.finish();" in NOTES_JS and "reached.played = sectionsHere().length;" in NOTES_JS
       and "skip.hidden = !skippable() || !(busy || more);" in NOTES_JS)
+
+check("the teacher's preview can replay a slide already played — after an edit it showed whole for good",
+      "replay.hidden = !skippable() || !mode || busy || !shown;" in NOTES_JS
+      and re.search(r"function replaySlide\(\) \{\s*if \(!mode \|\| !skippable\(\) \|\| busy\) return;\s*"
+                    r"reached = \{ slide: at, played: 0 \};\s*saveReached\(\);\s*drawPlayed\(\);", NOTES_JS) is not None)
+
+print("\nPause")
+if got:
+    pz = got["pauses"]
+    check("a ^ line joins the line before, so it leaves no gap on the slide", pz[0] == "One ^\nTwo", pz[0])
+    check("  or, under a blank line, the start of the line after — inside its list marker",
+          pz[1] == "One\n\n\n^^ Two" and pz[2] == "- a\n\n- ^ b", pz[1:3])
+    check("  never inside fenced code, where ^ is Python's XOR", pz[3] == "```\n^\n```\nx", pz[3])
+    check("  and a ^ in a sentence stays put", pz[4] == "x ^ y", pz[4])
+    check("  a pause before :::pop goes inside the box, never onto its marker",
+          "\n%%POPSTART%%\n" in pz[6] and "^ Look" in pz[6], pz[6])
+check("a pause is a wait in the playing, as long as the speed's pause a caret, and is never shown",
+      'steps.push([child, ms.pause * (Number(child.getAttribute("data-beats")) || 1)]);' in NOTES_JS
+      and all(got and got["speeds"][k]["pause"] >= 500 for k in ("slow", "normal", "fast"))
+      and ".reveal-pause { display: none; }" in open(os.path.join(ROOT, "static", "style.css")).read())
+check("  read only outside code and questions", 'n.parentNode.closest("code, pre, textarea, .quiz")' in NOTES_JS
+      and "markPauses(target);" in NOTES_JS)
 
 failed = results.count(False)
 print("\n" + ("ALL PASSED" if not failed else "SOME FAILED") + " (%d checks, %d failed)" % (len(results), failed))

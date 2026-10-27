@@ -114,10 +114,31 @@ window.FlaskIDENotes = (function () {
 
   /* `animate: words` (or `animate: type`) beside the theme line: the notes
      are played a section at a time for students (slideView, below). The
-     names it takes, and what each means. */
-  var ANIMATE_LINE = /^[ \t]*animate[ \t]*:[ \t]*([a-z]+)[ \t]*$/i;
+     names it takes, and what each means. A speed may follow —
+     `animate: words slow` — or stand alone, `animate: slow`, meaning words.
+
+     The first speed, 70 ms a word, was far too quick to read along with:
+     about 850 words a minute. "normal" is now a little faster than reading
+     aloud, and "slow" is reading aloud. */
+  var ANIMATE_LINE = /^[ \t]*animate[ \t]*:[ \t]*([a-z]+)(?:[ \t]+([a-z]+))?[ \t]*$/i;
   var ANIMATIONS = { words: "words", word: "words", reveal: "words", on: "words", yes: "words", "true": "words",
                      type: "type", typewriter: "type", typing: "type" };
+  // ms a word, a letter, and a block (code, a question, a picture) takes to come in.
+  // A pause (`^`) waits `pause` ms a caret.
+  var SPEEDS = { slow: { word: 450, letter: 80, block: 700, pause: 1500 },
+                 normal: { word: 250, letter: 45, block: 450, pause: 1000 },
+                 fast: { word: 120, letter: 22, block: 260, pause: 600 } };
+
+  /* {animate, speed} from an `animate:` line, or null when it isn't one
+     notes.js knows — a typo stays on the slide as text. */
+  function readAnimate(line) {
+    var a = line.match(ANIMATE_LINE);
+    if (!a) return null;
+    var first = a[1].toLowerCase(), second = (a[2] || "").toLowerCase();
+    if (SPEEDS[first] && !second) return { animate: "words", speed: first };
+    if (!ANIMATIONS[first] || (second && !SPEEDS[second])) return null;
+    return { animate: ANIMATIONS[first], speed: second || "normal" };
+  }
 
   /* {theme, animate, body}: the notes' header lines — `theme:` and
      `animate:`, the first one or two lines with anything on them, in either
@@ -126,17 +147,17 @@ window.FlaskIDENotes = (function () {
      instead of silently doing nothing. Taken out before the notes are cut
      into slides (slides()), so no count can differ between anyone. */
   function takeHeader(md) {
-    var text = String(md || ""), theme = "", animate = "";
+    var text = String(md || ""), theme = "", animate = "", speed = "";
     for (var k = 0; k < 2; k++) {
       var m = text.match(/^\s*([^\n]*)\n?/);
       var line = m ? m[1].replace(/\r$/, "") : "";
-      var t = line.match(THEME_LINE), a = line.match(ANIMATE_LINE);
+      var t = line.match(THEME_LINE), a = readAnimate(line);
       if (t && !theme && THEMES.indexOf(t[1].toLowerCase()) >= 0) theme = t[1].toLowerCase();
-      else if (a && !animate && ANIMATIONS[a[1].toLowerCase()]) animate = ANIMATIONS[a[1].toLowerCase()];
+      else if (a && !animate) { animate = a.animate; speed = a.speed; }
       else break;
       text = text.slice(m[0].length);
     }
-    return { theme: theme, animate: animate, body: text };
+    return { theme: theme, animate: animate, speed: speed, body: text };
   }
 
   /* {name, body}: the theme the notes ask for ("" for none), and the notes
@@ -184,7 +205,7 @@ window.FlaskIDENotes = (function () {
     }
     // A section divider (`...`) is never shown: where notes aren't played
     // a section at a time — live, the projector — it's just a seam.
-    source = popMarks(sections(source || "").join("\n\n"));
+    source = pauseLines(popMarks(sections(source || "").join("\n\n")));
     return ensureRenderer().then(function () {
       setTheme(target, theme);
       var dirty = window.marked.parse(runFences(source || ""), { breaks: true });
@@ -198,6 +219,7 @@ window.FlaskIDENotes = (function () {
       var clean = window.DOMPurify.sanitize(dirty, rules);
       target.innerHTML = clean;
       wrapPops(target);
+      markPauses(target);
       hardenLinks(target);
       enhanceQuizzes(target);
       enhanceTasks(target);
@@ -258,6 +280,67 @@ window.FlaskIDENotes = (function () {
       while (s.length && !s[s.length - 1].trim()) s.pop();
       return s.join("\n");
     }).filter(function (s) { return s.trim(); });
+  }
+
+  /* A PAUSE while a section plays: `^` with a space (or the line's end) on
+     each side waits about a second before the words after it come in; `^^`
+     twice as long. Never shown — where notes are shown whole it's hidden,
+     and it means nothing — and never read inside code, where ^ is Python's
+     XOR (write `^` in backticks to show one).
+
+     A line with only carets on it joins the end of the line before (or the
+     start of the line after, under a blank line): left as a line of its
+     own, markdown makes it an empty paragraph, a gap on the slide. */
+  var PAUSE = /(^|\s)(\^+)(?=\s|$)/g;
+  var PAUSE_LINE = /^ {0,3}(\^+)\s*$/;
+  function pauseLines(md) {
+    var lines = String(md || "").split("\n"), fence = null, out = [], carry = "";
+    lines.forEach(function (ln) {
+      var f = ln.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (f) {
+        if (fence === null) fence = f[1];
+        else if (f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+      } else if (fence === null) {
+        var p = ln.match(PAUSE_LINE);
+        if (p) {
+          var before = out.length ? out[out.length - 1] : "";
+          if (before.trim() && !/^ {0,3}(`{3,}|~{3,})|%%POP/.test(before)) out[out.length - 1] = before.replace(/\s+$/, "") + " " + p[1];
+          else carry += p[1];
+          return;
+        }
+        // Not onto a :::pop marker: that would stop it being one.
+        if (carry && ln.trim() && ln.indexOf("%%POP") < 0) {
+          var indent = ln.match(/^\s*(?:[-*+] |\d+[.)] |#{1,6} |> )?/)[0];
+          ln = indent + carry + " " + ln.slice(indent.length);
+          carry = "";
+        }
+      }
+      out.push(ln);
+    });
+    return out.join("\n");
+  }
+  /* Each pause in the drawn notes as an empty span.reveal-pause (CSS hides
+     it), its length in data-beats, for animateIn to wait at. */
+  function markPauses(root) {
+    var walk = document.createTreeWalker(root, 4), hits = [];
+    for (var n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (n.nodeValue.indexOf("^") >= 0 && !(n.parentNode.closest && n.parentNode.closest("code, pre, textarea, .quiz"))) hits.push(n);
+    }
+    hits.forEach(function (n) {
+      var text = n.nodeValue, frag = document.createDocumentFragment(), last = 0, m;
+      PAUSE.lastIndex = 0;
+      while ((m = PAUSE.exec(text))) {
+        var at = m.index + m[1].length;
+        frag.appendChild(document.createTextNode(text.slice(last, at)));
+        var span = el("span", "reveal-pause");
+        span.setAttribute("data-beats", String(m[2].length));
+        frag.appendChild(span);
+        last = at + m[2].length;
+      }
+      if (!last) return;
+      frag.appendChild(document.createTextNode(text.slice(last)));
+      n.parentNode.replaceChild(frag, n);
+    });
   }
 
   /* A slide cut into the sections it's played in: a line with only `...`
@@ -402,9 +485,10 @@ window.FlaskIDENotes = (function () {
     function skippable() { return !!player && (typeof player.skip === "function" ? player.skip() : !!player.skip); }
     var playing = null;    // the section being played: {finish}
     var mode = "";                         // "words" or "type", when playing
+    var speed = "";                        // "slow", "normal" or "fast"
     var reached = { slide: 0, played: 0 }; // the furthest slide, and its sections played
     var busy = false;
-    var playBar = null, play = null, hint = null, skip = null;
+    var playBar = null, play = null, hint = null, skip = null, replay = null;
     if (player) {
       playBar = el("div", "reveal-bar");
       playBar.hidden = true;
@@ -413,13 +497,18 @@ window.FlaskIDENotes = (function () {
       skip = el("button", "btn reveal-skip", "⏭ Skip");
       skip.type = "button";
       skip.title = "Show the part playing now at once — or, between parts, the whole slide";
+      replay = el("button", "btn reveal-replay", "↺ Replay");
+      replay.type = "button";
+      replay.title = "Play this slide again from the start";
       hint = el("span", "reveal-hint dim small");
       playBar.appendChild(play);
       playBar.appendChild(skip);
+      playBar.appendChild(replay);
       playBar.appendChild(hint);
       body.parentNode.insertBefore(playBar, body);
       play.addEventListener("click", playNext);
       skip.addEventListener("click", skipAhead);
+      replay.addEventListener("click", replaySlide);
     }
     function revealKey() { return "pyide-reveal:" + (player.key || location.pathname); }
     function loadReached() {
@@ -450,6 +539,7 @@ window.FlaskIDENotes = (function () {
       play.hidden = !more;
       play.disabled = busy;
       skip.hidden = !skippable() || !(busy || more);
+      replay.hidden = !skippable() || !mode || busy || !shown;
       play.textContent = shown ? "▶ Play more" : "▶ Play";
       hint.textContent = busy ? "" : more
         ? (total > 1 ? "Part " + (shown + 1) + " of " + total : "")
@@ -498,7 +588,7 @@ window.FlaskIDENotes = (function () {
       playing = {};
       var ctl = playing;
       render(part, sec, { theme: "" }).then(function () {
-        return animateIn(part, mode, body, ctl);
+        return animateIn(part, mode, body, ctl, speed);
       }).then(function () {
         if (playing === ctl) playing = null;
         busy = false;
@@ -516,6 +606,17 @@ window.FlaskIDENotes = (function () {
       }
       if (at !== reached.slide) return;
       reached.played = sectionsHere().length;
+      saveReached();
+      drawPlayed();
+    }
+
+    /* The teacher's preview only: this slide unplayed again, so a slide
+       they've changed can be watched again. Without it a slide once played
+       showed whole for good — moving the cursor back to edit it, the
+       teacher could never see their change play. */
+    function replaySlide() {
+      if (!mode || !skippable() || busy) return;
+      reached = { slide: at, played: 0 };
       saveReached();
       drawPlayed();
     }
@@ -582,6 +683,7 @@ window.FlaskIDENotes = (function () {
         theme = head.theme;
         var wasMode = mode;
         mode = wanted() ? head.animate : "";
+        speed = head.speed;
         var c = slides(md);
         // One slide is not slides, as everywhere else.
         cut = c.length >= 2 ? c : [];
@@ -627,12 +729,13 @@ window.FlaskIDENotes = (function () {
      Someone whose computer asks for reduced motion gets the section at
      once. Resolves when it's all in — or at once, everything shown, when
      `ctl.finish()` is called (the teacher's Skip). */
-  var WORD_MS = 70, CHAR_MS = 16, BLOCK_MS = 260;
   var TEXT_BLOCKS = { P: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1, UL: 1, OL: 1, BLOCKQUOTE: 1, DL: 1 };
 
-  function animateIn(part, how, scroller, ctl) {
+  function animateIn(part, how, scroller, ctl, speed) {
     var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (still) return Promise.resolve();
+    var ms = SPEEDS[speed] || SPEEDS.normal;
+    var WORD_MS = ms.word, CHAR_MS = ms.letter, BLOCK_MS = ms.block;
     var steps = [];   // [element, delay, after?]
     function hide(node) { node.classList.add("reveal-hidden"); }
     function splitText(node) {
@@ -650,7 +753,9 @@ window.FlaskIDENotes = (function () {
           });
           child.parentNode.replaceChild(frag, child);
         } else if (child.nodeType === 1) {
-          if (/^(IMG|INPUT|IFRAME|SVG)$/i.test(child.tagName)) {
+          if (child.classList.contains("reveal-pause")) {
+            steps.push([child, ms.pause * (Number(child.getAttribute("data-beats")) || 1)]);
+          } else if (/^(IMG|INPUT|IFRAME|SVG)$/i.test(child.tagName)) {
             hide(child);
             steps.push([child, BLOCK_MS]);
           } else {
@@ -1845,7 +1950,7 @@ window.FlaskIDENotes = (function () {
     isMarkdown: isMarkdown,
     slides: slides,
     takeTheme: takeTheme,
-    takeHeader: takeHeader,
+    takeHeader: takeHeader, SPEEDS: SPEEDS, pauseLines: pauseLines,
     popMarks: popMarks,
     sections: sections,
     THEMES: THEMES,

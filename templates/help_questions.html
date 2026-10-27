@@ -103,20 +103,27 @@ result contains Alice                      …and a value in them
     slide, word by word — <code>animate: type</code> types it out letter by letter instead — and Play comes
     back when it's done, so a slide is read a piece at a time instead of all at once. A line with only
     <code>...</code> on it divides a slide into the parts it's played in; a slide with none is played in one go.
+    Too quick, or too slow? Add a speed: <code>animate: words slow</code>, <code>animate: type fast</code>,
+    or just <code>animate: slow</code>. Without one it's <code>normal</code>.
+    A <code>^</code> on its own — spaces round it, or a line to itself — pauses there for about a second
+    before the rest comes in by itself (<code>^^</code> waits twice as long); <code>...</code> waits for the next press of Play.
+    A <code>^</code> inside code is left alone.
     Wrap anything that should stand out — a sentence, a reminder, a code block — in <code>:::pop</code> and
     <code>:::</code> lines: it arrives with a little pop, and stays in a highlighted box.</p>
   <p>The next slide's arrow waits until the slide has been played. Slides already played show whole, so
     going back to look again replays nothing, and the notes reopen where the student got to. Your own
-    previews play them too, with <strong>⏭ Skip</strong> to get past a part, or a whole slide, while you edit.
+    previews play them too, with <strong>⏭ Skip</strong> to get past a part, or a whole slide, while you edit,
+    and <strong>↺ Replay</strong> to watch a slide play again after you change it.
     A live lesson, the projector and the class pages never play them.</p>
   <pre class="help-src">animate: words
 theme: ocean
 
 ## Step 1
-A function can return a value.
+A function can ^ return a value.
 
 ...
 
+^
 Type this:
 ```python
 def double(n):
