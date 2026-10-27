@@ -1053,6 +1053,11 @@ window.FlaskIDENotes = (function () {
           chip.draggable = enabled;
           chip.addEventListener("click", function (e) {
             e.stopPropagation();
+            // With another item picked, a click on an item in a different
+            // group puts it there: a group's box fills with items, and a
+            // click aimed at the box landed on one of them and only changed
+            // which was picked.
+            if (picked >= 0 && picked !== i && placed[picked] !== placed[i]) return put(picked, placed[i]);
             picked = picked === i ? -1 : i;
             draw();
           });
