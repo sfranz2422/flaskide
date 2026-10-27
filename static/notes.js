@@ -345,7 +345,7 @@ window.FlaskIDENotes = (function () {
   var POINTS = /^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$/i;
   var QID = /^id\s*:\s*([0-9a-f]{12})\s*$/;
   var LONG = /^type\s*:\s*(long|essay)\s*$/i;
-  var TYPE = /^type\s*:\s*(blanks?|fill|match|matching|order|parsons|bug|sort|groups?)\s*$/i;
+  var TYPE = /^type\s*:\s*(blanks?|fill|match|matching|order|parsons|bug|sort|groups?|predict)\s*$/i;
   var PAIR = /^[-*+]\s+(.+?)\s+->\s+(.+)$/;
   var MATCHL = /^match\s*:\s*(.+)$/i;
   var OPTION = /^option\s*:\s*(.+)$/i;
@@ -355,7 +355,8 @@ window.FlaskIDENotes = (function () {
   var GROUP = /^group\s*:\s*(.+)$/i;
   var BUGQ = /^bugs?\s*:\s*([\d,\s]+)$/i;
   var KINDS = { blank: "blank", blanks: "blank", fill: "blank", match: "match", matching: "match",
-                order: "order", parsons: "order", bug: "bug", sort: "sort", group: "sort", groups: "sort" };
+                order: "order", parsons: "order", bug: "bug", sort: "sort", group: "sort", groups: "sort",
+                predict: "predict" };
 
   /* quiz.py's _fnv and scramble, exactly: the shuffled order of an order or
      sort question is part of its id, so the teacher's preview must shuffle
@@ -374,6 +375,11 @@ window.FlaskIDENotes = (function () {
     var mixed = things.some(function (t) { return t !== things[0]; });
     if (mixed && out.every(function (t, i) { return t === things[i]; })) out = out.slice(1).concat(out.slice(0, 1));
     return out;
+  }
+  /* The language of the first fenced code in a prompt: the word after the fence. */
+  function codeLang(prompt) {
+    var m = String(prompt || "").match(/^ {0,3}(?:`{3,}|~{3,})\s*([\w+-]*)/m);
+    return m ? m[1] : "";
   }
   /* The lines of the first fenced code in a prompt (quiz.py, code_lines). */
   function codeLines(prompt) {
@@ -495,6 +501,10 @@ window.FlaskIDENotes = (function () {
         q.choices = shuffled;
       } else { q.choices = shownItems.slice(); q.correct = []; }
       q.kind = "sort";
+    } else if (typed === "predict") {
+      // A short answer about the question's code (quiz.parse): answer: is what it prints.
+      q.choices = []; q.correct = [];
+      q.kind = "predict";
     } else if (typed === "bug") {
       q.choices = []; q.answers = [];
       q.correct = bugs.map(function (b) { return b.replace(/^0+/, "") || "0"; });
@@ -682,7 +692,7 @@ window.FlaskIDENotes = (function () {
     head.appendChild(el("span", "quiz-label",
                         { long: "Long response", blank: "Fill in the blank",
                           match: "Matching", order: "Put in order", bug: "Find the bug",
-                          sort: "Sort into groups" }[q.kind] || "Question"));
+                          sort: "Sort into groups", predict: "Predict the output" }[q.kind] || "Question"));
     head.appendChild(el("span", "quiz-points dim", pointsText(q.points)));
     box.appendChild(head);
     var prompt = el("div", "quiz-prompt");
@@ -749,6 +759,15 @@ window.FlaskIDENotes = (function () {
         inputs.push(radio);
       });
       box.appendChild(list);
+    } else if (q.kind === "predict") {
+      // A box with room for a few lines: output is often more than one.
+      var guess = el("textarea", "field quiz-text quiz-predict");
+      guess.rows = 3;
+      guess.maxLength = 2000;
+      guess.placeholder = "What will it print?";
+      guess.setAttribute("aria-label", "What it will print");
+      box.appendChild(guess);
+      inputs.push(guess);
     } else {
       var field = el("input", "field quiz-text");
       field.type = "text";
@@ -760,6 +779,8 @@ window.FlaskIDENotes = (function () {
     }
     var foot = el("div", "quiz-foot");
     box.appendChild(foot);
+    // Predict: the code, run — once there's nothing left to give away.
+    var runIt = q.kind === "predict" ? predictRun(q, box) : null;
     function disable() {
       inputs.forEach(function (i) { i.disabled = true; });
       if (custom) custom.enable(false);
@@ -797,6 +818,7 @@ window.FlaskIDENotes = (function () {
       });
       foot.appendChild(show);
       foot.appendChild(key);
+      if (runIt) runIt.show(true);
       // The same test quiz.parse makes before it gives a question an id.
       var usable = q.prompt.trim() && q.points > 0 && (
         q.kind === "text" ? q.answers.length
@@ -805,6 +827,7 @@ window.FlaskIDENotes = (function () {
         : q.kind === "order" ? q.correct.length >= 2 && q.correct.some(function (c) { return c !== q.correct[0]; })
         : q.kind === "sort" ? q.answers.length >= 2 && q.choices.length >= 2
             && q.correct.every(function (c) { return q.answers.indexOf(c) >= 0; })
+        : q.kind === "predict" ? q.answers.length && codeLines(q.prompt).length
         : q.kind === "bug" ? codeLines(q.prompt).length >= 2 && q.correct.length
             && q.correct.every(function (c) { return /^\d+$/.test(c) && +c >= 1 && +c <= codeLines(q.prompt).length; })
         : q.choices.length >= 2 && q.correct.length);
@@ -815,6 +838,7 @@ window.FlaskIDENotes = (function () {
           : q.kind === "order" ? "Not answerable yet: it needs two or more - lines, written in the right order."
           : q.kind === "sort" ? "Not answerable yet: it needs two or more group: lines, each with - items under it."
           : q.kind === "bug" ? "Not answerable yet: it needs code in a ~~~ fence and a bug: line naming one of its lines."
+          : q.kind === "predict" ? "Not answerable yet: it needs code in a ~~~ fence and an answer: line with what it prints."
           : "Not answerable yet: it needs a question, two or more choices with one marked [x], or an answer: line."));
       }
       return box;
@@ -864,18 +888,19 @@ window.FlaskIDENotes = (function () {
     function current() {
       if (custom) return custom.get();
       if (many) return JSON.stringify(inputs.map(function (i) { return i.value.trim(); }));
-      if (q.kind === "text") return inputs[0].value;
+      if (q.kind === "text" || q.kind === "predict") return inputs[0].value;
       var on = inputs.filter(function (i) { return i.checked; })[0];
       return on ? on.value : "";
     }
     // Typing or picking survives the notes being re-rendered under it — the
     // teacher editing the notes mid-question would otherwise wipe it.
     inputs.forEach(function (i) {
-      var typed = q.kind === "text" || q.kind === "blank";
+      var typed = q.kind === "text" || q.kind === "blank" || q.kind === "predict";
       i.addEventListener(typed ? "input" : "change", function () {
         pending[q.id] = current();
       });
-      if (typed) {
+      // Enter sends a one-line answer; a prediction's box takes new lines.
+      if (typed && q.kind !== "predict") {
         i.addEventListener("keydown", function (e) {
           if (e.key === "Enter") { e.preventDefault(); send.click(); }
         });
@@ -889,7 +914,7 @@ window.FlaskIDENotes = (function () {
         inputs.forEach(function (i, k) { i.value = (got && got[k]) || ""; });
         return;
       }
-      if (q.kind === "text") inputs[0].value = value || "";
+      if (q.kind === "text" || q.kind === "predict") inputs[0].value = value || "";
       else inputs.forEach(function (i) { i.checked = i.value === value; });
     }
 
@@ -905,6 +930,7 @@ window.FlaskIDENotes = (function () {
       restore(got.response);
       disable();
       send.hidden = true;
+      if (runIt) runIt.show(false);
       var partly = !got.correct && got.earned > 0;
       box.classList.toggle("quiz-right", !!got.correct);
       box.classList.toggle("quiz-partial", partly);
@@ -928,7 +954,7 @@ window.FlaskIDENotes = (function () {
         return;
       }
       if (!value.trim()) {
-        note.textContent = q.kind === "text" ? "Type an answer first." : "Pick an answer first.";
+        note.textContent = q.kind === "text" || q.kind === "predict" ? "Type an answer first." : "Pick an answer first.";
         return;
       }
       send.disabled = true;
@@ -1129,6 +1155,59 @@ window.FlaskIDENotes = (function () {
       filled: function () { return !!chosen; },
       onChange: function (fn) { changed = fn; },
       showKey: function (on) { keyShown = on; draw(); }
+    };
+  }
+
+  /* A predict question's ▶ Run it: the code in the question, run where the
+     page has the snippet runner (snippets.js), with what it printed under
+     it. Shown to a student only once they've answered — before, it would be
+     the answer — and in the teacher's preview, where it also offers the
+     output as the question's answer: line, ready to paste. */
+  function predictRun(q, box) {
+    var wrap = el("div", "quiz-predict-run");
+    wrap.hidden = true;
+    var btn = el("button", "btn quiz-run", "▶ Run it");
+    btn.type = "button";
+    var copy = el("button", "linkbtn quiz-copy-answer", "Copy as the answer: line");
+    copy.type = "button";
+    copy.hidden = true;
+    var said = el("span", "dim small");
+    var out = el("pre", "snippet-out");
+    out.hidden = true;
+    wrap.appendChild(btn);
+    wrap.appendChild(copy);
+    wrap.appendChild(said);
+    wrap.appendChild(out);
+    box.insertBefore(wrap, box.querySelector(".quiz-foot"));
+    var printed = "", forTeacher = false;
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      said.textContent = "Running…";
+      // The fence says which language: ~~~js runs as JavaScript (WebIDE), anything else as Python.
+      var js = /^(js|javascript)$/i.test(codeLang(q.prompt));
+      (js ? window.IDESnippets.runJs : window.IDESnippets.run)(codeLines(q.prompt).join("\n")).then(function (r) {
+        btn.disabled = false;
+        said.textContent = "";
+        printed = r.text;
+        out.hidden = false;
+        out.textContent = r.text || (r.error ? "" : "(It printed nothing.)");
+        if (r.error) out.appendChild(el("span", "snippet-err", (r.text ? "\n" : "") + r.error));
+        copy.hidden = !forTeacher || !r.text.trim();
+      });
+    });
+    copy.addEventListener("click", function () {
+      var line = "answer: " + printed.replace(/\s+/g, " ").trim();
+      var done = function () { said.textContent = "Copied — paste it into the question."; };
+      if (navigator.clipboard) navigator.clipboard.writeText(line).then(done, function () { said.textContent = line; });
+      else said.textContent = line;
+    });
+    return {
+      show: function (teacher) {
+        if (!window.IDESnippets || !window.IDESnippets.run) return;
+        forTeacher = teacher;
+        wrap.hidden = false;
+        btn.title = teacher ? "Run the question's code" : "See what it really prints";
+      }
     };
   }
 

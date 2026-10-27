@@ -54,6 +54,16 @@ A teacher writes a question in the markdown notes as a fenced block:
     ```
 
     ```quiz
+    type: predict
+    What will this print?
+    ~~~python
+    for i in range(3):
+        print(i * 2)
+    ~~~
+    answer: 0 2 4
+    ```
+
+    ```quiz
     type: sort
     Sort each value into its type.
     group: Number
@@ -93,6 +103,11 @@ group. Order and sort give partial credit — order by the longest run of
 lines already in the right order relative to each other, so one line out of
 place costs one line, not every line after it.
 
+`type: predict` asks what the question's code (in a `~~~` fence) prints:
+`answer:` lines are the output, compared as kindly as a short answer —
+capitals, spacing and line breaks don't count. Once a student has answered,
+the page lets them run the code and see what it really prints.
+
 Shuffled, the lines and the items are always in the SAME order for every
 student and every copy (`scramble`): the order is part of the question's
 id, and the server marks a response against that order.
@@ -126,7 +141,7 @@ ANSWER = re.compile(r"^answer\s*:\s*(.*)$", re.I)
 POINTS = re.compile(r"^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$", re.I)
 QID = re.compile(r"^id\s*:\s*([0-9a-f]{12})\s*$")
 LONG = re.compile(r"^type\s*:\s*(long|essay)\s*$", re.I)
-TYPE = re.compile(r"^type\s*:\s*(blanks?|fill|match|matching|order|parsons|bug|sort|groups?)\s*$", re.I)
+TYPE = re.compile(r"^type\s*:\s*(blanks?|fill|match|matching|order|parsons|bug|sort|groups?|predict)\s*$", re.I)
 PAIR = re.compile(r"^[-*+]\s+(.+?)\s+->\s+(.+)$")
 MATCH = re.compile(r"^match\s*:\s*(.+)$", re.I)
 OPTION = re.compile(r"^option\s*:\s*(.+)$", re.I)
@@ -137,7 +152,8 @@ GROUP = re.compile(r"^group\s*:\s*(.+)$", re.I)
 BUG = re.compile(r"^bugs?\s*:\s*([\d,\s]+)$", re.I)
 
 KINDS = {"blank": "blank", "blanks": "blank", "fill": "blank", "match": "match", "matching": "match",
-         "order": "order", "parsons": "order", "bug": "bug", "sort": "sort", "group": "sort", "groups": "sort"}
+         "order": "order", "parsons": "order", "bug": "bug", "sort": "sort", "group": "sort", "groups": "sort",
+         "predict": "predict"}
 
 
 def _fnv(text):
@@ -326,6 +342,11 @@ def parse(body):
     elif typed == "bug":
         kind, choices, answers = "bug", [], []
         correct = [b.lstrip("0") or "0" for b in bugs]
+    elif typed == "predict":
+        # A short answer about the question's code: `answer:` is what it
+        # prints, and a prediction is compared as kindly (normalize), so
+        # 0, 2 and 4 on three lines and "0 2 4" are the same answer.
+        kind, choices, correct = "predict", [], []
     else:
         kind = "choice" if choices else "text"
     if kind == "blank":
@@ -344,6 +365,9 @@ def parse(body):
         n = len(code_lines(text))
         has_key = bool(correct)
         ok = n >= 2 and bool(correct) and all(c.isdigit() and 1 <= int(c) <= n for c in correct)
+    elif kind == "predict":
+        has_key = bool(answers)
+        ok = has_key and bool(code_lines(text))
     else:
         has_key = bool(correct) if kind == "choice" else bool(answers)
         ok = kind == "long" or (has_key and (kind == "text" or len(choices) >= 2))
@@ -429,7 +453,7 @@ def redact(md):
         lines.append("points: " + _points_text(q["points"]))
         if q["kind"] == "long":
             lines.append("type: long")
-        if q["kind"] in ("blank", "match", "order", "bug", "sort"):
+        if q["kind"] in ("blank", "match", "order", "bug", "sort", "predict"):
             lines.append("type: " + q["kind"])
         prompt = q["prompt"]
         if q["kind"] == "blank":

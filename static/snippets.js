@@ -230,5 +230,58 @@ window.IDESnippets = (function () {
     });
   }
 
-  return { renderBlocks: renderBlocks, TIME_LIMIT: TIME_LIMIT, _same: same };
+  /* JavaScript, for WebIDE's predict questions: run in a frame sandboxed as
+     an html block is (scripts, no same origin), with console.log sent back
+     line by line. What it logged, or the error, comes back the way run()'s
+     does; a page that never finishes is given up on after TIME_LIMIT. */
+  function runJs(code) {
+    return new Promise(function (resolve) {
+      var token = "js" + Math.random().toString(36).slice(2);
+      var frame = document.createElement("iframe");
+      frame.setAttribute("sandbox", "allow-scripts");
+      frame.style.display = "none";
+      var text = "", finished = false;
+      function finish(error) {
+        if (finished) return;
+        finished = true;
+        window.removeEventListener("message", heard);
+        clearTimeout(timer);
+        frame.remove();
+        resolve({ text: text, error: error || "" });
+      }
+      function heard(e) {
+        var d = e.data || {};
+        if (e.source !== frame.contentWindow || d.token !== token) return;
+        if (d.type === "log" && text.length < OUTPUT_MAX) text += d.text + "\n";
+        else if (d.type === "error") finish(d.text);
+        else if (d.type === "done") finish("");
+      }
+      var timer = setTimeout(function () {
+        finish("Stopped: it was still running after " + TIME_LIMIT / 1000 + " seconds. Is there a loop that never ends?");
+      }, TIME_LIMIT);
+      window.addEventListener("message", heard);
+      var t = JSON.stringify(token);
+      frame.srcdoc = "<script>(function(){var T=" + t + ";function send(type,text){parent.postMessage({token:T,type:type,text:text},'*');}"
+        + "console.log=function(){send('log',Array.prototype.map.call(arguments,function(a){return typeof a==='string'?a:JSON.stringify(a);}).join(' '));};"
+        + "window.onerror=function(m,s,l){send('error','Line '+(l||'?')+': '+m);return true;};})();<\/script>"
+        + "<script>" + String(code).replace(/<\/script/gi, "<\\/script") + "\n<\/script>"
+        + "<script>parent.postMessage({token:" + t + ",type:'done'},'*');<\/script>";
+      document.body.appendChild(frame);
+    });
+  }
+
+  /* A question's code, run (notes.js: a `type: predict` question once it's
+     answered, and the teacher's preview): what it printed and any error. */
+  function run(code) {
+    return new Promise(function (resolve) {
+      var text = "";
+      runPython(code, function (chunk) {
+        if (text.length < OUTPUT_MAX) text += chunk;
+      }, function (error) {
+        resolve({ text: text, error: error || "" });
+      });
+    });
+  }
+
+  return { renderBlocks: renderBlocks, run: run, runJs: runJs, TIME_LIMIT: TIME_LIMIT, _same: same };
 })();

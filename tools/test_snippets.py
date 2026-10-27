@@ -126,6 +126,9 @@ check("a snippet is stopped after a time limit, by ending its worker",
       "TIME_LIMIT = 10000" in src and "stopWorker();" in src and "worker.terminate()" in src)
 check("an html block runs in a frame with scripts but no same origin, like WebIDE's preview",
       'out.setAttribute("sandbox", "allow-scripts")' in src and "allow-same-origin" not in src.split("*/", 1)[1])
+check("a predict question's JavaScript runs in a frame with scripts but no same origin, and is given up on in time",
+      'frame.setAttribute("sandbox", "allow-scripts");' in src and "function runJs(code)" in src
+      and "var timer = setTimeout(function () {\n        finish(" in src)
 check("predict waits for a prediction before Run works",
       "run.disabled = !!(guess && !guess.value.trim())" in src)
 

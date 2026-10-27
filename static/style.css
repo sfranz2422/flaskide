@@ -1152,6 +1152,12 @@ body:not(.is-authoring) .notes-body .snippet-guess,
 .snippet-out { margin: 0; border-top: 1px solid var(--line); background: var(--bg); padding: 8px 10px;
                max-height: 260px; overflow: auto; white-space: pre-wrap; font-size: 13px; }
 .snippet-err { color: var(--red); }
+/* Predict the output (type: predict): a box for a few lines, then Run it. */
+.quiz-predict { display: block; max-width: none; font-family: var(--mono); resize: vertical; }
+.quiz-predict-run { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+/* display: flex would show it while still hidden: before an answer, that's the answer. */
+.quiz-predict-run[hidden] { display: none; }
+.quiz-predict-run .snippet-out { flex-basis: 100%; border: 1px solid var(--line); border-radius: 6px; }
 .snippet-frame { display: block; width: 100%; height: 220px; border: 0; border-top: 1px solid var(--line); background: #fff; }
 .quiz-long-box p { margin: 0 0 .5em; }
 .prose .quiz.quiz-marked { border-left-color: var(--green); }

@@ -196,6 +196,8 @@ samples = [
     "type: sort\nSort.\ngroup: Number\n- 5\n- 3.14\ngroup: Text\n- \"hello\"\n- \"5\"\n- é",
     "id: 0123456789ab\npoints: 1\ntype: sort\nSort.\ngroup: A\ngroup: B\nitem: x\nitem: y",
     "Type: Parsons\nAlso order.\n- b\n- a",
+    "type: predict\nWhat prints?\n~~~python\nprint(1)\nprint(2)\n~~~\nanswer: 1 2\n- [x] not a choice here",
+    "id: 0123456789ab\npoints: 2\ntype: predict\nWhat prints?\n~~~python\nprint(1)\n~~~",
 ]
 if shutil.which("node"):
     harness = "var window = {};\n" + notes_js + """
@@ -775,6 +777,35 @@ check("the teacher's list shows each readably",
       "print(total) / for i in range(QQONE): / total += i" in listed and "line 3" in listed
       and "3.14 → GRPTEXT" in listed, listed)
 
+# Predict the output: a short answer about the question's code.
+PREDICT_Q = ("type: predict\nWhat will this print?\n~~~python\nfor i in range(3):\n    print(i * 2)\n~~~\n"
+             "answer: 0 2 PREDICTKEY\npoints: 2")
+pq = quiz.parse(PREDICT_Q)
+check("type: predict keeps what the code prints as its answer", pq["kind"] == "predict" and pq["qid"]
+      and pq["answers"] == ["0 2 PREDICTKEY"], repr(pq))
+check("  with no code in it, it can't be answered", quiz.parse("type: predict\nWhat prints?\nanswer: 1")["qid"] == "")
+red = quiz.redact("```quiz\n%s\n```" % PREDICT_Q)
+check("  redacted, the output is gone and the code is kept", "PREDICTKEY" not in red and "answer:" not in red
+      and "print(i * 2)" in red and "type: predict" in red, red)
+check("  a prediction is compared kindly: line breaks, spacing and capitals don't count",
+      quiz.is_correct("predict", [], ["0 2 PREDICTKEY"], "0\n2\npredictkey\n")
+      and not quiz.is_correct("predict", [], ["0 2 PREDICTKEY"], "0 2 4"))
+r = teacher.post("/api/assignment", json={"title": "Predict", "files": {ENTRY: 'from flask import Flask\n', "notes.md": "```quiz\n%s\n```" % PREDICT_Q}})
+PREDICT = r.get_json()["slug"]
+r = kid2.get("/a/" + PREDICT)
+page = kid2.get(r.headers["Location"]).get_data(as_text=True)
+check("the assignment link doesn't give a student the output", "PREDICTKEY" not in page and "print(i * 2)" in page)
+st, d = answer(kid2, pq["qid"], "0\n2\nPredictKey", slug=PREDICT)
+check("a right prediction over several lines is right", st == 200 and d.get("correct") is True and d.get("earned") == 2, (st, d))
+st, d = answer(kid3, pq["qid"], "0 1 2", slug=PREDICT)
+check("  a wrong one is wrong", st == 200 and d.get("correct") is False, (st, d))
+snip_js = open(os.path.join(PYIDE, "static", "snippets.js")).read()
+check("Run it shows only once the question is answered, or in the teacher's preview",
+      "if (runIt) runIt.show(false);" in notes_js.split("box.paint = function () {", 1)[1].split("send.addEventListener", 1)[0]
+      and "if (runIt) runIt.show(true);" in notes_js and "run: run," in snip_js
+      # display: flex on the row showed it while hidden — the answer, before answering.
+      and ".quiz-predict-run[hidden] { display: none; }" in open(os.path.join(PYIDE, "static", "style.css")).read())
+
 # Checklists, flip cards and code that runs: drawn by notes.js, so node checks the parts it can
 # without a page — the fences joined for the runner, and the cards read.
 if shutil.which("node"):
@@ -800,7 +831,8 @@ console.log(JSON.stringify([
     check("the browser shuffles exactly as the server does", js_scramble == oq["choices"], repr(js_scramble))
 check("the help page shows the extras: code that runs, checklists, flip cards",
       all(t in stranger.get("/help/questions").get_data(as_text=True)
-          for t in ("Code that runs", "Checklists", "Flip cards", "Put in order", "Find the bug", "Sort into groups")))
+          for t in ("Code that runs", "Checklists", "Flip cards", "Put in order", "Find the bug", "Sort into groups",
+                    "Predict the output")))
 
 # ------------------------------------------------------- turned in for them
 print("\nTurned in for them")
