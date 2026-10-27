@@ -183,6 +183,32 @@ var tick = function () { return new Promise(function (r) { setTimeout(r, 0); });
   w5.put(); await refresh(w5, deck);
   var w6 = await viewer(deck, { locked: true, key: "d" });
   out.free = [w3.next.disabled, w4.next.disabled, w5.next.disabled, w6.next.disabled];
+  [w3, w4, w5, w6].forEach(function (x) { x.pane.remove(); });
+
+  // ------------------------------------- the toolbar's button, no card on screen
+  var steps = "# Intro\nRead.\n---\n# Step 1\n```tests\nStep one\n```\n---\n# Step 2\n```tests\nStep two\n```";
+  var labels = function (text) {
+    var m = /```tests\n([\s\S]*?)```/.exec(text);
+    return m ? m[1].trim().split("\n").map(function (l) { return { label: l }; }) : [];
+  };
+  async function fromIntro(md, results, key) {
+    C.forget();
+    answer = { results: results };
+    var x = await viewer(md, { locked: true, key: key });
+    var opened = 0;
+    var got = await C.checkInNotes({ markdown: function () { return md; }, open: function () { opened++; },
+                                     slides: N.slides, tests: labels, viewer: x.v });
+    var at = x.v.at();
+    x.pane.remove();
+    return { at: at, opened: opened, got: !!got };
+  }
+  var one = [{ label: "Step one", ok: true }, { label: "Step two", ok: false, detail: "no" }];
+  out.toFailing = await fromIntro(steps, one, "j1");
+  out.lockedStops = await fromIntro("locked: yes\n" + steps, one, "j2");
+  out.earlierFails = await fromIntro(steps, [{ label: "Step one", ok: false, detail: "no" }, { label: "Step two", ok: true }], "j4");
+  out.allPassJump = await fromIntro(steps, [{ label: "Step one", ok: true }, { label: "Step two", ok: true }], "j3");
+  out.noTests = await C.checkInNotes({ markdown: function () { return "# No tests here"; }, open: function () {},
+                                       slides: N.slides, tests: labels, viewer: null });
   console.log(JSON.stringify(out));
 })().catch(function (e) { console.log(JSON.stringify({ error: String(e && e.stack || e) })); });
 """ % GLOBAL
@@ -234,6 +260,15 @@ if "error" not in got:
     check("never held without the line, where the page doesn't ask, or on a slide with no tests",
           got["free"] == [False, False, False, False], got["free"])
 
+    print("\nThe toolbar's Check my work, with no card on screen")
+    check("the notes open, and turn to the first slide with a check failing",
+          got["toFailing"] == {"at": 2, "opened": 1, "got": True} and got["earlierFails"]["at"] == 1,
+          (got["toFailing"], got["earlierFails"]))
+    check("  never past a slide with checks the lock still holds (a slide with none holds nothing)",
+          got["lockedStops"]["at"] == 1, got["lockedStops"])
+    check("  every check passing: the last slide with checks", got["allPassJump"]["at"] == 2, got["allPassJump"])
+    check("  notes with no tests in them leave it to the page (the console)", got["noTests"] is False, got["noTests"])
+
 print("\nWhere it's on")
 pages = {}
 for name in ("app.js", "live.js", "autograde.js"):
@@ -247,6 +282,9 @@ for name in ("app.js", "live.js"):
           "if (window.IDENotesChecks && window.IDENotesChecks.onScreen()) {" in pages[name]
           and "await window.IDENotesChecks.check();" in pages[name])
     check("  the student's result is still kept for the teacher", pages[name].count('fetch("/api/tests/self"') == 1)
+    check("  and with no card on screen, it opens the notes there rather than the console",
+          "await window.IDENotesChecks.checkInNotes({" in pages[name]
+          and pages[name].find("checkInNotes({") < pages[name].find("Checking your ", pages[name].find("checkInNotes({")))
 check("the editor locks for a student only — never the teacher writing them, nor live",
       re.search(r"locked: function \(\) \{ return !(?:window\.\w+|cfg)\.authoring && !(?:window\.\w+|cfg)\.readonly && !liveCode; \}",
                 pages["app.js"]) is not None)

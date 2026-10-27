@@ -350,7 +350,11 @@ line, ✓ or ✗ with why, and its own ✔ Check my work wherever the page has
 registered a runner (`IDENotesChecks.setRunner` — the editor and the live
 page; a lesson or class page has none, so its card is the plain list). The
 toolbar's Check my work puts the results in the card too when one is on
-screen, and only falls back to the console when none is. Every test runs
+screen; when none is, it opens the notes and turns them to the first slide
+with a check failing (all passing: the last slide with checks), never past
+a slide the lock or `animate:` still holds (slideView `reach`). The console
+is only for notes with no tests in them — the teacher asked that checking
+never open it. Every test runs
 each time, never one card's, so the result kept for the teacher stays the
 whole check. With **`locked: yes`** as a header line of the notes (beside
 `theme:`/`animate:`, notes.js `takeHeader`), a slide with a card holds the

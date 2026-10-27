@@ -505,6 +505,8 @@ window.FlaskIDENotes = (function () {
        and neither does a reload: how far they've got (`unlocked`, the
        first slide not yet passed) is kept in this browser, per page. */
     var lockOpt = opts && opts.locked !== undefined ? opts : null;
+    // A slide with a ```tests block: the only kind the lock holds.
+    var TESTS_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*tests[ \t]*$/im;
     function lockWanted() { return !!lockOpt && (typeof lockOpt.locked === "function" ? lockOpt.locked() : !!lockOpt.locked); }
     var lockOn = false;
     var unlocked = 0;
@@ -711,6 +713,11 @@ window.FlaskIDENotes = (function () {
     function step(by) {
       if (!cut.length || busy) return;
       if (by > 0 && (unfinished() || checksHold())) return;
+      // Through, so this slide holds nothing any more — checks or none.
+      if (lockOn && by > 0 && at >= unlocked) {
+        unlocked = at + 1;
+        saveUnlocked();
+      }
       var was = at;
       // Onto the slide after the furthest one reached: it's the new furthest, unplayed.
       if (mode && by > 0 && at === reached.slide && at + 1 < cut.length) {
@@ -765,6 +772,21 @@ window.FlaskIDENotes = (function () {
         return draw();
       },
       go: go,
+      /* Turns to slide i if the reader may go there: back, always; ahead,
+         only as far as the lock (`locked: yes`) and the player (`animate:`)
+         have let them. Check my work turns to a failing check this way
+         (checks_in_notes.js), and must never skip them past a held slide.
+         True when it turned. */
+      reach: function (i) {
+        if (!cut.length || i < 0 || i >= cut.length || i === at) return false;
+        if (i > at && mode && i > reached.slide) return false;
+        // Held only by a slide on the way that has checks and isn't passed:
+        // one with none holds nothing, as its own arrow doesn't.
+        for (var j = Math.max(at, unlocked); lockOn && j < i; j++) if (TESTS_FENCE.test(cut[j])) return false;
+        go(i);
+        if (moved) moved(at);
+        return true;
+      },
       at: function () { return at; },
       count: function () { return cut.length; },
       onMove: function (fn) { moved = fn; },

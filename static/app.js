@@ -530,6 +530,18 @@
       await window.IDENotesChecks.check();
       return;
     }
+    // No card on screen: the notes, opened at the slide that needs them (checks_in_notes.js).
+    if (window.IDENotesChecks) {
+      var notes = notesShown || tabOrder().filter(window.FlaskIDENotes.isMarkdown)[0];
+      var shown = await window.IDENotesChecks.checkInNotes({
+        markdown: function () { return notes ? (notes === current && editor ? editor.getValue() : files[notes]) : null; },
+        open: function () { if (notesShown !== notes) showNotes(notes); },
+        slides: window.FlaskIDENotes.slides,
+        tests: function (text) { return window.PyIDETests.parse(text).tests; },
+        viewer: slidesView()
+      });
+      if (shown !== false) return;
+    }
     var project = readProject(), tests = testsHere();
     if (notesShown) showPreview();
     clearOutput();
