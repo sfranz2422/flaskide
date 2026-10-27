@@ -35,6 +35,35 @@ A teacher writes a question in the markdown notes as a fenced block:
     option: stops the program
     ```
 
+    ```quiz
+    type: order
+    Put the lines in order so it counts to 3.
+    - for i in range(1, 4):
+    -     print(i)
+    - print("Done")
+    ```
+
+    ```quiz
+    type: bug
+    Which line stops this program from running?
+    ~~~python
+    for n in range(3)
+        print(n)
+    ~~~
+    bug: 1
+    ```
+
+    ```quiz
+    type: sort
+    Sort each value into its type.
+    group: Number
+    - 5
+    - 3.14
+    group: Text
+    - "hello"
+    - "5"
+    ```
+
 Choices make it multiple choice and `[x]` marks the right one (more than one
 `[x]` means any of them counts). No choices makes it short answer, and every
 `answer:` line is one accepted answer. `type: long` (or `type: essay`) makes
@@ -53,6 +82,20 @@ are wrong answers to choose from. Both give PARTIAL credit — two of three
 blanks right earns two thirds of the points. Code can go in
 the question inside a `~~~` fence, which the outer ``` fence leaves alone, and
 nothing inside that inner fence is read as a choice or an answer.
+
+`type: order` (a Parsons problem) reads `- ` lines as code lines in the
+right order, indentation kept after the dash and one space; students get
+them shuffled and put them back in order. `type: bug` asks which line of
+the question's code is wrong: `bug:` names the line (counting from 1, and
+`bug: 2, 3` accepts either). `type: sort` reads `group:` lines, each
+followed by the `- ` items that belong in it; students put every item in a
+group. Order and sort give partial credit — order by the longest run of
+lines already in the right order relative to each other, so one line out of
+place costs one line, not every line after it.
+
+Shuffled, the lines and the items are always in the SAME order for every
+student and every copy (`scramble`): the order is part of the question's
+id, and the server marks a response against that order.
 
 THE NOTES ARE SENT TO STUDENTS WHOLE. They are copied into every student's
 draft from the assignment's files, and they ride along on every live push. So
@@ -83,11 +126,60 @@ ANSWER = re.compile(r"^answer\s*:\s*(.*)$", re.I)
 POINTS = re.compile(r"^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$", re.I)
 QID = re.compile(r"^id\s*:\s*([0-9a-f]{12})\s*$")
 LONG = re.compile(r"^type\s*:\s*(long|essay)\s*$", re.I)
-TYPE = re.compile(r"^type\s*:\s*(blanks?|fill|match|matching)\s*$", re.I)
+TYPE = re.compile(r"^type\s*:\s*(blanks?|fill|match|matching|order|parsons|bug|sort|groups?)\s*$", re.I)
 PAIR = re.compile(r"^[-*+]\s+(.+?)\s+->\s+(.+)$")
 MATCH = re.compile(r"^match\s*:\s*(.+)$", re.I)
 OPTION = re.compile(r"^option\s*:\s*(.+)$", re.I)
 BLANK = re.compile(r"\[\[([^\[\]\n]*)\]\]")
+ITEM = re.compile(r"^[-*+] (.*)$")
+LINE = re.compile(r"^(?:line|item)\s*:\s?(.*)$", re.I)
+GROUP = re.compile(r"^group\s*:\s*(.+)$", re.I)
+BUG = re.compile(r"^bugs?\s*:\s*([\d,\s]+)$", re.I)
+
+KINDS = {"blank": "blank", "blanks": "blank", "fill": "blank", "match": "match", "matching": "match",
+         "order": "order", "parsons": "order", "bug": "bug", "sort": "sort", "group": "sort", "groups": "sort"}
+
+
+def _fnv(text):
+    """FNV-1a, 32 bits, over the text's UTF-8: a hash small enough for the
+    browser to work out the same way (notes.js, quiz.ts — no async crypto),
+    so the teacher's preview shuffles exactly as the server does."""
+    h = 0x811C9DC5
+    for b in text.encode("utf-8"):
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def scramble(things):
+    """The order a question's lines or items are shown in: the same every
+    time for the same list, and never the right order itself (for two or
+    more that aren't all alike). By a hash, not by random, because the
+    order is part of the question's id and the server marks a response
+    against it — a random shuffle per copy would make each copy a different
+    question."""
+    keyed = sorted(range(len(things)), key=lambda i: (_fnv("%d\0%s" % (i, things[i])), i))
+    out = [things[i] for i in keyed]
+    if len(set(things)) > 1 and out == list(things):
+        out = out[1:] + out[:1]
+    return out
+
+
+def code_lines(prompt):
+    """The lines of the first fenced code in a question's prompt: what a
+    `type: bug` question's lines are counted in."""
+    lines, inner, found = [], None, None
+    for ln in str(prompt or "").split("\n"):
+        f = FENCE.match(ln)
+        if f:
+            if inner is None:
+                inner = f.group(1)
+                found = []
+                continue
+            if f.group(1)[0] == inner[0] and len(f.group(1)) >= len(inner):
+                return found
+        elif inner is not None:
+            found.append(ln)
+    return found or lines
 
 
 def parse(body):
@@ -105,6 +197,7 @@ def parse(body):
     prompt, choices, correct, answers = [], [], [], []
     points, given_id, inner, long_, typed = 1.0, "", None, False, ""
     lefts, rights, options = [], [], []
+    ordered, shown_items, groups, item_groups, bugs = [], [], [], [], []
     for ln in lines:
         s = ln.strip()
         f = FENCE.match(ln)
@@ -118,6 +211,32 @@ def parse(body):
         if inner is not None:
             prompt.append(ln)
             continue
+        # Lines and items come before choices: `- [1, 2]` is a line of code
+        # in an order question, not a choice.
+        if typed in ("order", "sort"):
+            m = ITEM.match(ln.lstrip())
+            if m and m.group(1).strip():
+                if typed == "order":
+                    ordered.append(m.group(1).rstrip())
+                else:
+                    shown_items.append(m.group(1).strip())
+                    item_groups.append(groups[-1] if groups else "")
+                continue
+            m = LINE.match(ln.lstrip())
+            if m and m.group(1).strip():
+                shown_items.append(m.group(1).rstrip() if typed == "order" else m.group(1).strip())
+                item_groups.append(None)
+                continue
+        if typed == "sort":
+            m = GROUP.match(s)
+            if m:
+                groups.append(m.group(1).strip())
+                continue
+        if typed == "bug":
+            m = BUG.match(s)
+            if m:
+                bugs.extend(n for n in re.split(r"[,\s]+", m.group(1)) if n)
+                continue
         m = CHOICE.match(s)
         if m:
             choices.append(m.group(2).strip())
@@ -142,7 +261,7 @@ def parse(body):
             continue
         m = TYPE.match(s)
         if m:
-            typed = "match" if m.group(1).lower().startswith("match") else "blank"
+            typed = KINDS[m.group(1).lower()]
             continue
         if typed == "match":
             m = PAIR.match(s)
@@ -181,6 +300,32 @@ def parse(body):
         # nor the place of an answer gives the pairs away.
         kind, choices, correct, answers = "match", lefts, rights, []
         options = sorted(set(rights + options))
+    elif typed == "order":
+        # The teacher's copy has the lines in order (`- `); a student's has
+        # them shuffled (`line:`), with no order to give away.
+        kind, answers = "order", []
+        if ordered:
+            choices, correct = scramble(ordered), ordered
+        else:
+            choices, correct = [i for i in shown_items], []
+    elif typed == "sort":
+        # `choices` are the items as shown (shuffled), `correct` each one's
+        # group, and `answers` the groups, in the order they were written.
+        kind, answers = "sort", groups
+        if any(g for g in item_groups if g):
+            pairs = [(i, g) for i, g in zip(shown_items, item_groups) if g]
+            shuffled = scramble([i for i, _ in pairs])
+            left = list(pairs)
+            correct = []
+            for item in shuffled:
+                k = next(j for j, p in enumerate(left) if p[0] == item)
+                correct.append(left.pop(k)[1])
+            choices = shuffled
+        else:
+            choices, correct = list(shown_items), []
+    elif typed == "bug":
+        kind, choices, answers = "bug", [], []
+        correct = [b.lstrip("0") or "0" for b in bugs]
     else:
         kind = "choice" if choices else "text"
     if kind == "blank":
@@ -189,11 +334,21 @@ def parse(body):
     elif kind == "match":
         has_key = bool(rights)
         ok = len(lefts) >= 2 and len(rights) == len(lefts)
+    elif kind == "order":
+        has_key = bool(correct)
+        ok = len(correct) >= 2 and len(set(correct)) >= 2
+    elif kind == "sort":
+        has_key = bool(correct)
+        ok = len(groups) >= 2 and len(choices) >= 2 and all(c in groups for c in correct)
+    elif kind == "bug":
+        n = len(code_lines(text))
+        has_key = bool(correct)
+        ok = n >= 2 and bool(correct) and all(c.isdigit() and 1 <= int(c) <= n for c in correct)
     else:
         has_key = bool(correct) if kind == "choice" else bool(answers)
         ok = kind == "long" or (has_key and (kind == "text" or len(choices) >= 2))
     usable = bool(text.strip()) and points > 0 and ok
-    shown = choices + (options if kind == "match" else [])
+    shown = choices + (options if kind == "match" else []) + (groups if kind == "sort" else [])
     qid = hashlib.sha1("\0".join([kind, seen] + shown).encode("utf-8")
                        ).hexdigest()[:12]
     return {
@@ -274,7 +429,7 @@ def redact(md):
         lines.append("points: " + _points_text(q["points"]))
         if q["kind"] == "long":
             lines.append("type: long")
-        if q["kind"] in ("blank", "match"):
+        if q["kind"] in ("blank", "match", "order", "bug", "sort"):
             lines.append("type: " + q["kind"])
         prompt = q["prompt"]
         if q["kind"] == "blank":
@@ -284,6 +439,13 @@ def redact(md):
         if q["kind"] == "match":
             lines.extend("match: " + c for c in q["choices"])
             lines.extend("option: " + o for o in q["options"])
+        elif q["kind"] == "order":
+            lines.extend("line: " + c for c in q["choices"])
+        elif q["kind"] == "sort":
+            lines.extend("group: " + g for g in q["answers"])
+            lines.extend("item: " + c for c in q["choices"])
+        elif q["kind"] == "bug":
+            pass                     # the code is in the prompt; `bug:` stays here
         else:
             lines.extend("- [ ] " + c for c in q["choices"])
         lines.append(closer)
@@ -354,12 +516,29 @@ def fraction(kind, correct, answers, response):
         right = sum(1 for i, alts in enumerate(answers)
                     if i < len(got) and normalize(got[i]) in {normalize(a) for a in alts})
         return right / len(answers) if answers else 0.0
-    if kind == "match":
+    if kind in ("match", "sort"):
         got = items(response)
         right = sum(1 for i, want in enumerate(correct)
                     if i < len(got) and got[i] == want)
         return right / len(correct) if correct else 0.0
+    if kind == "order":
+        got = items(response)
+        return _in_order(got, correct) / len(correct) if correct else 0.0
     return 1.0 if is_correct(kind, correct, answers, response) else 0.0
+
+
+def _in_order(got, want):
+    """How many lines are in the right order relative to each other: the
+    longest run of `want` that `got` keeps in order (not necessarily side by
+    side). Lines in the right place one by one would be harsher: a single
+    line moved to the top would push every other line out of place."""
+    n, m = len(got), len(want)
+    best = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n - 1, -1, -1):
+        for j in range(m - 1, -1, -1):
+            best[i][j] = (best[i + 1][j + 1] + 1 if got[i] == want[j]
+                          else max(best[i + 1][j], best[i][j + 1]))
+    return best[0][0]
 
 
 def is_correct(kind, correct, answers, response):
@@ -367,9 +546,9 @@ def is_correct(kind, correct, answers, response):
     never "correct" here: its points are the teacher's score on the answer."""
     if kind == "long":
         return False
-    if kind in ("blank", "match"):
+    if kind in ("blank", "match", "order", "sort"):
         return fraction(kind, correct, answers, response) == 1.0
-    if kind == "choice":
+    if kind in ("choice", "bug"):
         return response in correct
     want = {normalize(a) for a in answers}
     return normalize(response) in want
@@ -381,9 +560,13 @@ def response_text(kind, response, lefts=()):
     got = items(response)
     if kind == "blank":
         return " · ".join(g or "(blank)" for g in got)
-    if kind == "match":
+    if kind in ("match", "sort"):
         return "; ".join("%s → %s" % (l, got[i] if i < len(got) and got[i] else "(none)")
                          for i, l in enumerate(lefts))
+    if kind == "order":
+        return " / ".join(g.strip() for g in got)
+    if kind == "bug":
+        return "line " + str(response)
     return response
 
 

@@ -56,6 +56,20 @@
     </section>
   {% endfor %}
 
+  <h2 id="more">More in your notes</h2>
+  <p>These aren't questions: nothing is marked and nothing is sent to you.</p>
+  {% for ex in extras %}
+    <section class="help-example" id="{{ ex.kind }}">
+      <h2>{{ ex.title }}</h2>
+      <p>{{ ex.about }}</p>
+      <div class="help-pair">
+        <div><div class="dim small">You write</div><pre class="help-src">{{ ex.block }}</pre></div>
+        <div><div class="dim small">It looks like</div>
+          <div class="notes-body prose help-look" data-md="{{ ex.block }}"></div></div>
+      </div>
+    </section>
+  {% endfor %}
+
   {#  Tests: autograde.py has the format; test_autograde.py checks this
       example parses, so the help can't drift from what is accepted. #}
   <h2 id="tests">Tests — Check my work and Check all</h2>
@@ -101,6 +115,7 @@ result contains Alice                      …and a value in them
 </main>
 
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='snippets.js') }}"></script>
 <script>
   document.querySelectorAll(".help-look[data-md]").forEach(function (el) {
     window.FlaskIDENotes.render(el, el.dataset.md);

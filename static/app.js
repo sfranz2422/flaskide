@@ -161,7 +161,6 @@
     var view = $("notes-view"), body = $("notes-body");
     if (!view || !body) return;
     $("notes-name").textContent = name;
-    if (!notesBeside()) $("preview-view").hidden = true;
     view.hidden = false;
     slidesView().show(name === current && editor ? editor.getValue() : files[name]);
     paintSwitch();
@@ -192,13 +191,18 @@
      editor has "Class sees" under it while live. */
   function notesBeside() { return !cfg.authoring; }
 
+  /* The notes are a column of their own now (index.html), so the preview
+     coming up never takes them down: both stay until the notes' Hide, or
+     their button, puts them away. */
   function showPreview() {
-    if (notesBeside() && notesShown) {
-      if ($("preview-view")) $("preview-view").hidden = false;
-      return;
-    }
-    hideNotes();
+    if ($("preview-view")) $("preview-view").hidden = false;
   }
+
+  // The notes column's own Hide: out of the source first, if it's open.
+  if ($("notes-close")) $("notes-close").addEventListener("click", function () {
+    if (mdSource) toggleSource();
+    hideNotes();
+  });
 
   function hideNotes() {
     notesShown = null;
@@ -278,7 +282,7 @@
       var on = name === notesShown;
       b.setAttribute("aria-pressed", String(on));
       b.textContent = name.replace(/\.(md|markdown)$/i, "");
-      b.title = on ? (notesBeside() ? "Hide " + name : "Back to the preview") : "Show " + name;
+      b.title = on ? "Hide " + name : "Show " + name;
       b.addEventListener("click", function () {
         if (notesShown === name) hideNotes();
         else openFile(name);

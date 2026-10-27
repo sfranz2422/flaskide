@@ -161,11 +161,20 @@ window.FlaskIDENotes = (function () {
     }
     return ensureRenderer().then(function () {
       setTheme(target, theme);
-      var dirty = window.marked.parse(source || "", { breaks: true });
+      var dirty = window.marked.parse(runFences(source || ""), { breaks: true });
+      // A checklist's boxes as placeholders: the sanitizer takes every
+      // <input> out (SANITIZE), so a task list arrived as a list of bare
+      // items. A span with a data- attribute survives, and enhanceTasks
+      // makes it a real checkbox after, in the DOM, never through HTML.
+      dirty = dirty.replace(/<input\b[^>]*type="checkbox"[^>]*>/g, function (tag) {
+        return '<span class="task-box" data-done="' + (/\bchecked\b/.test(tag) ? "1" : "0") + '"></span>';
+      });
       var clean = window.DOMPurify.sanitize(dirty, rules);
       target.innerHTML = clean;
       hardenLinks(target);
       enhanceQuizzes(target);
+      enhanceTasks(target);
+      enhanceCards(target);
       return true;
     }).catch(function (e) {
       target.textContent =
@@ -336,11 +345,48 @@ window.FlaskIDENotes = (function () {
   var POINTS = /^points?\s*:\s*(\d{1,4}(?:\.\d{1,2})?)\s*$/i;
   var QID = /^id\s*:\s*([0-9a-f]{12})\s*$/;
   var LONG = /^type\s*:\s*(long|essay)\s*$/i;
-  var TYPE = /^type\s*:\s*(blanks?|fill|match|matching)\s*$/i;
+  var TYPE = /^type\s*:\s*(blanks?|fill|match|matching|order|parsons|bug|sort|groups?)\s*$/i;
   var PAIR = /^[-*+]\s+(.+?)\s+->\s+(.+)$/;
   var MATCHL = /^match\s*:\s*(.+)$/i;
   var OPTION = /^option\s*:\s*(.+)$/i;
   var BLANK = /\[\[([^\[\]\n]*)\]\]/g;
+  var ITEM = /^[-*+] (.*)$/;
+  var LINEQ = /^(?:line|item)\s*:\s?(.*)$/i;
+  var GROUP = /^group\s*:\s*(.+)$/i;
+  var BUGQ = /^bugs?\s*:\s*([\d,\s]+)$/i;
+  var KINDS = { blank: "blank", blanks: "blank", fill: "blank", match: "match", matching: "match",
+                order: "order", parsons: "order", bug: "bug", sort: "sort", group: "sort", groups: "sort" };
+
+  /* quiz.py's _fnv and scramble, exactly: the shuffled order of an order or
+     sort question is part of its id, so the teacher's preview must shuffle
+     the way the server will. FNV-1a over UTF-8, not SHA-1, because the
+     browser has no synchronous SHA-1. */
+  function fnv(text) {
+    var bytes = new TextEncoder().encode(text), h = 0x811c9dc5;
+    for (var i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193) >>> 0;
+    return h >>> 0;
+  }
+  function scramble(things) {
+    var idx = things.map(function (_, i) { return i; });
+    var keys = things.map(function (t, i) { return fnv(i + "\0" + t); });
+    idx.sort(function (a, b) { return keys[a] - keys[b] || a - b; });
+    var out = idx.map(function (i) { return things[i]; });
+    var mixed = things.some(function (t) { return t !== things[0]; });
+    if (mixed && out.every(function (t, i) { return t === things[i]; })) out = out.slice(1).concat(out.slice(0, 1));
+    return out;
+  }
+  /* The lines of the first fenced code in a prompt (quiz.py, code_lines). */
+  function codeLines(prompt) {
+    var inner = null, found = null, lines = String(prompt || "").split("\n");
+    for (var i = 0; i < lines.length; i++) {
+      var f = lines[i].match(FENCE);
+      if (f) {
+        if (inner === null) { inner = f[1]; found = []; continue; }
+        if (f[1].charAt(0) === inner.charAt(0) && f[1].length >= inner.length) return found;
+      } else if (inner !== null) found.push(lines[i]);
+    }
+    return found || [];
+  }
 
   function parseQuiz(body) {
     var lines = String(body || "").replace(/\r\n?/g, "\n").split("\n");
@@ -348,6 +394,7 @@ window.FlaskIDENotes = (function () {
               points: 1 };
     var prompt = [], inner = null, long = false, typed = "";
     var lefts = [], rights = [], options = [];
+    var ordered = [], shownItems = [], groups = [], itemGroups = [], bugs = [];
     lines.forEach(function (ln) {
       var s = ln.trim(), m;
       var f = ln.match(FENCE);
@@ -359,6 +406,25 @@ window.FlaskIDENotes = (function () {
         return;
       }
       if (inner !== null) { prompt.push(ln); return; }
+      // Lines and items before choices, as quiz.parse: `- [1, 2]` is code.
+      var bare = ln.replace(/^\s+/, "");
+      if (typed === "order" || typed === "sort") {
+        if ((m = bare.match(ITEM)) && m[1].trim()) {
+          if (typed === "order") ordered.push(m[1].replace(/\s+$/, ""));
+          else { shownItems.push(m[1].trim()); itemGroups.push(groups.length ? groups[groups.length - 1] : ""); }
+          return;
+        }
+        if ((m = bare.match(LINEQ)) && m[1].trim()) {
+          shownItems.push(typed === "order" ? m[1].replace(/\s+$/, "") : m[1].trim());
+          itemGroups.push(null);
+          return;
+        }
+      }
+      if (typed === "sort" && (m = s.match(GROUP))) { groups.push(m[1].trim()); return; }
+      if (typed === "bug" && (m = s.match(BUGQ))) {
+        m[1].split(/[,\s]+/).forEach(function (b) { if (b) bugs.push(b); });
+        return;
+      }
       if ((m = s.match(CHOICE))) {
         q.choices.push(m[2].trim());
         if (m[1] !== " ") q.correct.push(m[2].trim());
@@ -371,7 +437,7 @@ window.FlaskIDENotes = (function () {
       } else if (LONG.test(s)) {
         long = true;
       } else if ((m = s.match(TYPE))) {
-        typed = /^match/i.test(m[1]) ? "match" : "blank";
+        typed = KINDS[m[1].toLowerCase()];
       } else if (typed === "match" && (m = s.match(PAIR))) {
         lefts.push(m[1].trim());
         rights.push(m[2].trim());
@@ -409,12 +475,37 @@ window.FlaskIDENotes = (function () {
         return all.indexOf(o) === i;
       }).sort();
       q.kind = "match";
+    } else if (typed === "order") {
+      q.answers = [];
+      if (ordered.length) { q.choices = scramble(ordered); q.correct = ordered; }
+      else { q.choices = shownItems.slice(); q.correct = []; }
+      q.kind = "order";
+    } else if (typed === "sort") {
+      q.answers = groups;
+      if (itemGroups.some(function (g) { return g; })) {
+        var pairs = [];
+        shownItems.forEach(function (it, i) { if (itemGroups[i]) pairs.push([it, itemGroups[i]]); });
+        var shuffled = scramble(pairs.map(function (p) { return p[0]; }));
+        q.correct = shuffled.map(function (it) {
+          for (var k = 0; k < pairs.length; k++) {
+            if (pairs[k][0] === it) return pairs.splice(k, 1)[0][1];
+          }
+          return "";
+        });
+        q.choices = shuffled;
+      } else { q.choices = shownItems.slice(); q.correct = []; }
+      q.kind = "sort";
+    } else if (typed === "bug") {
+      q.choices = []; q.answers = [];
+      q.correct = bugs.map(function (b) { return b.replace(/^0+/, "") || "0"; });
+      q.kind = "bug";
     } else {
       q.kind = q.choices.length ? "choice" : "text";
     }
     q.hasKey = q.kind === "blank"
       ? q.answers.some(function (a) { return a.length; })
       : q.kind === "match" ? rights.length > 0
+      : q.kind === "order" || q.kind === "sort" || q.kind === "bug" ? q.correct.length > 0
       : !!(q.correct.length || q.answers.length);
     return q;
   }
@@ -465,12 +556,109 @@ window.FlaskIDENotes = (function () {
 
   function pointsText(p) { return p + (p === 1 ? " point" : " points"); }
 
+  /* ```python run (and `predict`, and WebIDE's ```html run): the words
+     after the language are lost by the markdown renderer, which keeps only
+     the first, so they're joined onto it here (python-run) and the code
+     comes out with class language-python-run for the runner to find. Only
+     the opening fence's line changes; nothing inside any fence does. */
+  function runFences(md) {
+    var fence = null;
+    return String(md).split("\n").map(function (ln) {
+      var f = ln.match(FENCE);
+      if (!f) return ln;
+      if (fence === null) {
+        fence = f[1];
+        var w = f[2].trim().split(/\s+/);
+        if (w.length === 2 && /^(python|py|html)$/i.test(w[0]) && /^(run|predict)$/i.test(w[1]))
+          return ln.slice(0, ln.indexOf(f[1]) + f[1].length) + w[0].toLowerCase() + "-" + w[1].toLowerCase();
+        return ln;
+      }
+      if (f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length && !f[2].trim()) fence = null;
+      return ln;
+    }).join("\n");
+  }
+
+  // ------------------------------------------------------------ checklists
+  /* `- [ ] Make the player move` in notes is a box to tick. What's ticked
+     is kept in this browser, per page (the assignment, or else the page's
+     address) and per item — a student's own record of how far they got,
+     not something marked: nothing is sent anywhere. An item the notes
+     write as `- [x]` starts ticked. Keyed by the item's words AND its
+     place, so two items reading "Test it" are two boxes. */
+  function taskKey(text, n) {
+    return "pyide-task:" + (quizCtx.assignment || location.pathname) + ":" + fnv(text) + ":" + n;
+  }
+  function enhanceTasks(root) {
+    var seen = {};
+    Array.prototype.forEach.call(root.querySelectorAll("span.task-box"), function (spot) {
+      var item = spot.closest("li") || spot.parentNode;
+      var text = (item.textContent || "").trim();
+      var n = seen[text] = (seen[text] || 0) + 1;
+      var key = taskKey(text, n);
+      var box = el("input", "task-check");
+      box.type = "checkbox";
+      box.setAttribute("aria-label", text || "Done");
+      var stored = null;
+      try { stored = localStorage.getItem(key); } catch (e) { stored = null; }
+      box.checked = stored === null ? spot.dataset.done === "1" : stored === "1";
+      item.classList.add("task-item");
+      item.classList.toggle("is-done", box.checked);
+      box.addEventListener("change", function () {
+        item.classList.toggle("is-done", box.checked);
+        try { localStorage.setItem(key, box.checked ? "1" : "0"); } catch (e) { /* this visit only */ }
+      });
+      spot.parentNode.replaceChild(box, spot);
+    });
+  }
+
+  // ------------------------------------------------------------ flip cards
+  /* A ```cards block: one card per line, `front -> back` (a leading `- `
+     is fine). Each card shows its front; a click or a tap turns it over.
+     Both sides go through the inline markdown renderer, so `code` and
+     **bold** work and nothing else does. No answers are kept: a card is
+     for practising, not marking. */
+  function parseCards(text) {
+    return String(text || "").split("\n").map(function (ln) {
+      var m = ln.trim().replace(/^[-*+]\s+/, "").match(/^(.+?)\s+->\s+(.+)$/);
+      return m ? { front: m[1].trim(), back: m[2].trim() } : null;
+    }).filter(Boolean);
+  }
+  function enhanceCards(root) {
+    Array.prototype.forEach.call(root.querySelectorAll("pre > code.language-cards"), function (code) {
+      var cards = parseCards(code.textContent);
+      if (!cards.length) return;
+      var grid = el("div", "flip-cards");
+      cards.forEach(function (c) {
+        var card = button("flip-card", undefined, "Click to turn it over");
+        var front = el("span", "flip-front");
+        var back = el("span", "flip-back");
+        md(front, c.front, true);
+        md(back, c.back, true);
+        card.appendChild(front);
+        card.appendChild(back);
+        card.setAttribute("aria-pressed", "false");
+        card.addEventListener("click", function () {
+          var on = !card.classList.contains("is-flipped");
+          card.classList.toggle("is-flipped", on);
+          card.setAttribute("aria-pressed", String(on));
+        });
+        grid.appendChild(card);
+      });
+      code.parentNode.parentNode.replaceChild(grid, code.parentNode);
+    });
+  }
+
   function enhanceQuizzes(root) {
     // A ```tests block, as the list of what the code will be checked on —
     // where autograde.js is loaded (the editor, the live page); elsewhere
     // it stays the code block it was, which still says the same.
     if (window.PyIDETests) {
       try { window.PyIDETests.renderBlocks(root); } catch (e) { /* left as code */ }
+    }
+    // ```python run blocks, where snippets.js is loaded (the editor and the
+    // live page); elsewhere they stay code to read.
+    if (window.IDESnippets) {
+      try { window.IDESnippets.renderBlocks(root); } catch (e) { /* left as code */ }
     }
     var codes = root.querySelectorAll("pre > code.language-quiz");
     /* One at a time, each on its own: a question that cannot be built stays
@@ -493,7 +681,8 @@ window.FlaskIDENotes = (function () {
     var head = el("div", "quiz-head");
     head.appendChild(el("span", "quiz-label",
                         { long: "Long response", blank: "Fill in the blank",
-                          match: "Matching" }[q.kind] || "Question"));
+                          match: "Matching", order: "Put in order", bug: "Find the bug",
+                          sort: "Sort into groups" }[q.kind] || "Question"));
     head.appendChild(el("span", "quiz-points dim", pointsText(q.points)));
     box.appendChild(head);
     var prompt = el("div", "quiz-prompt");
@@ -512,8 +701,16 @@ window.FlaskIDENotes = (function () {
 
     if (q.kind === "long") return buildLong(q, box);
 
+    // The three that aren't boxes to type in or pick from: a widget that
+    // says what's chosen (get), shows a response (set), and is locked or not.
+    var custom = q.kind === "order" ? orderWidget(q)
+      : q.kind === "sort" ? sortWidget(q)
+      : q.kind === "bug" ? bugWidget(q, prompt) : null;
+
     if (q.kind === "blank") {
       // made above, in the prompt
+    } else if (custom) {
+      if (custom.node) box.appendChild(custom.node);
     } else if (q.kind === "match") {
       var rows = el("div", "quiz-match");
       q.choices.forEach(function (left, i) {
@@ -563,7 +760,10 @@ window.FlaskIDENotes = (function () {
     }
     var foot = el("div", "quiz-foot");
     box.appendChild(foot);
-    function disable() { inputs.forEach(function (i) { i.disabled = true; }); }
+    function disable() {
+      inputs.forEach(function (i) { i.disabled = true; });
+      if (custom) custom.enable(false);
+    }
 
     // The teacher's own copy, key and all.
     if (q.hasKey) {
@@ -579,13 +779,16 @@ window.FlaskIDENotes = (function () {
         : q.kind === "blank" ? "Answers: " + q.answers.map(function (a) {
             return a.join(" or ");
           }).join(" · ")
-        : q.kind === "match" ? q.choices.map(function (l, i) {
+        : q.kind === "match" || q.kind === "sort" ? q.choices.map(function (l, i) {
             return l + " → " + (q.correct[i] || "?");
           }).join("; ")
+        : q.kind === "order" ? "In order, shown above."
+        : q.kind === "bug" ? "The bug is on line " + q.correct.join(" or ") + "."
         : "Accepted: " + q.answers.join(" · "), true);
       show.addEventListener("click", function () {
         key.hidden = !key.hidden;
         show.textContent = key.hidden ? "Show answer" : "Hide answer";
+        if (custom) custom.showKey(!key.hidden);
         Array.prototype.forEach.call(box.querySelectorAll(".quiz-choice"),
           function (lab, i) {
             lab.classList.toggle("quiz-is-key",
@@ -599,11 +802,19 @@ window.FlaskIDENotes = (function () {
         q.kind === "text" ? q.answers.length
         : q.kind === "blank" ? q.answers.length && q.answers.every(function (a) { return a.length; })
         : q.kind === "match" ? q.choices.length >= 2 && q.correct.length === q.choices.length
+        : q.kind === "order" ? q.correct.length >= 2 && q.correct.some(function (c) { return c !== q.correct[0]; })
+        : q.kind === "sort" ? q.answers.length >= 2 && q.choices.length >= 2
+            && q.correct.every(function (c) { return q.answers.indexOf(c) >= 0; })
+        : q.kind === "bug" ? codeLines(q.prompt).length >= 2 && q.correct.length
+            && q.correct.every(function (c) { return /^\d+$/.test(c) && +c >= 1 && +c <= codeLines(q.prompt).length; })
         : q.choices.length >= 2 && q.correct.length);
       if (!usable) {
         foot.appendChild(el("span", "quiz-warn small",
           q.kind === "blank" ? "Not answerable yet: every [[blank]] needs an answer inside it."
           : q.kind === "match" ? "Not answerable yet: it needs two or more lines like - left -> right, each with a right."
+          : q.kind === "order" ? "Not answerable yet: it needs two or more - lines, written in the right order."
+          : q.kind === "sort" ? "Not answerable yet: it needs two or more group: lines, each with - items under it."
+          : q.kind === "bug" ? "Not answerable yet: it needs code in a ~~~ fence and a bug: line naming one of its lines."
           : "Not answerable yet: it needs a question, two or more choices with one marked [x], or an answer: line."));
       }
       return box;
@@ -649,7 +860,9 @@ window.FlaskIDENotes = (function () {
     send.disabled = true;
 
     var many = q.kind === "blank" || q.kind === "match";
+    if (custom) custom.onChange(function () { pending[q.id] = current(); });
     function current() {
+      if (custom) return custom.get();
       if (many) return JSON.stringify(inputs.map(function (i) { return i.value.trim(); }));
       if (q.kind === "text") return inputs[0].value;
       var on = inputs.filter(function (i) { return i.checked; })[0];
@@ -669,6 +882,7 @@ window.FlaskIDENotes = (function () {
       }
     });
     function restore(value) {
+      if (custom) { custom.set(value); return; }
       if (many) {
         var got = [];
         try { got = JSON.parse(value || "[]"); } catch (e) { got = []; }
@@ -684,6 +898,7 @@ window.FlaskIDENotes = (function () {
       if (!got) {
         restore(pending[q.id]);
         inputs.forEach(function (i) { i.disabled = false; });
+        if (custom) custom.enable(true);
         send.disabled = false;
         return;
       }
@@ -704,6 +919,10 @@ window.FlaskIDENotes = (function () {
 
     send.addEventListener("click", function () {
       var value = current();
+      if (custom && !custom.filled()) {
+        note.textContent = q.kind === "sort" ? "Put every item in a group first." : "Click the line with the bug first.";
+        return;
+      }
       if (many && inputs.some(function (i) { return !i.value.trim(); })) {
         note.textContent = q.kind === "blank" ? "Fill in every blank first." : "Match every item first.";
         return;
@@ -740,6 +959,172 @@ window.FlaskIDENotes = (function () {
 
     loadMine().then(function () { box.paint(); });
     return box;
+  }
+
+  // ------------------------------------------- order, sort and find the bug
+  /* Each is {node, get, set, enable, filled, onChange, showKey}. get() is
+     the response as the server takes it (quiz.py): the lines in the
+     student's order as JSON; each item's group as JSON, "" for unsorted;
+     the bug's line number. Every one works by click (or tap) as well as by
+     dragging, because a Chromebook's trackpad drag is a fight and a phone
+     has no drag at all. */
+  function button(cls, text, title) {
+    var b = el("button", cls, text);
+    b.type = "button";
+    if (title) b.title = title;
+    return b;
+  }
+
+  function orderWidget(q) {
+    var list = el("ol", "quiz-order");
+    var order = q.choices.slice(), enabled = false, changed = function () {};
+    function move(from, to) {
+      if (to < 0 || to >= order.length || from === to) return;
+      order.splice(to, 0, order.splice(from, 1)[0]);
+      draw();
+      changed();
+    }
+    function draw() {
+      list.textContent = "";
+      order.forEach(function (line, i) {
+        var row = el("li", "quiz-order-row");
+        row.draggable = enabled;
+        // textContent, so a line's own indentation is kept (white-space: pre).
+        row.appendChild(el("code", "quiz-order-line", line));
+        var up = button("quiz-order-btn", "▲", "Move up");
+        var down = button("quiz-order-btn", "▼", "Move down");
+        up.disabled = !enabled || i === 0;
+        down.disabled = !enabled || i === order.length - 1;
+        up.addEventListener("click", function () { move(i, i - 1); });
+        down.addEventListener("click", function () { move(i, i + 1); });
+        row.addEventListener("dragstart", function (e) { e.dataTransfer.setData("text/plain", String(i)); });
+        row.addEventListener("dragover", function (e) { if (enabled) e.preventDefault(); });
+        row.addEventListener("drop", function (e) {
+          e.preventDefault();
+          var from = Number(e.dataTransfer.getData("text/plain"));
+          if (!isNaN(from)) move(from, i);
+        });
+        row.appendChild(up);
+        row.appendChild(down);
+        list.appendChild(row);
+      });
+    }
+    draw();
+    return {
+      node: list,
+      get: function () { return JSON.stringify(order); },
+      set: function (v) {
+        var got = null;
+        try { got = JSON.parse(v || "null"); } catch (e) { got = null; }
+        order = Array.isArray(got) && got.length === q.choices.length ? got.slice() : q.choices.slice();
+        draw();
+      },
+      enable: function (on) { enabled = on; draw(); },
+      filled: function () { return true; },
+      onChange: function (fn) { changed = fn; },
+      showKey: function (on) { order = (on ? q.correct : q.choices).slice(); draw(); }
+    };
+  }
+
+  function sortWidget(q) {
+    var wrap = el("div", "quiz-sort");
+    var placed = q.choices.map(function () { return ""; });
+    var picked = -1, enabled = false, changed = function () {};
+    function put(i, group) {
+      placed[i] = group;
+      picked = -1;
+      draw();
+      changed();
+    }
+    function draw() {
+      wrap.textContent = "";
+      [""].concat(q.answers).forEach(function (group) {
+        // The tray, once it's empty and the question can't change, says nothing.
+        if (!group && !enabled && placed.every(function (g) { return g; })) return;
+        var zone = el("div", group ? "quiz-sort-group" : "quiz-sort-tray");
+        zone.appendChild(el("div", "quiz-sort-head", group || "Not sorted yet"));
+        var holder = el("div", "quiz-sort-items");
+        q.choices.forEach(function (item, i) {
+          if (placed[i] !== group) return;
+          var chip = button("quiz-sort-item" + (picked === i ? " is-picked" : ""), undefined,
+                            enabled ? "Click it, then click the group it belongs in" : "");
+          md(chip, item, true);
+          chip.disabled = !enabled;
+          chip.draggable = enabled;
+          chip.addEventListener("click", function (e) {
+            e.stopPropagation();
+            picked = picked === i ? -1 : i;
+            draw();
+          });
+          chip.addEventListener("dragstart", function (e) { e.dataTransfer.setData("text/plain", String(i)); });
+          holder.appendChild(chip);
+        });
+        zone.appendChild(holder);
+        zone.classList.toggle("is-target", enabled && picked >= 0);
+        zone.addEventListener("click", function () { if (enabled && picked >= 0) put(picked, group); });
+        zone.addEventListener("dragover", function (e) { if (enabled) e.preventDefault(); });
+        zone.addEventListener("drop", function (e) {
+          e.preventDefault();
+          var i = Number(e.dataTransfer.getData("text/plain"));
+          if (enabled && !isNaN(i)) put(i, group);
+        });
+        wrap.appendChild(zone);
+      });
+    }
+    draw();
+    return {
+      node: wrap,
+      get: function () { return JSON.stringify(placed); },
+      set: function (v) {
+        var got = null;
+        try { got = JSON.parse(v || "null"); } catch (e) { got = null; }
+        placed = Array.isArray(got) && got.length === q.choices.length
+          ? got.map(function (g) { return q.answers.indexOf(g) >= 0 ? g : ""; })
+          : q.choices.map(function () { return ""; });
+        draw();
+      },
+      enable: function (on) { enabled = on; draw(); },
+      filled: function () { return placed.every(function (g) { return g; }); },
+      onChange: function (fn) { changed = fn; },
+      showKey: function (on) {
+        placed = on ? q.correct.slice() : q.choices.map(function () { return ""; });
+        draw();
+      }
+    };
+  }
+
+  /* The question's code, already rendered in the prompt, swapped for a
+     button per line: the student clicks the one that's wrong. */
+  function bugWidget(q, prompt) {
+    var lines = codeLines(q.prompt);
+    var box = el("div", "quiz-bug");
+    var chosen = "", enabled = false, keyShown = false, changed = function () {};
+    function draw() {
+      box.textContent = "";
+      lines.forEach(function (line, i) {
+        var n = String(i + 1);
+        var b = button("quiz-bug-line" + (chosen === n ? " is-picked" : "")
+                       + (keyShown && q.correct.indexOf(n) >= 0 ? " quiz-is-key" : ""));
+        b.disabled = !enabled;
+        b.setAttribute("aria-label", "Line " + n + ": " + line);
+        b.appendChild(el("span", "quiz-bug-num", n));
+        b.appendChild(el("code", "quiz-bug-code", line || " "));
+        b.addEventListener("click", function () { chosen = n; draw(); changed(); });
+        box.appendChild(b);
+      });
+    }
+    var pre = prompt.querySelector("pre");
+    if (pre) pre.parentNode.replaceChild(box, pre);
+    draw();
+    return {
+      node: pre ? null : box,
+      get: function () { return chosen; },
+      set: function (v) { chosen = /^\d+$/.test(String(v || "")) ? String(v) : ""; draw(); },
+      enable: function (on) { enabled = on; draw(); },
+      filled: function () { return !!chosen; },
+      onChange: function (fn) { changed = fn; },
+      showKey: function (on) { keyShown = on; draw(); }
+    };
   }
 
   /* The blanks in a rendered prompt: every %%BLANKn%% marker in its text,
@@ -993,6 +1378,9 @@ window.FlaskIDENotes = (function () {
   }
 
   return {
+    parseCards: parseCards,
+    runFences: runFences,
+    scramble: scramble,
     cleanLong: cleanLong,
     isMarkdown: isMarkdown,
     slides: slides,

@@ -1297,7 +1297,7 @@ check("  and a folded console is still only its head",
 
 _ed_handles = re.findall(_handle_re, _editor_tpl)
 check("the editor has handles too",
-      sorted(n for _, n, _ in _ed_handles) == ["editor-class", "editor-console", "editor-left", "editor-page"]
+      sorted(n for _, n, _ in _ed_handles) == ["editor-class", "editor-console", "editor-left", "editor-right"]
       and ("y", "editor-class", ' data-size="next"') in _ed_handles
       and -1 < _editor_tpl.find("filename='split.js'") < _editor_tpl.find("filename='app.js'"),
       _ed_handles)

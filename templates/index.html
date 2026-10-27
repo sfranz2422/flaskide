@@ -304,11 +304,40 @@
 </pre>
     </div>
 
-    {#  Only seen while both are up: a student has the notes under the
-        preview, as on the live page (app.js, notesBeside). #}
-    <div class="resizer resizer-y" data-split="editor-page"></div>
+    {#  While live: the notes exactly as the class's Notes pane has them —
+        the one slide, when they are cut into slides. Without it the only
+        way to know what the class was reading was to walk over and look at
+        a student's screen. Same place as on theirs, under the right pane. #}
+    {% if is_teacher %}
+      <div class="resizer resizer-y" data-split="editor-class" data-size="next"></div>
+      <div id="class-view" class="subpane class-view" hidden>
+        <div class="pane-head"><span>Class sees</span>
+          {#  Only when the notes have two or more slides, divided by `---`.
+              Moving here moves every student's notes to this slide; between
+              moves they can go through the slides on their own. Here rather
+              than on the top bar, which had no room to spare, and beside the
+              thing they move. #}
+          <span id="live-slides" class="slide-ctl" hidden>
+            <button id="slide-prev" class="btn" title="Previous slide — moves the class with you">◀</button>
+            <span id="slide-at" class="slide-at" title="The slide your class is on"></span>
+            <button id="slide-next" class="btn" title="Next slide — moves the class with you">▶</button>
+            <button class="linkbtn js-popout" type="button"
+                    title="These slides in a tab of their own, for the projector. Moving there moves the class.">Pop out</button>
+          </span></div>
+        <div id="class-notes" class="notes-body prose"></div>
+      </div>
+    {% endif %}
+  </section>
 
-    <div id="notes-view" class="subpane" hidden>
+  {#  THE NOTES ARE A COLUMN OF THEIR OWN, beside the output rather than
+      under it: a slide, the code and what it made all on screen at once.
+      They shared the right-hand column, and a student checking their work
+      after every step had the slide squeezed to a strip or traded away.
+      The handle sizes the right-hand column; the notes take the rest, and
+      when they're hidden the other two widen into their space. (The live
+      page keeps its own layout: this is the editor only.) #}
+  <div class="resizer resizer-x" data-split="editor-right"></div>
+  <section id="notes-view" class="pane pane-notes" hidden>
       <div class="pane-head">
         <span id="notes-name">Notes</span>
         <span class="head-right">
@@ -334,34 +363,10 @@
             <button type="button" class="view-btn" data-view="preview">Preview</button>
           </span>
         </span>
+        <button id="notes-close" class="linkbtn notes-close" type="button" title="Hide the notes (the notes button shows them again)">Hide</button>
       </div>
       <div id="notes-body" class="notes-body prose"></div>
-    </div>
-
-    {#  While live: the notes exactly as the class's Notes pane has them —
-        the one slide, when they are cut into slides. Without it the only
-        way to know what the class was reading was to walk over and look at
-        a student's screen. Same place as on theirs, under the right pane. #}
-    {% if is_teacher %}
-      <div class="resizer resizer-y" data-split="editor-class" data-size="next"></div>
-      <div id="class-view" class="subpane class-view" hidden>
-        <div class="pane-head"><span>Class sees</span>
-          {#  Only when the notes have two or more slides, divided by `---`.
-              Moving here moves every student's notes to this slide; between
-              moves they can go through the slides on their own. Here rather
-              than on the top bar, which had no room to spare, and beside the
-              thing they move. #}
-          <span id="live-slides" class="slide-ctl" hidden>
-            <button id="slide-prev" class="btn" title="Previous slide — moves the class with you">◀</button>
-            <span id="slide-at" class="slide-at" title="The slide your class is on"></span>
-            <button id="slide-next" class="btn" title="Next slide — moves the class with you">▶</button>
-            <button class="linkbtn js-popout" type="button"
-                    title="These slides in a tab of their own, for the projector. Moving there moves the class.">Pop out</button>
-          </span></div>
-        <div id="class-notes" class="notes-body prose"></div>
-      </div>
-    {% endif %}
-  </section>
+    </section>
 
 </main>
 
@@ -459,6 +464,7 @@
 <script src="{{ url_for('static', filename='flask.js') }}"></script>
 <script src="{{ url_for('static', filename='preview.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='snippets.js') }}"></script>
 <script src="{{ url_for('static', filename='pictures.js') }}"></script>
 <script src="{{ url_for('static', filename='syntax.js') }}"></script>
 <script src="{{ url_for('static', filename='complete.js') }}"></script>

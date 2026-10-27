@@ -190,6 +190,12 @@ samples = [
     "type: match\nMatch.\n- for -> each\n- while -> condition\n- [x] not a pair\noption: stop",
     "id: 0123456789ab\npoints: 2\ntype: match\nMatch.\nmatch: for\nmatch: while\n"
     "option: condition\noption: each\noption: stop",
+    "type: order\nPut them in order.\n- for i in range(1, 4):\n-     print(i)\n- print(\"Done\")\n- [1, 2]",
+    "id: 0123456789ab\npoints: 1\ntype: order\nOrder?\nline:     print(i)\nline: for i in x:",
+    "type: bug\nWhich?\n~~~python\nfor n in range(3)\n    print(n)\n~~~\nbug: 01, 2",
+    "type: sort\nSort.\ngroup: Number\n- 5\n- 3.14\ngroup: Text\n- \"hello\"\n- \"5\"\n- é",
+    "id: 0123456789ab\npoints: 1\ntype: sort\nSort.\ngroup: A\ngroup: B\nitem: x\nitem: y",
+    "Type: Parsons\nAlso order.\n- b\n- a",
 ]
 if shutil.which("node"):
     harness = "var window = {};\n" + notes_js + """
@@ -684,6 +690,117 @@ listed = page.split("lesson-answers")[1].split("</ol>")[0] if "lesson-answers" i
 check("the teacher's list shows a part-right answer as part-right, readably",
       'class="is-partial"' in listed and "ocelot cat · papaya" in listed
       and "penguin → ICEFLOEHOME; camel → SKYHOME; otter → RIVERHOME" in listed)
+
+# ------------------------------------- put in order, find the bug, sort into groups
+print("\nPut in order, find the bug, sort into groups")
+
+ORDER_Q = ("type: order\nPut the lines in order.\n- for i in range(QQONE):\n"
+           "-     total += i\n- print(total)\npoints: 3")
+BUG_Q = ("type: bug\nWhich line is wrong?\n~~~python\nx = 1\nprint(x\ny = 2\n~~~\nbug: 2\npoints: 2")
+SORT_Q = ("type: sort\nSort them.\ngroup: GRPNUMBER\n- 5\n- 3.14\ngroup: GRPTEXT\n"
+          "- \"hi\"\n- \"5\"\npoints: 4")
+oq, uq, sq = quiz.parse(ORDER_Q), quiz.parse(BUG_Q), quiz.parse(SORT_Q)
+check("type: order keeps the lines in order, with their indentation, and shuffles them",
+      oq["kind"] == "order" and oq["qid"]
+      and oq["correct"] == ["for i in range(QQONE):", "    total += i", "print(total)"]
+      and sorted(oq["choices"]) == sorted(oq["correct"]) and oq["choices"] != oq["correct"], repr(oq))
+check("  the shuffle is the same every time", quiz.parse(ORDER_Q)["choices"] == oq["choices"])
+check("  two lines that are both right in either order still get shuffled apart",
+      quiz.scramble(["a", "b"]) == ["b", "a"] or quiz.scramble(["a", "b"]) != ["a", "b"])
+check("type: bug reads which line is wrong", uq["kind"] == "bug" and uq["qid"] and uq["correct"] == ["2"], repr(uq))
+check("  a bug: past the code's last line isn't answerable",
+      quiz.parse(BUG_Q.replace("bug: 2", "bug: 9"))["qid"] == "")
+check("type: sort reads each item's group, and the groups in order",
+      sq["kind"] == "sort" and sq["qid"] and sq["answers"] == ["GRPNUMBER", "GRPTEXT"]
+      and sorted(zip(sq["choices"], sq["correct"])) == sorted(
+          [("5", "GRPNUMBER"), ("3.14", "GRPNUMBER"), ('"hi"', "GRPTEXT"), ('"5"', "GRPTEXT")]), repr(sq))
+check("  moving an item to the other group is the same question, so it regrades",
+      quiz.parse(SORT_Q.replace('- 3.14\ngroup: GRPTEXT\n', 'group: GRPTEXT\n- 3.14\n'))["qid"] == sq["qid"])
+THREE = "```quiz\n%s\n```\n\n```quiz\n%s\n```\n\n```quiz\n%s\n```\n" % (ORDER_Q, BUG_Q, SORT_Q)
+red = quiz.redact(THREE)
+check("  redacted, the lines are shuffled, the bug's line is gone, and no item says its group",
+      "line: " in red and "- for i in range(QQONE):\n-     total" not in red and "bug:" not in red
+      and "\n- 5" not in red and "group: GRPNUMBER\ngroup: GRPTEXT\nitem: " in red, red)
+check("  a second pass changes nothing", quiz.redact(red) == red)
+for blk, want in zip(red.split("```quiz\n")[1:], (oq, uq, sq)):
+    back = quiz.parse(blk.split("```")[0])
+    check("  the student's %s reads back as the same question" % want["kind"],
+          back["kind"] == want["kind"] and back["given_id"] == want["qid"] and not back["has_key"]
+          and back["choices"] == want["choices"], repr(back)[:160])
+check("order marks the longest run kept in order: one line moved costs one line",
+      quiz.fraction("order", ["a", "b", "c", "d"], [], json.dumps(["d", "a", "b", "c"])) == 0.75
+      and quiz.fraction("order", ["a", "b", "c"], [], json.dumps(["a", "b", "c"])) == 1.0)
+
+r = teacher.post("/api/assignment", json={"title": "Puzzles", "files": {ENTRY: 'from flask import Flask\n', "notes.md": THREE}})
+PUZZLES = r.get_json()["slug"]
+r = kid2.get("/a/" + PUZZLES)
+page = kid2.get(r.headers["Location"]).get_data(as_text=True)
+check("the assignment link gives a student none of the three keys",
+      "bug: 2" not in page and "GRPNUMBER\\n- 5" not in page and "range(QQONE):\\n-     total" not in page
+      and "- 5\\n- 3.14" not in page, [w for w in ("bug: 2", "- 5\\n- 3.14") if w in page])
+
+st, d = answer(kid2, oq["qid"], json.dumps(["print(total)", "for i in range(QQONE):", "    total += i"]), slug=PUZZLES)
+check("two of three lines in order is two thirds", st == 200 and d.get("earned") == 2 and not d.get("correct"), (st, d))
+st, d = answer(kid3, oq["qid"], json.dumps(oq["correct"]), slug=PUZZLES)
+check("  all in order is all of it", st == 200 and d.get("correct") is True and d.get("earned") == 3, (st, d))
+st, d = answer(kid, oq["qid"], json.dumps(["print(total)", "x", "y"]), slug=PUZZLES)
+check("  lines that aren't the question's are refused, not marked", st == 400, (st, d))
+st, d = answer(kid2, uq["qid"], "3", slug=PUZZLES)
+check("the wrong line is wrong", st == 200 and d.get("correct") is False and d.get("earned") == 0, (st, d))
+st, d = answer(kid3, uq["qid"], "2", slug=PUZZLES)
+check("  the right line is right", st == 200 and d.get("correct") is True, (st, d))
+st, d = answer(kid, uq["qid"], "the second", slug=PUZZLES)
+check("  something that isn't a line number is refused", st == 400, (st, d))
+right = [dict(zip(sq["choices"], sq["correct"]))[c] for c in sq["choices"]]
+half = [g if i % 2 == 0 else ("GRPTEXT" if g == "GRPNUMBER" else "GRPNUMBER") for i, g in enumerate(right)]
+st, d = answer(kid2, sq["qid"], json.dumps(half), slug=PUZZLES)
+check("two items of four in the right group is half", st == 200 and d.get("earned") == 2, (st, d))
+st, d = answer(kid, sq["qid"], json.dumps(right[:-1] + [""]), slug=PUZZLES)
+check("  an item left unsorted is refused, not marked", st == 400, (st, d))
+st, d = answer(kid3, sq["qid"], json.dumps(right), slug=PUZZLES)
+check("  every one right is all of it", d.get("correct") is True and d.get("earned") == 4, (st, d))
+
+db = P.SessionLocal()
+puzzles_id = db.query(accounts.Assignment).filter_by(slug=PUZZLES).first().id
+_d = db.query(accounts.Draft).filter_by(owner_id=KID2, assignment_id=puzzles_id).first()
+db.close()
+kid2.post("/api/submit", json={"draft": _d.slug, "files": json.loads(_d.files)})
+db = P.SessionLocal()
+db.query(accounts.Assignment).filter_by(id=puzzles_id).update({"kind": "lesson"})
+db.commit()
+db.close()
+page = teacher.get("/teacher/" + PUZZLES).get_data(as_text=True)
+listed = page.split("lesson-answers")[1].split("</ol>")[0] if "lesson-answers" in page else ""
+check("the teacher's list shows each readably",
+      "print(total) / for i in range(QQONE): / total += i" in listed and "line 3" in listed
+      and "3.14 → GRPTEXT" in listed, listed)
+
+# Checklists, flip cards and code that runs: drawn by notes.js, so node checks the parts it can
+# without a page — the fences joined for the runner, and the cards read.
+if shutil.which("node"):
+    harness = "var window = {};\n" + notes_js + """
+var N = window.FlaskIDENotes;
+console.log(JSON.stringify([
+  N.runFences("```python run\\nprint(1)\\n```\\n```python\\nx\\n```\\n```html predict\\n<p>\\n```\\n"
+              + "~~~\\n```python run\\n~~~"),
+  N.parseCards("- a -> b\\nno arrow here\\n`len` -> how many"),
+  N.scramble(["for i in range(QQONE):", "    total += i", "print(total)"])
+]));
+"""
+    res = subprocess.run(["node", "-e", harness], capture_output=True, text=True)
+    try:
+        fences, cards, js_scramble = json.loads(res.stdout)
+    except ValueError:
+        fences, cards, js_scramble = "", [], []
+    check("python run fences become python-run, and nothing inside another fence changes",
+          fences == "```python-run\nprint(1)\n```\n```python\nx\n```\n```html-predict\n<p>\n```\n~~~\n```python run\n~~~",
+          repr(fences) + res.stderr[-200:])
+    check("a cards block is read a card a line, skipping lines without ->",
+          cards == [{"front": "a", "back": "b"}, {"front": "`len`", "back": "how many"}], repr(cards))
+    check("the browser shuffles exactly as the server does", js_scramble == oq["choices"], repr(js_scramble))
+check("the help page shows the extras: code that runs, checklists, flip cards",
+      all(t in stranger.get("/help/questions").get_data(as_text=True)
+          for t in ("Code that runs", "Checklists", "Flip cards", "Put in order", "Find the bug", "Sort into groups")))
 
 # ------------------------------------------------------- turned in for them
 print("\nTurned in for them")

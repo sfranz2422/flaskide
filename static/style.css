@@ -323,6 +323,18 @@ html, body {
 }
 .pane-editor { flex: 1 1 58%; border-right: 1px solid var(--line); }
 .pane-right { flex: 1 1 42%; background: var(--bg-panel); }
+/* The notes, the editor's third column (index.html). With it up the three
+   share the width; hidden, the editor and the output grow back into it —
+   flex-grow even when a handle gave one a width of its own, or a dragged
+   output column would leave a gap where the notes were. */
+.pane-notes { flex: 1 1 30%; background: var(--bg-panel); border-left: 1px solid var(--line); }
+.pane-notes[hidden] { display: none; }
+.split:has(> .pane-notes:not([hidden])) > .pane-editor { flex-basis: 40%; }
+.split:has(> .pane-notes:not([hidden])) > .pane-right { flex-basis: 30%; }
+.split:not(:has(> .pane-notes:not([hidden]))) > .pane-right { flex-grow: 1 !important; }
+.pane-notes > .pane-head { flex-wrap: wrap; gap: 4px 10px; }
+.pane-notes > .pane-head .notes-close { margin-left: auto; }
+.pane-notes > .notes-body { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 
 .pane-head {
   display: flex;
@@ -627,6 +639,8 @@ li.CodeMirror-hint-active { background: var(--brand); color: var(--on-brand); }
   .meta { order: 3; width: 100%; }
   .field-title, .field-author { flex: 1 1 auto; max-width: none; }
   .split, .banner ~ .split { flex-direction: column; height: auto; }
+  .pane-notes { flex: 0 0 auto; border-left: 0; border-top: 1px solid var(--line); }
+  .pane-notes > .notes-body { max-height: 70vh; }
   .pane-editor { border-right: 0; border-bottom: 1px solid var(--line); }
   .editor-wrap { height: 55vh; flex: 0 0 auto; }
   .output { height: 35vh; }
@@ -898,7 +912,11 @@ body:not(.is-authoring) .notes-body .quiz-text,
 body:not(.is-authoring) .notes-body .quiz-long-box,
 .live-mirror .notes-body .quiz-long-box,
 body:not(.is-authoring) .notes-body .quiz-blank,
-.live-mirror .notes-body .quiz-blank {
+.live-mirror .notes-body .quiz-blank,
+body:not(.is-authoring) .notes-body .snippet-code,
+.live-mirror .notes-body .snippet-code,
+body:not(.is-authoring) .notes-body .snippet-guess,
+.live-mirror .notes-body .snippet-guess {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -1055,6 +1073,86 @@ body:not(.is-authoring) .notes-body .quiz-blank,
 .quiz-long-locked .quiz-long-box { cursor: default; min-height: 0; }
 .quiz-long-locked .quiz-tool { cursor: default; opacity: .5; }
 .quiz-long-box ul, .quiz-long-box ol { margin: .3em 0; padding-left: 1.6em; }
+
+/* Put in order (type: order): a line of code per row, ▲ ▼ to move it, or
+   drag. The lines keep their own indentation (white-space: pre). */
+.quiz-order { list-style: none; margin: 10px 0 0; padding: 0; display: flex;
+              flex-direction: column; gap: 4px; }
+.quiz-order-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+                  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.quiz-order-row[draggable="true"] { cursor: grab; }
+.quiz-order-line { flex: 1; white-space: pre; overflow-x: auto; }
+/* Lines of code here are rows, not inline code: no pill round each, and no
+   list indent before them (.prose's own ol and code rules would add both). */
+.prose .quiz-order { padding-left: 0; margin-left: 0; }
+.prose .quiz-order-line, .prose .quiz-bug-code { background: none; border: 0; padding: 0; font-size: 13px; }
+.quiz-order-btn, .quiz-bug-line, .quiz-sort-item, .flip-card {
+  font: inherit; color: inherit; cursor: pointer; }
+.quiz-order-btn { border: 1px solid var(--line); border-radius: 4px; background: var(--bg-panel);
+                  padding: 0 7px; line-height: 22px; }
+.quiz-order-btn:disabled { opacity: .35; cursor: default; }
+
+/* Find the bug (type: bug): the question's code, a button per line. */
+.quiz-bug { display: flex; flex-direction: column; margin: 8px 0; border: 1px solid var(--line);
+            border-radius: 6px; overflow: hidden; background: var(--bg); }
+.quiz-bug-line { display: flex; gap: 10px; text-align: left; border: 0; border-bottom: 1px solid var(--line);
+                 background: none; padding: 3px 8px; }
+.quiz-bug-line:last-child { border-bottom: 0; }
+.quiz-bug-line:hover:not(:disabled) { background: var(--hover-bg); }
+.quiz-bug-line:disabled { cursor: default; }
+.quiz-bug-num { color: var(--muted); min-width: 1.6em; text-align: right; font-family: var(--mono, monospace); }
+.quiz-bug-code { white-space: pre; background: none; }
+.quiz-bug-line.is-picked { background: color-mix(in srgb, var(--amber) 22%, transparent); }
+.quiz-bug-line.quiz-is-key { box-shadow: inset 4px 0 0 var(--green); }
+
+/* Sort into groups (type: sort): a tray of items and a box per group.
+   Click an item, then a group — or drag it there. */
+.quiz-sort { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0 0; }
+.quiz-sort-tray { grid-column: 1 / -1; }
+.quiz-sort-group, .quiz-sort-tray { border: 1px dashed var(--line); border-radius: 8px; padding: 6px 8px;
+                                    min-height: 64px; background: var(--bg); }
+.quiz-sort-group { border-style: solid; }
+.quiz-sort-group.is-target, .quiz-sort-tray.is-target { border-color: var(--accent); cursor: pointer; }
+.quiz-sort-head { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.quiz-sort-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.quiz-sort-item { border: 1px solid var(--line); border-radius: 14px; background: var(--bg-panel); padding: 3px 10px; }
+.quiz-sort-item.is-picked { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.quiz-sort-item:disabled { cursor: default; }
+
+/* Checklists: `- [ ] item` in notes, ticked and kept in this browser. */
+.prose li.task-item { list-style: none; margin-left: -1.3em; }
+.task-check { margin: 0 .5em 0 0; vertical-align: -2px; width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; }
+.prose li.task-item.is-done { color: var(--muted); }
+.prose li.task-item.is-done > :not(ul):not(ol) { text-decoration: line-through; }
+
+/* Flip cards (```cards): the front, and a click turns it over. */
+.flip-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin: 0 0 1em; }
+.flip-card { position: relative; min-height: 96px; border: 1px solid var(--line); border-radius: 10px;
+             background: var(--bg-panel); padding: 12px; text-align: center; display: flex;
+             align-items: center; justify-content: center; transition: transform .35s; }
+.flip-card:hover { border-color: var(--accent); }
+.flip-card .flip-back { display: none; }
+.flip-card.is-flipped { background: color-mix(in srgb, var(--accent) 12%, var(--bg-panel)); transform: rotateY(360deg); }
+.flip-card.is-flipped .flip-front { display: none; }
+.flip-card.is-flipped .flip-back { display: block; }
+.flip-front { font-weight: 600; }
+
+/* Code in the notes that runs (snippets.js). */
+.snippet { border: 1px solid var(--line); border-radius: 8px; background: var(--bg-panel); margin: 0 0 1em; overflow: hidden; }
+.snippet-code { display: block; width: 100%; box-sizing: border-box; resize: vertical; border: 0;
+                border-bottom: 1px solid var(--line); background: var(--bg); color: var(--text);
+                font-family: var(--mono, ui-monospace, Menlo, Consolas, monospace); font-size: 13px;
+                line-height: 1.5; padding: 8px 10px; tab-size: 4; white-space: pre; }
+.snippet-code:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.snippet-guess { display: block; width: calc(100% - 20px); margin: 8px 10px 0; }
+.snippet-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; }
+.snippet-run { padding: 3px 12px; }
+.snippet-status.is-right { color: var(--green); font-weight: 600; }
+.snippet-status.is-wrong { color: var(--amber); font-weight: 600; }
+.snippet-out { margin: 0; border-top: 1px solid var(--line); background: var(--bg); padding: 8px 10px;
+               max-height: 260px; overflow: auto; white-space: pre-wrap; font-size: 13px; }
+.snippet-err { color: var(--red); }
+.snippet-frame { display: block; width: 100%; height: 220px; border: 0; border-top: 1px solid var(--line); background: #fff; }
 .quiz-long-box p { margin: 0 0 .5em; }
 .prose .quiz.quiz-marked { border-left-color: var(--green); }
 
@@ -1619,9 +1717,6 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
  * the console printed took height from the notes. The same 38% as the
  * class's own Notes pane, so the teacher sees them the size the class does. */
 .pane-right #preview-view { flex: 1 1 0; }
-/* A student's notes under the preview share the column evenly (app.js,
-   notesBeside); an auto basis would let a long slide take it all. */
-.pane-right #notes-view { flex: 1 1 0; }
 
 /* Hide code, in the dialog a teacher's Share opens: the one question there. */
 .share-hide {
