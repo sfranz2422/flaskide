@@ -186,6 +186,13 @@ def recent(db, user_id, limit=8):
               .limit(limit).all())
 
 
+def first_name(user):
+    """The first name alone — what a class sees when an event names who it
+    hit (the popup, the class page). board_name's first word, so the two
+    can't disagree."""
+    return board_name(user).split(" ")[0]
+
+
 def board_name(user):
     """First name and last initial — what a leaderboard shows, never the
     email. Google's first and last name when we have them (sign-in stores

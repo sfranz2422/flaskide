@@ -217,6 +217,10 @@ for name, text in (("bridge.py", bridge), ("harness.py", harness), ("runner.py",
 jobs = {name: [files, tests] for name, files in APPS.items()}
 jobs["sql"] = [SQL_FILES, autograde.parse(SQL_NOTES)[0]]
 jobs["sql_broken"] = [dict(SQL_FILES, **{"query.sql": "SELEC name FROM p;"}), autograde.parse(SQL_NOTES)[0]]
+# Operators: `uses +` once looked for a name called "+", and failed on code
+# that plainly used it (a student's print(3+4) in GameIDE found it).
+jobs["ops"] = [{"app.py": "x = 3+4\nif x == 7 and True:\n    y = 'a-b'\n"},
+               autograde.parse("```tests\nuses +\nuses ==\nuses and\nuses -\navoids *\n```")[0]]
 with open(os.path.join(tmp, "jobs.json"), "w") as f:
     json.dump(jobs, f)
 out = subprocess.run([sys.executable, os.path.join(tmp, "runner.py"), os.path.join(tmp, "bridge.py"),
@@ -232,6 +236,11 @@ check("every app was checked", len(ran) == len(jobs), out.stderr[-500:])
 def lines(name):
     return {r["label"]: r for r in ran.get(name, {}).get("results", [])}
 
+
+ops = [x["ok"] for x in ran.get("ops", {}).get("results", [])]
+check("uses + sees 3+4, == and and too — operators, read from the code's tree",
+      ops[:3] == [True, True, True], ran.get("ops"))
+check("  a - inside a string isn't a minus, and avoids * holds", ops[3:] == [False, True], ran.get("ops"))
 
 r = ran.get("right", {})
 check("the right app passes everything: 9 of 9", r.get("earned") == 9 and r.get("possible") == 9,

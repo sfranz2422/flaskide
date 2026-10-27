@@ -284,6 +284,15 @@ deleted. The class page shows the last event for a day, a hidden student as
 "A classmate"; `/me/xp` is a student's every award and its reason. Events
 move XP only, never tokens, because tokens become real points.
 
+**Every student in the class sees an event**, in the green popup on whatever
+page they're on (`_event_news`, in `/api/me/xp/news` when the page sends
+`events_after`; `eventText` in xp.js): "⭐ Glowing code review · Ana +10 XP",
+"You" for themselves. It once reached only the students it gave XP to, so
+for the rest an event set off in front of them never appeared. Students see
+first names only (`xp.first_name`), there and on the class page; the
+teacher's XP page keeps the initial, to tell two Anas apart. An event pops
+up for `EVENT_NEWS_MINUTES` (30) — later than that, the class page has it.
+
 **Quests** are assignments with an `xp_bonus` ("Quest reward" on the
 assignment page), paid once on full marks. "Complete" is not stored: it is
 that student having the `bonus:<assignment id>` award (`_quests_done`). The
@@ -301,6 +310,10 @@ to its student and the teachers of their classes, never cached, and is on
 no board; approving makes it their avatar (`"photo:<slug>"`), rejecting
 deletes it. They are not `images`, because `/img/<slug>` serves anyone with
 the address. The page crops and shrinks a photo to 400px before sending.
+**An approved photo is served by every editor**, whichever one it was sent
+in: an avatar is one per person across all four, and serving only this
+app's photos made a photo approved elsewhere a broken picture on this app's
+class pages. A waiting one, only by the app it was sent in.
 
 The XP pages load `pack.js` first like every page here that sends JSON.
 

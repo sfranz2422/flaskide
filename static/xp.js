@@ -104,10 +104,32 @@ window.PyIDEXP = window.PyIDEXP || (function () {
     }
     try { return JSON.parse(localStorage.getItem(NEWS_KEY) || "null") || newsHere; } catch (e) { return newsHere; }
   }
+  /* A random event in one of their classes, as every student in it sees it:
+     "🎲 Glowing code review · Ana, Ben +10 XP" — first names only, "You"
+     for themselves, put first. Every classmate gets it, not only whoever the
+     event gave XP to; the rest used to see nothing at all. */
+  function eventText(ev) {
+    var hits = ev.hits || [];
+    var names = function (list) {
+      var n = list.map(function (h) { return h.me ? "You" : h.name; });
+      return n.length > 4 ? n.slice(0, 3).join(", ") + " and " + (n.length - 3) + " more" : n.join(", ");
+    };
+    var signed = function (x) { return (x > 0 ? "+" : "−") + Math.abs(x) + " XP"; };
+    var said;
+    if (!hits.length) said = "nobody had XP to lose";
+    else if (hits.every(function (h) { return h.xp === hits[0].xp; })) said = names(hits) + " " + signed(hits[0].xp);
+    else said = hits.map(function (h) { return names([h]) + " " + signed(h.xp); }).join(", ");
+    return (ev.icon ? ev.icon + " " : "") + ev.title + " · " + said;
+  }
+
   function news() {
     var mark = newsMark();
     var after = mark && typeof mark.after === "number" ? mark.after : null;
-    fetch("/api/me/xp/news" + (after !== null ? "?after=" + after : ""), { cache: "no-store" })
+    var evAfter = mark && typeof mark.events === "number" ? mark.events : null;
+    var q = [];
+    if (after !== null) q.push("after=" + after);
+    if (evAfter !== null) q.push("events_after=" + evAfter);
+    fetch("/api/me/xp/news" + (q.length ? "?" + q.join("&") : ""), { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || !d.user) return;
@@ -117,8 +139,12 @@ window.PyIDEXP = window.PyIDEXP || (function () {
             say((a.xp > 0 ? "+" + a.xp : "−" + Math.abs(a.xp)) + " XP" +
                 (a.reason ? " · " + a.reason : ""), a.xp < 0);
           });
+          if (evAfter !== null) {
+            (d.events || []).forEach(function (ev) { say(eventText(ev), ev.mine < 0); });
+          }
         }
-        newsMark({ user: d.user, after: d.latest });
+        newsMark({ user: d.user, after: d.latest,
+                   events: typeof d.events_latest === "number" ? d.events_latest : undefined });
       })
       .catch(function () {});
   }

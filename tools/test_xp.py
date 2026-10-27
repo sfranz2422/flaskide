@@ -633,6 +633,7 @@ check("the class page shows the latest event", "Unexpected bug in production" in
       and "xp-latest-event" in page)
 check("  naming a hidden student only as a classmate",
       "A classmate -5" in page and "Cal C." not in page.split('id="leaderboard"')[0])
+check("  and the rest by first name only", "Amy -5" in page and "Amy A. -5" not in page)
 cal.post("/api/me/board", json={"hidden": False})
 
 was = totals_now()
@@ -749,6 +750,20 @@ check("  on the board", ('data-avatar="photo:%s"' % slug) in amy.get(
     "/class/%d" % CLASS).get_data(as_text=True))
 check("  and anyone can see it now", client().get("/photo/" + slug).status_code == 200)
 
+# An avatar is one per person across the editors: a photo approved in
+# another one must show here too. Serving only this app's photos made it a
+# broken picture on every class page but the one it was approved in.
+db = P.SessionLocal()
+other_app = "gameide" if P.APP_NAME != "gameide" else "pyide"
+db.add(accounts.StudentPhoto(slug="elsewhere1", user_id=BEN, app=other_app, status="approved",
+                             content_type="image/png", data=b"\x89PNG", size=4))
+db.add(accounts.StudentPhoto(slug="elsewhere2", user_id=BEN, app=other_app, status="pending",
+                             content_type="image/png", data=b"\x89PNG", size=4))
+db.commit()
+db.close()
+check("a photo approved in another editor shows here too", client().get("/photo/elsewhere1").status_code == 200)
+check("  one waiting in another editor doesn't, even to its student", ben.get("/photo/elsewhere2").status_code == 404)
+
 r = upload(ben)
 new_slug = r.get_json()["pending"].split(":")[1]
 check("a second upload waits too, the approved one staying",
@@ -818,6 +833,57 @@ check("every page a student works on starts it (_idle.html)",
       and idle.find("{% if idle_seconds %}") < idle.find("PyIDEXP.watch()"))
 check("  loading xp.js twice keeps the first, and its queue",
       "window.PyIDEXP = window.PyIDEXP || (function" in xpjs)
+
+# --------------------------------------- a random event, for the whole class
+print("\nA random event pops up for everyone in the class")
+start = amy.get("/api/me/xp/news").get_json()
+check("the news says where events count from", isinstance(start.get("events_latest"), int), start)
+r = draw("first-try")
+ev_id = r.get_json()["event"]["id"]
+ask = "/api/me/xp/news?after=%d&events_after=%d" % (start["latest"], start["events_latest"])
+got = amy.get(ask).get_json()
+evs = got["events"]
+check("a student gets the class's event", [e["id"] for e in evs] == [ev_id], got)
+hits = evs[0]["hits"] if evs else []
+check("  naming who it hit by first name only, themselves first, as `me`",
+      hits and hits[0]["me"] and hits[0]["name"] == "Amy"
+      and {"Amy", "Ben", "Cal", "Zed"} <= {h["name"] for h in hits}
+      and not any(" " in h["name"] or "." in h["name"] for h in hits), hits)
+check("  with their own share", evs and evs[0]["mine"] == 5, evs)
+check("  and the event's award isn't said a second time",
+      not any(a["kind"] == "event" for a in got["awards"]), got["awards"])
+old = amy.get("/api/me/xp/news?after=%d" % start["latest"]).get_json()
+check("a page that doesn't ask for events still gets the award, as before",
+      any(a["kind"] == "event" for a in old["awards"]) and old["events"] == [], old)
+r = draw("rubber-duck", seed=7)
+one = r.get_json()["event"]
+seen = [c.get("/api/me/xp/news?after=0&events_after=%d" % ev_id).get_json()["events"] for c in (amy, ben, cal, zed)]
+check("a one-student event reaches every classmate, not only the one it hit",
+      all(len(s) == 1 and s[0]["id"] == one["id"] and len(s[0]["hits"]) == 1 for s in seen)
+      and sum(1 for s in seen if s[0]["mine"] is not None) <= 1, seen)
+check("  nobody outside the class gets it",
+      client(OUT).get("/api/me/xp/news?after=0&events_after=0").get_json()["events"] == [])
+cal.post("/api/me/board", json={"hidden": True})
+r = draw("first-try", seed=2)
+got = amy.get("/api/me/xp/news?after=0&events_after=%d" % one["id"]).get_json()["events"]
+check("a student hidden from the leaderboard is 'A classmate' in it",
+      got and "A classmate" in {h["name"] for h in got[0]["hits"]} and "Cal" not in {h["name"] for h in got[0]["hits"]}, got)
+cal.post("/api/me/board", json={"hidden": False})
+last = r.get_json()["event"]["id"]
+teacher.post("/api/class/%d/event/%d/undo" % (CLASS, last))
+check("an event taken back doesn't pop up",
+      amy.get("/api/me/xp/news?after=0&events_after=%d" % one["id"]).get_json()["events"] == [])
+r = draw("first-try", seed=4)
+db = P.SessionLocal()
+row = db.get(accounts.ClassEvent, r.get_json()["event"]["id"])
+row.created_at = row.created_at - __import__("datetime").timedelta(minutes=P.EVENT_NEWS_MINUTES + 5)
+db.commit()
+db.close()
+check("nor does one from more than %d minutes ago" % P.EVENT_NEWS_MINUTES,
+      amy.get("/api/me/xp/news?after=0&events_after=%d" % last).get_json()["events"] == [])
+check("every page says it (xp.js), green, red for a loss, naming 'You' first",
+      "say(eventText(ev), ev.mine < 0)" in xpjs and 'h.me ? "You" : h.name' in xpjs
+      and "events_after=" in xpjs)
 
 print()
 failed = results.count(False)
