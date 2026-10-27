@@ -1152,6 +1152,30 @@ body:not(.is-authoring) .notes-body .snippet-guess,
 .snippet-out { margin: 0; border-top: 1px solid var(--line); background: var(--bg); padding: 8px 10px;
                max-height: 260px; overflow: auto; white-space: pre-wrap; font-size: 13px; }
 .snippet-err { color: var(--red); }
+/* Notes played a section at a time (`animate:`, notes.js slideView). The
+   bar sits above the notes, outside the part that scrolls. Words still to
+   come are hidden with visibility, so the slide doesn't jump as they land. */
+.reveal-bar { display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+              border-bottom: 1px solid var(--line); background: var(--bg-panel); }
+.reveal-bar[hidden] { display: none; }
+.reveal-play[hidden] { display: none; }
+.reveal-play:disabled { opacity: .55; cursor: default; }
+.reveal-hidden { visibility: hidden; }
+.reveal-start { margin-top: 1em; }
+.reveal-pop { animation: reveal-pop .5s ease-out; }
+@keyframes reveal-pop {
+  0% { transform: scale(.96); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  45% { transform: scale(1.02); box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 25%, transparent); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+}
+/* What the teacher wraps in :::pop (notes.js, wrapPops): a box that stands
+   out, played or not; played, it arrives with the pop above. */
+.prose .pop-box { border-left: 4px solid var(--accent); padding: 8px 12px; margin: 0 0 1em; border-radius: 8px;
+                  background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.prose .pop-box > :last-child { margin-bottom: 0; }
+.reveal-skip[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .reveal-pop { animation: none; } }
+
 /* Predict the output (type: predict): a box for a few lines, then Run it. */
 .quiz-predict { display: block; max-width: none; font-family: var(--mono); resize: vertical; }
 .quiz-predict-run { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
@@ -2146,6 +2170,7 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
 .slide-themed blockquote { color: var(--text); background: var(--bg-panel);
                            border-radius: 0 8px 8px 0; padding: .5em 1em; }
 .slide-nav.slide-themed { background: var(--nav-bg); border-top-color: var(--line); }
+.reveal-bar.slide-themed { background: var(--nav-bg); border-bottom-color: var(--line); color: var(--text); }
 
 .slide-theme-ocean {
   --theme-bg: linear-gradient(160deg, #0b2545 0%, #13315c 55%, #134074 100%);

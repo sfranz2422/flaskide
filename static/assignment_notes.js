@@ -39,7 +39,9 @@
     theme: isDark() ? "material-darker" : "default", indentUnit: 4,
     extraKeys: { "Ctrl-S": save, "Cmd-S": save }
   });
-  var preview = N.slideView($("notes-preview"));
+  // `animate:` notes play here as they will for students, with Skip to get
+  // past a part, or a slide, while editing (notes.js, slideView).
+  var preview = N.slideView($("notes-preview"), { animate: true, skip: true, key: "author:" + location.pathname });
 
   /* Which slide the cursor is on: the slides of everything up to it, with a
      marker so the slide it is in is never empty and dropped. */

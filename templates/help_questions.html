@@ -97,6 +97,38 @@ result contains Alice                      …and a value in them
   <h2>Slides</h2>
   <p>A line with only <code>---</code> on it starts a new slide. A question can go on any slide.</p>
 
+  <h2 id="animate">Playing a slide a section at a time</h2>
+  <p>Put <code>animate: words</code> as the notes' first line (beside <code>theme:</code>, either order), and
+    students reading the notes get <strong>▶ Play</strong> above them. Each press plays the next part of the
+    slide, word by word — <code>animate: type</code> types it out letter by letter instead — and Play comes
+    back when it's done, so a slide is read a piece at a time instead of all at once. A line with only
+    <code>...</code> on it divides a slide into the parts it's played in; a slide with none is played in one go.
+    Wrap anything that should stand out — a sentence, a reminder, a code block — in <code>:::pop</code> and
+    <code>:::</code> lines: it arrives with a little pop, and stays in a highlighted box.</p>
+  <p>The next slide's arrow waits until the slide has been played. Slides already played show whole, so
+    going back to look again replays nothing, and the notes reopen where the student got to. Your own
+    previews play them too, with <strong>⏭ Skip</strong> to get past a part, or a whole slide, while you edit.
+    A live lesson, the projector and the class pages never play them.</p>
+  <pre class="help-src">animate: words
+theme: ocean
+
+## Step 1
+A function can return a value.
+
+...
+
+Type this:
+```python
+def double(n):
+    return n * 2
+```
+
+...
+
+:::pop
+Press the ✔ Check my work button at the top of the IDE.
+:::</pre>
+
   <h2 id="themes">Themes</h2>
   <p>Make the very first line of the notes <code>theme:</code> and a name, and every slide
     takes that look: in the editor, on the class's page and in a lesson. The line itself

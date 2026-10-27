@@ -112,15 +112,38 @@ window.FlaskIDENotes = (function () {
   var FONT_THEMES = ["chalkboard", "arcade", "notebook", "halloween", "christmas"];
   var THEME_LINE = /^[ \t]*theme[ \t]*:[ \t]*([a-z]+)[ \t]*$/i;
 
+  /* `animate: words` (or `animate: type`) beside the theme line: the notes
+     are played a section at a time for students (slideView, below). The
+     names it takes, and what each means. */
+  var ANIMATE_LINE = /^[ \t]*animate[ \t]*:[ \t]*([a-z]+)[ \t]*$/i;
+  var ANIMATIONS = { words: "words", word: "words", reveal: "words", on: "words", yes: "words", "true": "words",
+                     type: "type", typewriter: "type", typing: "type" };
+
+  /* {theme, animate, body}: the notes' header lines — `theme:` and
+     `animate:`, the first one or two lines with anything on them, in either
+     order — and the notes without them. A line naming something unknown
+     isn't a header line: it stays in, as text, so a typo shows on the slide
+     instead of silently doing nothing. Taken out before the notes are cut
+     into slides (slides()), so no count can differ between anyone. */
+  function takeHeader(md) {
+    var text = String(md || ""), theme = "", animate = "";
+    for (var k = 0; k < 2; k++) {
+      var m = text.match(/^\s*([^\n]*)\n?/);
+      var line = m ? m[1].replace(/\r$/, "") : "";
+      var t = line.match(THEME_LINE), a = line.match(ANIMATE_LINE);
+      if (t && !theme && THEMES.indexOf(t[1].toLowerCase()) >= 0) theme = t[1].toLowerCase();
+      else if (a && !animate && ANIMATIONS[a[1].toLowerCase()]) animate = ANIMATIONS[a[1].toLowerCase()];
+      else break;
+      text = text.slice(m[0].length);
+    }
+    return { theme: theme, animate: animate, body: text };
+  }
+
   /* {name, body}: the theme the notes ask for ("" for none), and the notes
-     without its line. Only the first line with anything on it counts. */
+     without their header lines (takeHeader). */
   function takeTheme(md) {
-    var text = String(md || "");
-    var m = text.match(/^\s*([^\n]*)\n?/);
-    var hit = m && m[1].replace(/\r$/, "").match(THEME_LINE);
-    var name = hit && hit[1].toLowerCase();
-    if (!name || THEMES.indexOf(name) < 0) return { name: "", body: text };
-    return { name: name, body: text.slice(m[0].length) };
+    var h = takeHeader(md);
+    return { name: h.theme, body: h.body };
   }
 
   /* Headings in a few themes use a display face. Fetched the first time
@@ -159,6 +182,9 @@ window.FlaskIDENotes = (function () {
       theme = picked.name;
       source = picked.body;
     }
+    // A section divider (`...`) is never shown: where notes aren't played
+    // a section at a time — live, the projector — it's just a seam.
+    source = popMarks(sections(source || "").join("\n\n"));
     return ensureRenderer().then(function () {
       setTheme(target, theme);
       var dirty = window.marked.parse(runFences(source || ""), { breaks: true });
@@ -171,6 +197,7 @@ window.FlaskIDENotes = (function () {
       });
       var clean = window.DOMPurify.sanitize(dirty, rules);
       target.innerHTML = clean;
+      wrapPops(target);
       hardenLinks(target);
       enhanceQuizzes(target);
       enhanceTasks(target);
@@ -233,6 +260,86 @@ window.FlaskIDENotes = (function () {
     }).filter(function (s) { return s.trim(); });
   }
 
+  /* A slide cut into the sections it's played in: a line with only `...`
+     on it ends one section and starts the next. Never inside fenced code,
+     where `...` is a line of output (or Python's Ellipsis). A slide with no
+     divider is one section. */
+  var SECTION = /^ {0,3}\.\.\.\s*$/;
+  function sections(md) {
+    var out = [], cur = [], fence = null;
+    String(md || "").replace(/\r\n?/g, "\n").split("\n").forEach(function (ln) {
+      var f = ln.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (f) {
+        if (fence === null) fence = f[1];
+        else if (f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+      } else if (fence === null && SECTION.test(ln)) {
+        out.push(cur.join("\n"));
+        cur = [];
+        return;
+      }
+      cur.push(ln);
+    });
+    out.push(cur.join("\n"));
+    out = out.filter(function (x) { return x.trim(); });
+    return out.length ? out : [""];
+  }
+
+  /* What the teacher wraps to make it stand out:
+
+         :::pop
+         Press the ✔ Check my work button at the top of the IDE.
+         :::
+
+     around anything — a sentence, a paragraph, a code block. Nothing pops
+     by itself: the teacher chooses. Played a section at a time, it arrives
+     whole with a little pop; shown whole, it's a highlighted box.
+
+     The marker lines become paragraphs of a word no one writes, the
+     markdown is rendered as it always is, and wrapPops then gathers what's
+     between each pair into a div — so what's inside is ordinary markdown,
+     code fences included. Never inside fenced code, where `:::` could be
+     anything. A pop left open ends where its section does. */
+  var POP_OPEN = /^ {0,3}:::\s*pop\s*$/i, POP_CLOSE = /^ {0,3}:::\s*$/;
+  var POP_START = "%%POPSTART%%", POP_END = "%%POPEND%%";
+  function popMarks(md) {
+    var fence = null;
+    return String(md).split("\n").map(function (ln) {
+      var f = ln.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (f) {
+        if (fence === null) fence = f[1];
+        else if (f[1].charAt(0) === fence.charAt(0) && f[1].length >= fence.length) fence = null;
+        return ln;
+      }
+      if (fence !== null) return ln;
+      if (POP_OPEN.test(ln)) return "\n" + POP_START + "\n";
+      if (POP_CLOSE.test(ln)) return "\n" + POP_END + "\n";
+      return ln;
+    }).join("\n");
+  }
+  function wrapPops(root) {
+    var marks = Array.prototype.filter.call(root.querySelectorAll("p"), function (p) {
+      var t = p.textContent.trim();
+      return t === POP_START || t === POP_END;
+    });
+    marks.forEach(function (mark) {
+      if (!mark.parentNode || mark.textContent.trim() !== POP_START) return;
+      var box = el("div", "pop-box");
+      mark.parentNode.insertBefore(box, mark);
+      var node = mark.nextSibling;
+      while (node && !(node.nodeType === 1 && node.tagName === "P" && node.textContent.trim() === POP_END)) {
+        var after = node.nextSibling;
+        box.appendChild(node);
+        node = after;
+      }
+      if (node) node.remove();
+      mark.remove();
+    });
+    // A closing marker with nothing open: gone, not shown as text.
+    Array.prototype.forEach.call(root.querySelectorAll("p"), function (p) {
+      if (p.textContent.trim() === POP_END) p.remove();
+    });
+  }
+
   // ------------------------------------------------------- the slide viewer
   /* Notes are always shown as slides when they have them — in the editor,
      on a shared link and on the class's page in a live lesson — with ◀ ▶
@@ -251,10 +358,15 @@ window.FlaskIDENotes = (function () {
        onMove(fn)  told when the READER moved, never when go() was called —
                    so the editor can tell a click from its own snapping.
 
+     slideView(body, {animate: true, key}) is a student's own reading: notes
+     that say `animate:` are played a section at a time (below), and `key`
+     names where their progress is kept. Without it — live, the teacher's
+     preview, the projector — the same notes show whole.
+
      Re-renders only when what is on screen would change. A live page calls
      show() once a second; rendering that often would replace a link, or a
      question's half-typed answer, under the student's hand. */
-  function slideView(body) {
+  function slideView(body, opts) {
     var bar = document.createElement("div");
     bar.className = "slide-nav";
     bar.hidden = true;
@@ -273,7 +385,143 @@ window.FlaskIDENotes = (function () {
 
     var md = null, cut = [], at = 0, drawn = null, moved = null, theme = "";
 
+    /* PLAYED A SECTION AT A TIME (`animate:` in the notes, and only where
+       the page asks — a student reading their notes; never live, never the
+       teacher's own preview). The slide starts empty with ▶ Play above it;
+       each press plays the next section (`...` divides them) word by word
+       or as a typewriter, and Play comes back when it's done. The next
+       slide's arrow waits until every section of this one has been played.
+       Slides already played show whole, and going back and forward again
+       replays nothing: how far they've got (`reached`) is kept in this
+       browser, per page. */
+    var player = opts && opts.animate ? opts : null;
+    // Whether to play now (a function: the teacher's editor stops playing
+    // while they're live), and whether Skip is offered (the teacher's own
+    // preview, to edit a slide without sitting through it).
+    function wanted() { return !!player && (typeof player.animate === "function" ? player.animate() : !!player.animate); }
+    function skippable() { return !!player && (typeof player.skip === "function" ? player.skip() : !!player.skip); }
+    var playing = null;    // the section being played: {finish}
+    var mode = "";                         // "words" or "type", when playing
+    var reached = { slide: 0, played: 0 }; // the furthest slide, and its sections played
+    var busy = false;
+    var playBar = null, play = null, hint = null, skip = null;
+    if (player) {
+      playBar = el("div", "reveal-bar");
+      playBar.hidden = true;
+      play = el("button", "btn btn-primary reveal-play", "▶ Play");
+      play.type = "button";
+      skip = el("button", "btn reveal-skip", "⏭ Skip");
+      skip.type = "button";
+      skip.title = "Show the part playing now at once — or, between parts, the whole slide";
+      hint = el("span", "reveal-hint dim small");
+      playBar.appendChild(play);
+      playBar.appendChild(skip);
+      playBar.appendChild(hint);
+      body.parentNode.insertBefore(playBar, body);
+      play.addEventListener("click", playNext);
+      skip.addEventListener("click", skipAhead);
+    }
+    function revealKey() { return "pyide-reveal:" + (player.key || location.pathname); }
+    function loadReached() {
+      try {
+        var got = JSON.parse(localStorage.getItem(revealKey()) || "null");
+        if (got && got.slide >= 0 && got.played >= 0) return { slide: got.slide, played: got.played };
+      } catch (e) { /* none kept */ }
+      return { slide: 0, played: 0 };
+    }
+    function saveReached() {
+      try { localStorage.setItem(revealKey(), JSON.stringify(reached)); } catch (e) { /* this visit only */ }
+    }
+    // The pages played: the slides, or the notes whole when they have none.
+    function pages() { return cut.length ? cut : [takeHeader(md).body]; }
+    function sectionsHere() { return sections(pages()[at]); }
+    function shownHere() {
+      return at < reached.slide ? sectionsHere().length : at === reached.slide ? reached.played : 0;
+    }
+    // This slide still has sections to play: the way on waits.
+    function unfinished() { return !!mode && at >= reached.slide && shownHere() < sectionsHere().length; }
+
+    function paintPlayer() {
+      if (!playBar) return;
+      var total = sectionsHere().length, shown = shownHere();
+      playBar.hidden = !mode;
+      setTheme(playBar, theme);
+      var more = mode && at === reached.slide && shown < total;
+      play.hidden = !more;
+      play.disabled = busy;
+      skip.hidden = !skippable() || !(busy || more);
+      play.textContent = shown ? "▶ Play more" : "▶ Play";
+      hint.textContent = busy ? "" : more
+        ? (total > 1 ? "Part " + (shown + 1) + " of " + total : "")
+        : at < reached.slide || shown >= total ? (cut.length && at < cut.length - 1 ? "Done — on to the next slide ▶" : "Done") : "";
+      if (cut.length) {
+        next.disabled = at >= cut.length - 1 || unfinished() || busy;
+        prev.disabled = at <= 0 || busy;
+      }
+      next.title = unfinished() ? "Play the rest of this slide first" : "Next slide";
+    }
+
+    function drawPlayed() {
+      var secs = sectionsHere(), shown = Math.min(shownHere(), secs.length);
+      var key = "play\n" + theme + "\n" + at + "\n" + shown + "\n" + pages()[at];
+      paintPlayer();
+      if (key === drawn) return Promise.resolve(true);
+      var turned = drawn !== null;
+      drawn = key;
+      setTheme(body, theme);
+      body.textContent = "";
+      if (!shown) body.appendChild(el("p", "reveal-start dim", "Press ▶ Play to start this slide."));
+      var parts = secs.slice(0, shown).map(function (sec) {
+        var part = el("div", "reveal-part");
+        body.appendChild(part);
+        return render(part, sec, { theme: "" });
+      });
+      return Promise.all(parts).then(function () {
+        if (turned) body.scrollTop = 0;
+        return true;
+      });
+    }
+
+    function playNext() {
+      var secs = sectionsHere();
+      if (busy || !mode || at !== reached.slide || reached.played >= secs.length) return;
+      busy = true;
+      var sec = secs[reached.played];
+      reached.played += 1;
+      saveReached();
+      var start = body.querySelector(".reveal-start");
+      if (start) start.remove();
+      var part = el("div", "reveal-part");
+      body.appendChild(part);
+      drawn = "play\n" + theme + "\n" + at + "\n" + reached.played + "\n" + pages()[at];
+      paintPlayer();
+      playing = {};
+      var ctl = playing;
+      render(part, sec, { theme: "" }).then(function () {
+        return animateIn(part, mode, body, ctl);
+      }).then(function () {
+        if (playing === ctl) playing = null;
+        busy = false;
+        paintPlayer();
+      });
+    }
+
+    /* The teacher's Skip: the part playing now, at once; between parts, the
+       whole of this slide — so the next slide is open to them. */
+    function skipAhead() {
+      if (!mode || !skippable()) return;
+      if (busy) {
+        if (playing && playing.finish) playing.finish();
+        return;
+      }
+      if (at !== reached.slide) return;
+      reached.played = sectionsHere().length;
+      saveReached();
+      drawPlayed();
+    }
+
     function draw() {
+      if (mode) return drawPlayed();
       var text = cut.length ? cut[at] : takeTheme(md).body;
       setTheme(bar, theme);       // the arrows under a themed deck match it
       bar.hidden = !cut.length;
@@ -294,15 +542,33 @@ window.FlaskIDENotes = (function () {
       });
     }
 
+    function paintBar() {
+      if (!mode) return;
+      setTheme(bar, theme);
+      bar.hidden = !cut.length;
+      if (cut.length) {
+        pos.textContent = (at + 1) + " / " + cut.length;
+        prev.disabled = at <= 0 || busy;
+      }
+      paintPlayer();
+    }
+
     function go(i) {
       if (!cut.length) return Promise.resolve(true);
       at = Math.max(0, Math.min(cut.length - 1, i));
+      paintBar();
       return draw();
     }
 
     function step(by) {
-      if (!cut.length) return;
+      if (!cut.length || busy) return;
+      if (by > 0 && unfinished()) return;
       var was = at;
+      // Onto the slide after the furthest one reached: it's the new furthest, unplayed.
+      if (mode && by > 0 && at === reached.slide && at + 1 < cut.length) {
+        reached = { slide: at + 1, played: 0 };
+        saveReached();
+      }
       go(at + by);
       if (at !== was && moved) moved(at);
     }
@@ -312,12 +578,38 @@ window.FlaskIDENotes = (function () {
     return {
       show: function (text, i) {
         md = text || "";
-        theme = takeTheme(md).name;
+        var head = takeHeader(md);
+        theme = head.theme;
+        var wasMode = mode;
+        mode = wanted() ? head.animate : "";
         var c = slides(md);
         // One slide is not slides, as everywhere else.
         cut = c.length >= 2 ? c : [];
-        if (typeof i === "number") at = i;
+        if (mode) {
+          if (!wasMode) {
+            // Opened where they got to: the furthest slide, as far as they'd played it.
+            reached = loadReached();
+            reached.slide = Math.min(reached.slide, pages().length - 1);
+            at = reached.slide;
+          }
+          reached.played = Math.min(reached.played, sections(pages()[reached.slide]).length);
+        } else if (wasMode) {
+          drawn = null;
+        }
+        if (typeof i === "number") {
+          if (!mode) at = i;
+          else if (skippable()) {
+            // The teacher's preview following their cursor: straight to that
+            // slide, unplayed if it's past the furthest they'd reached.
+            at = Math.max(0, Math.min(i, pages().length - 1));
+            if (at > reached.slide) {
+              reached = { slide: at, played: 0 };
+              saveReached();
+            }
+          }
+        }
         at = Math.max(0, Math.min(at, cut.length - 1));
+        paintBar();
         return draw();
       },
       go: go,
@@ -326,6 +618,90 @@ window.FlaskIDENotes = (function () {
       onMove: function (fn) { moved = fn; },
       bar: bar
     };
+  }
+
+  /* One section, played into view: word by word ("words") or letter by
+     letter ("type"). A code block, a question, a table or a picture comes
+     in whole, and so does what the teacher wrapped in :::pop, with its pop.
+     Hidden with visibility, not display, so nothing jumps as it appears.
+     Someone whose computer asks for reduced motion gets the section at
+     once. Resolves when it's all in — or at once, everything shown, when
+     `ctl.finish()` is called (the teacher's Skip). */
+  var WORD_MS = 70, CHAR_MS = 16, BLOCK_MS = 260;
+  var TEXT_BLOCKS = { P: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1, UL: 1, OL: 1, BLOCKQUOTE: 1, DL: 1 };
+
+  function animateIn(part, how, scroller, ctl) {
+    var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (still) return Promise.resolve();
+    var steps = [];   // [element, delay, after?]
+    function hide(node) { node.classList.add("reveal-hidden"); }
+    function splitText(node) {
+      Array.prototype.slice.call(node.childNodes).forEach(function (child) {
+        if (child.nodeType === 3) {
+          var bits = how === "type" ? child.nodeValue.split("") : child.nodeValue.split(/(\s+)/);
+          var frag = document.createDocumentFragment();
+          bits.forEach(function (bit) {
+            if (!bit) return;
+            if (how !== "type" && /^\s+$/.test(bit)) { frag.appendChild(document.createTextNode(bit)); return; }
+            var span = el("span", "reveal-bit", bit);
+            hide(span);
+            frag.appendChild(span);
+            steps.push([span, how === "type" ? (/\s/.test(bit) ? 0 : CHAR_MS) : WORD_MS]);
+          });
+          child.parentNode.replaceChild(frag, child);
+        } else if (child.nodeType === 1) {
+          if (/^(IMG|INPUT|IFRAME|SVG)$/i.test(child.tagName)) {
+            hide(child);
+            steps.push([child, BLOCK_MS]);
+          } else {
+            splitText(child);
+          }
+        }
+      });
+    }
+    // The section's blocks, inside however many wrappers the rendering made.
+    function blocks(node) {
+      var out = [];
+      Array.prototype.forEach.call(node.children, function (c) {
+        if (c.classList.contains("reveal-part")) out = out.concat(blocks(c));
+        else out.push(c);
+      });
+      return out;
+    }
+    blocks(part).forEach(function (block) {
+      if (TEXT_BLOCKS[block.tagName]) {
+        splitText(block);
+      } else {
+        hide(block);
+        steps.push([block, BLOCK_MS, block.classList.contains("pop-box") ? "reveal-pop" : ""]);
+      }
+    });
+    return new Promise(function (resolve) {
+      var i = 0, timer = null, over = false;
+      if (ctl) ctl.finish = function () {
+        if (over) return;
+        over = true;
+        clearTimeout(timer);
+        Array.prototype.forEach.call(part.querySelectorAll(".reveal-hidden"), function (n) { n.classList.remove("reveal-hidden"); });
+        resolve();
+      };
+      function nextStep() {
+        if (over) return;
+        if (i >= steps.length) { over = true; return resolve(); }
+        var s = steps[i++];
+        timer = setTimeout(function () {
+          s[0].classList.remove("reveal-hidden");
+          if (s[2]) s[2].split(" ").forEach(function (c) { if (c) s[0].classList.add(c); });
+          // Keep what's appearing in view, a word now and then.
+          if (scroller && (i % 8 === 0 || s[1] === BLOCK_MS || s[2])) {
+            var r = s[0].getBoundingClientRect(), box = scroller.getBoundingClientRect();
+            if (r.bottom > box.bottom) scroller.scrollTop += r.bottom - box.bottom + 24;
+          }
+          nextStep();
+        }, s[1]);
+      }
+      nextStep();
+    });
   }
 
   // ------------------------------------------------- questions in the notes
@@ -1469,6 +1845,9 @@ window.FlaskIDENotes = (function () {
     isMarkdown: isMarkdown,
     slides: slides,
     takeTheme: takeTheme,
+    takeHeader: takeHeader,
+    popMarks: popMarks,
+    sections: sections,
     THEMES: THEMES,
     render: render,
     ensureRenderer: ensureRenderer,

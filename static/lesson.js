@@ -19,7 +19,9 @@
   var $ = function (id) { return document.getElementById(id); };
 
   N.setQuizContext({ assignment: L.slug, signedIn: L.signedIn, viewOnly: L.viewOnly });
-  var slides = N.slideView($("lesson-body"));
+  // At their own pace (the assignment link), `animate:` notes play a
+  // section at a time; following a live lesson they never do.
+  var slides = N.slideView($("lesson-body"), { animate: !L.live && !L.viewOnly, key: L.slug });
 
   // ------------------------------------------------------------ theme
   (function themeSwitch() {

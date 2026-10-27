@@ -151,7 +151,17 @@
   var notesSlides = null;
   function slidesView() {
     if (!notesSlides && $("notes-body")) {
-      notesSlides = window.FlaskIDENotes.slideView($("notes-body"));
+      // `animate:` notes play a section at a time (notes.js, slideView): for
+      // a student reading them, and for whoever is writing them, who gets
+      // Skip to get past a part, or a slide, while they edit. Never while
+      // teaching live: the projector shows the slide whole. Asked each time
+      // the notes are shown, since going live and ending a lesson both
+      // change the answer.
+      notesSlides = window.FlaskIDENotes.slideView($("notes-body"), {
+        animate: function () { return !cfg.readonly && !liveCode; },
+        skip: function () { return !!cfg.authoring; },
+        key: (cfg.authoring ? "author:" : "") + (cfg.assignmentSlug || location.pathname)
+      });
     }
     return notesSlides;
   }
@@ -1665,6 +1675,8 @@
 
     function paintLive() {
       paintTabs();           // live, the notes are a button (notesAsButtons)
+      // Live, the notes show whole (no playing a part at a time); after, they play again.
+      if (notesShown) showNotes(notesShown);
       if (liveCode) {
         liveBtn.textContent = "End lesson";
         liveBtn.classList.add("btn-live-on");
