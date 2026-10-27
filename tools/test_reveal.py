@@ -95,9 +95,9 @@ check("node ran notes.js", got is not None, res.stderr[-300:])
 if got:
     h = got["header"]
     print("\nThe header lines")
-    check("animate: words is taken out, and named", h["words"] == {"theme": "", "animate": "words", "speed": "normal", "body": "# Hi"}, h["words"])
+    check("animate: words is taken out, and named", h["words"] == {"theme": "", "animate": "words", "speed": "normal", "locked": False, "body": "# Hi"}, h["words"])
     check("  beside a theme, in either order; on means words, type a typewriter",
-          h["both"] == {"theme": "ocean", "animate": "type", "speed": "normal", "body": "# Hi"}
+          h["both"] == {"theme": "ocean", "animate": "type", "speed": "normal", "locked": False, "body": "# Hi"}
           and h["swapped"]["theme"] == "forest" and h["swapped"]["animate"] == "words"
           and h["swapped"]["body"].strip() == "# Hi", (h["both"], h["swapped"]))
     check("  a name it doesn't know stays in, as text, so the typo shows",
@@ -167,8 +167,8 @@ check("live and the projector never ask for it",
       all("animate" not in re.findall(r"slideView\([^)]*\)", js)[0] for js in others.values() if re.findall(r"slideView\([^)]*\)", js)),
       [n for n, js in others.items() if "animate:" in js])
 check("the next slide waits until this one has been played, and Play while a section plays",
-      "if (by > 0 && unfinished()) return;" in NOTES_JS
-      and "next.disabled = at >= cut.length - 1 || unfinished() || busy;" in NOTES_JS
+      "if (by > 0 && (unfinished() || checksHold())) return;" in NOTES_JS
+      and "next.disabled = at >= cut.length - 1 || unfinished() || busy || hold;" in NOTES_JS
       and "play.disabled = busy;" in NOTES_JS)
 check("someone who asks for reduced motion gets each section at once",
       'matchMedia("(prefers-reduced-motion: reduce)")' in NOTES_JS)

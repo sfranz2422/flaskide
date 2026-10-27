@@ -129,6 +129,11 @@ window.FlaskIDENotes = (function () {
                  normal: { word: 250, letter: 45, block: 450, pause: 1000 },
                  fast: { word: 120, letter: 22, block: 260, pause: 600 } };
 
+  /* `locked: yes` beside them: on a slide with tests, the next slide waits
+     until every test on it passes (slideView) — where the page asks for it,
+     a student's own editor. `locked: no` is a header line too, and says so. */
+  var LOCKED_LINE = /^[ \t]*locked[ \t]*:[ \t]*(yes|no|on|off|true|false)[ \t]*$/i;
+
   /* {animate, speed} from an `animate:` line, or null when it isn't one
      notes.js knows — a typo stays on the slide as text. */
   function readAnimate(line) {
@@ -147,17 +152,18 @@ window.FlaskIDENotes = (function () {
      instead of silently doing nothing. Taken out before the notes are cut
      into slides (slides()), so no count can differ between anyone. */
   function takeHeader(md) {
-    var text = String(md || ""), theme = "", animate = "", speed = "";
-    for (var k = 0; k < 2; k++) {
+    var text = String(md || ""), theme = "", animate = "", speed = "", locked = null;
+    for (var k = 0; k < 3; k++) {
       var m = text.match(/^\s*([^\n]*)\n?/);
       var line = m ? m[1].replace(/\r$/, "") : "";
-      var t = line.match(THEME_LINE), a = readAnimate(line);
+      var t = line.match(THEME_LINE), a = readAnimate(line), l = line.match(LOCKED_LINE);
       if (t && !theme && THEMES.indexOf(t[1].toLowerCase()) >= 0) theme = t[1].toLowerCase();
       else if (a && !animate) { animate = a.animate; speed = a.speed; }
+      else if (l && locked === null) locked = /^(yes|on|true)$/i.test(l[1]);
       else break;
       text = text.slice(m[0].length);
     }
-    return { theme: theme, animate: animate, speed: speed, body: text };
+    return { theme: theme, animate: animate, speed: speed, locked: !!locked, body: text };
   }
 
   /* {name, body}: the theme the notes ask for ("" for none), and the notes
@@ -489,6 +495,48 @@ window.FlaskIDENotes = (function () {
     var reached = { slide: 0, played: 0 }; // the furthest slide, and its sections played
     var busy = false;
     var playBar = null, play = null, hint = null, skip = null, replay = null;
+
+    /* LOCKED UNTIL ITS CHECKS PASS (`locked: yes` in the notes, and only
+       where the page asks — the student's own editor; never the teacher's
+       preview, never live, where the teacher moves the slides). On a slide
+       with a tests card (checks_in_notes.js), the next slide's arrow waits
+       until every check on it passes, as GameIDE's tutorials do. A slide
+       once passed stays open — going back and forward again asks nothing,
+       and neither does a reload: how far they've got (`unlocked`, the
+       first slide not yet passed) is kept in this browser, per page. */
+    var lockOpt = opts && opts.locked !== undefined ? opts : null;
+    function lockWanted() { return !!lockOpt && (typeof lockOpt.locked === "function" ? lockOpt.locked() : !!lockOpt.locked); }
+    var lockOn = false;
+    var unlocked = 0;
+    function lockKey() { return "pyide-unlocked:" + ((opts && opts.key) || location.pathname); }
+    function loadUnlocked() {
+      try { return Math.max(0, Number(localStorage.getItem(lockKey())) || 0); } catch (e) { return 0; }
+    }
+    function saveUnlocked() {
+      try { localStorage.setItem(lockKey(), String(unlocked)); } catch (e) { /* this visit only */ }
+    }
+    // This slide has checks not yet passed, and it's where they have to be passed.
+    function checksHold() {
+      return lockOn && cut.length > 0 && at >= unlocked &&
+        !!body.querySelector(".tests-card[data-checks]:not([data-passed])");
+    }
+    /* The arrows, from everything that can hold the way on: a slide still
+       playing (animate:), and checks not yet passed (locked:). */
+    function arrows() {
+      var hold = checksHold();
+      body.classList.toggle("tests-locking", hold);
+      if (!cut.length) return;
+      next.disabled = at >= cut.length - 1 || unfinished() || busy || hold;
+      next.title = unfinished() ? "Play the rest of this slide first" : hold ? "Pass this slide's checks first" : "Next slide";
+    }
+    body.addEventListener("ide-checks", function () {
+      if (lockOn && cut.length && at >= unlocked && !body.querySelector(".tests-card[data-checks]:not([data-passed])")) {
+        unlocked = at + 1;
+        saveUnlocked();
+      }
+      arrows();
+    });
+
     if (player) {
       playBar = el("div", "reveal-bar");
       playBar.hidden = true;
@@ -544,11 +592,8 @@ window.FlaskIDENotes = (function () {
       hint.textContent = busy ? "" : more
         ? (total > 1 ? "Part " + (shown + 1) + " of " + total : "")
         : at < reached.slide || shown >= total ? (cut.length && at < cut.length - 1 ? "Done — on to the next slide ▶" : "Done") : "";
-      if (cut.length) {
-        next.disabled = at >= cut.length - 1 || unfinished() || busy;
-        prev.disabled = at <= 0 || busy;
-      }
-      next.title = unfinished() ? "Play the rest of this slide first" : "Next slide";
+      if (cut.length) prev.disabled = at <= 0 || busy;
+      arrows();
     }
 
     function drawPlayed() {
@@ -567,6 +612,7 @@ window.FlaskIDENotes = (function () {
         return render(part, sec, { theme: "" });
       });
       return Promise.all(parts).then(function () {
+        arrows();                         // a tests card played in, or there already
         if (turned) body.scrollTop = 0;
         return true;
       });
@@ -629,8 +675,8 @@ window.FlaskIDENotes = (function () {
       if (cut.length) {
         pos.textContent = (at + 1) + " / " + cut.length;
         prev.disabled = at <= 0;
-        next.disabled = at >= cut.length - 1;
       }
+      arrows();
       // The theme is part of what is on screen: changing only the theme
       // line must redraw, though no slide's text changed.
       var key = theme + "\n" + text;
@@ -639,6 +685,7 @@ window.FlaskIDENotes = (function () {
       drawn = key;
       return render(body, text, { theme: theme }).then(function (ok) {
         if (turned) body.scrollTop = 0;   // a new slide starts at its top
+        arrows();                         // its tests card is there now
         return ok;
       });
     }
@@ -663,7 +710,7 @@ window.FlaskIDENotes = (function () {
 
     function step(by) {
       if (!cut.length || busy) return;
-      if (by > 0 && unfinished()) return;
+      if (by > 0 && (unfinished() || checksHold())) return;
       var was = at;
       // Onto the slide after the furthest one reached: it's the new furthest, unplayed.
       if (mode && by > 0 && at === reached.slide && at + 1 < cut.length) {
@@ -684,6 +731,9 @@ window.FlaskIDENotes = (function () {
         var wasMode = mode;
         mode = wanted() ? head.animate : "";
         speed = head.speed;
+        var wasLock = lockOn;
+        lockOn = lockWanted() && head.locked;
+        if (lockOn && !wasLock) unlocked = loadUnlocked();
         var c = slides(md);
         // One slide is not slides, as everywhere else.
         cut = c.length >= 2 ? c : [];

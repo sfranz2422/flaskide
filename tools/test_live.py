@@ -2169,6 +2169,10 @@ El.prototype.appendChild = function (c) { this.children.push(c); c.parentNode = 
 El.prototype.insertBefore = function (c) { this.children.push(c); c.parentNode = this; return c; };
 El.prototype.setAttribute = function () {};
 El.prototype.addEventListener = function (ev, fn) { this.handlers[ev] = fn; };
+// What the lock (locked: yes) asks of the notes' body: none of it does anything here.
+El.prototype.querySelector = function () { return null; };
+Object.defineProperty(El.prototype, "classList", { get: function () {
+  return { toggle: function () {}, add: function () {}, remove: function () {}, contains: function () { return false; } }; } });
 El.prototype.querySelectorAll = function () { return []; };
 Object.defineProperty(El.prototype, "innerHTML", {
   get: function () { return this._html; },

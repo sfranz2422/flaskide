@@ -2701,6 +2701,20 @@ label.xp-who { cursor: pointer; }
   border-left: 4px solid var(--green); border-radius: 8px; background: var(--bg-panel); }
 .tests-head { font-weight: 600; margin-bottom: 6px; }
 .tests-card ul { margin: 0; padding-left: 20px; }
+/* Check my work in the notes (checks_in_notes.js): each test a line —
+   ○ until checked, then ✓ or ✗ with why — and the button under them. */
+.tests-card .tests-lines { list-style: none; padding-left: 0; }
+.tests-card .test-line { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.tests-card .tests-mark { width: 1.1em; flex: none; text-align: center; color: var(--muted); font-weight: 700; }
+.tests-card .test-line.pass .tests-mark { color: var(--green); }
+.tests-card .test-line.fail .tests-mark { color: var(--red); }
+.tests-card .tests-why { display: block; color: var(--muted); font-size: .9em; }
+.tests-card .tests-why:empty { display: none; }
+.tests-card .tests-foot { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.tests-card .tests-run[hidden] { display: none; }
+/* `locked: yes`: said on the card while its slide holds the way on. */
+.tests-card .tests-lock { display: none; margin: 8px 0 0; color: var(--amber); }
+.tests-locking .tests-card:not([data-passed]) .tests-lock { display: block; }
 .tests-teacher { margin-top: 10px; }
 .tests-error { color: var(--red); }
 .fb-tests.is-stale { color: var(--amber); }

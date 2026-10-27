@@ -74,7 +74,8 @@
       example parses, so the help can't drift from what is accepted. #}
   <h2 id="tests">Tests — Check my work and Check all</h2>
   <p>A <code>tests</code> block in an assignment's notes is checked against the student's code.
-    Students press <strong>Check my work</strong> as often as they like. On the assignment's
+    Students press <strong>Check my work</strong> as often as they like — on the tests' own card in the
+    notes, where each test shows ✓ or ✗ and why, or at the top of the IDE. On the assignment's
     page, <strong>Check all</strong> runs what each student turned in, in your browser, and
     only that result is added to their grade. One test per line; each is 1 point unless the
     line ends with <code>(2 points)</code>.</p>
@@ -135,6 +136,28 @@ def double(n):
 :::pop
 Press the ✔ Check my work button at the top of the IDE.
 :::</pre>
+
+  <h2 id="locked">Holding students on a slide until its tests pass</h2>
+  <p>Put <code>locked: yes</code> as a line at the top of the notes (beside <code>theme:</code> and
+    <code>animate:</code>, in any order), and on a slide with a <code>tests</code> block the next
+    slide waits until every test on it passes. Students press <strong>Check my work</strong> on the
+    card and see which tests still fail; once they all pass, the arrow opens. A slide passed once
+    stays open, even after a reload. Without the line, the tests still show and check in the notes,
+    and students move through the slides freely. Your own previews and a live lesson are never held.</p>
+  <pre class="help-src">locked: yes
+
+## Step 1
+Make a home page that says Hello.
+
+```tests
+defines home
+GET / contains Hello
+```
+
+---
+
+## Step 2
+…</pre>
 
   <h2 id="themes">Themes</h2>
   <p>Make the very first line of the notes <code>theme:</code> and a name, and every slide

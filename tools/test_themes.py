@@ -56,6 +56,8 @@ function node(tag) {
   return { tag, className: "", innerHTML: "", hidden: false, children: [], textContent: "",
            scrollTop: 0, parentNode: null, type: "", title: "",
            setAttribute() {}, addEventListener() {}, querySelectorAll() { return []; },
+           querySelector() { return null; },
+           classList: { toggle() {}, add() {}, remove() {}, contains() { return false; } },
            appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
            insertBefore(c) { this.children.push(c); c.parentNode = this; return c; } };
 }

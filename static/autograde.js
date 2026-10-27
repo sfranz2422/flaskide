@@ -398,6 +398,12 @@ window.PyIDETests = (function () {
     Array.prototype.forEach.call(root.querySelectorAll("pre > code.language-tests"), function (code) {
       var got = parseBlock(code.textContent);
       if (!got.tests.length) return;
+      // With checks_in_notes.js on the page, a card the student checks their
+      // work from, results and all; without it, the list of what's checked.
+      if (window.IDENotesChecks) {
+        code.parentNode.replaceWith(window.IDENotesChecks.card(got.tests, "✔ Tests your code will be checked against"));
+        return;
+      }
       var box = document.createElement("div");
       box.className = "tests-card";
       var head = document.createElement("div");

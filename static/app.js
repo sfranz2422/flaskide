@@ -160,7 +160,10 @@
       notesSlides = window.FlaskIDENotes.slideView($("notes-body"), {
         animate: function () { return !cfg.readonly && !liveCode; },
         skip: function () { return !!cfg.authoring; },
-        key: (cfg.authoring ? "author:" : "") + (cfg.assignmentSlug || location.pathname)
+        key: (cfg.authoring ? "author:" : "") + (cfg.assignmentSlug || location.pathname),
+        // `locked: yes` holds the next slide until its checks pass — for a
+        // student working, never the teacher writing them, nor while live.
+        locked: function () { return !cfg.authoring && !cfg.readonly && !liveCode; }
       });
     }
     return notesSlides;
@@ -480,20 +483,61 @@
     out.scrollTop += pick.el.getBoundingClientRect().top - out.getBoundingClientRect().top;
   }
 
-  async function checkWork() {
-    if (running) return;
+  /* The run itself: every test in the notes, on the project as it is now.
+     Whoever asked shows the results — the notes' tests cards
+     (checks_in_notes.js), or the output — and the student's result is kept
+     for the teacher here, either way. `note` hears Python loading, for the
+     output; the cards have their own "Checking…". Null when it can't run. */
+  async function runChecks(note) {
+    if (running) return null;
     var project = readProject(), tests = testsHere();
-    if (!tests.length) return;
-    if (notesShown) showPreview();
+    if (!tests.length) return null;
     running = true;
     var btns = [$("run"), $("check")];
     btns.forEach(function (b) { if (b) b.disabled = true; });
+    try {
+      await runtime.boot(function (n) { if (n && note) note(n + "\n", "dim"); });
+      var got = await window.PyIDETests.run(runtime, project.files, tests);
+      if (cfg.signedIn && cfg.assignmentSlug && !cfg.viewOnly) {
+        fetch("/api/tests/self", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ assignment: cfg.assignmentSlug, results: got.results })
+        }).then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) {
+            // A little XP for each test passing for the first time (app.py, _self_tests_xp).
+            if (d && d.xp > 0 && window.PyIDEXP) {
+              window.PyIDEXP.toast("+" + d.xp + " XP · new tests passing");
+            }
+          })
+          .catch(function () {});
+      }
+      return got;
+    } finally {
+      running = false;
+      btns.forEach(function (b) { if (b) b.disabled = false; });
+    }
+  }
+  // The notes' own ✔ Check my work, on each tests card.
+  if (window.IDENotesChecks) window.IDENotesChecks.setRunner(function () { return runChecks(null); });
+
+  /* The ✔ Check my work at the top. With a tests card on screen, the
+     results go there, beside the step they're about; without one (the
+     notes put away, or a slide with no tests), to the output, under the
+     slide each is on. */
+  async function checkWork() {
+    if (running || !testsHere().length) return;
+    if (window.IDENotesChecks && window.IDENotesChecks.onScreen()) {
+      await window.IDENotesChecks.check();
+      return;
+    }
+    var project = readProject(), tests = testsHere();
+    if (notesShown) showPreview();
     clearOutput();
     say("Checking your code against " + tests.length + " test" +
         (tests.length === 1 ? "" : "s") + "…\n", "dim");
     try {
-      await runtime.boot(function (note) { if (note) say(note + "\n", "dim"); });
-      var got = await window.PyIDETests.run(runtime, project.files, tests);
+      var got = await runChecks(say);
+      if (!got) return;
       clearOutput();
       /* Under the slide each test is on (places): students check after
          every step, and want the step they're on. */
@@ -514,24 +558,8 @@
       say("This check is for you. What counts is your teacher's check of what " +
           "you turn in.\n", "dim");
       scrollToSlide(heads);
-      if (cfg.signedIn && cfg.assignmentSlug && !cfg.viewOnly) {
-        fetch("/api/tests/self", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ assignment: cfg.assignmentSlug, results: got.results })
-        }).then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (d) {
-            // A little XP for each test passing for the first time (app.py, _self_tests_xp).
-            if (d && d.xp > 0 && window.PyIDEXP) {
-              window.PyIDEXP.toast("+" + d.xp + " XP · new tests passing");
-            }
-          })
-          .catch(function () {});
-      }
     } catch (err) {
       say("\n" + (err && err.message ? err.message : String(err)) + "\n", "err");
-    } finally {
-      running = false;
-      btns.forEach(function (b) { if (b) b.disabled = false; });
     }
   }
 

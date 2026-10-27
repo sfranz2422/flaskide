@@ -489,8 +489,11 @@ livepage = amy.get("/live/%s" % LIVE).get_data(as_text=True)
 check("the live page has Check my work, and the tests to run",
       'id="check"' in livepage and "autograde.js" in livepage)
 livejs = open(os.path.join(ROOT, "static", "live.js")).read()
-at = livejs.find("async function checkWork")
-body = re.sub(r"//[^\n]*", "", livejs[at:livejs.find("\n  }\n", at)]) if at >= 0 else ""
+# The run (runLiveChecks, which the notes' cards use too) and the button (checkWork).
+body = ""
+for fn in ("async function runLiveChecks", "async function checkWork"):
+    at = livejs.find(fn)
+    body += re.sub(r"//[^\n]*", "", livejs[at:livejs.find("\n  }\n", at)]) if at >= 0 else ""
 check("  which runs THEIR code, never the mirror, under slide headings",
       body and "allFiles()" in body and "mirror" not in body.lower() and ".places(" in body
       and 'checkBtn.addEventListener("click", checkWork)' in livejs, body[:80])

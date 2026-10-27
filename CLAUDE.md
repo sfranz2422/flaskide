@@ -344,6 +344,22 @@ it); each editor's tests are its own. Each test the teacher's check finds passin
 fixed code is paid only for what now passes; a student's own check pays
 nothing.
 
+**Check my work happens in the notes** (`static/checks_in_notes.js`, the
+same file in all three). A ```` ```tests ```` block is a card: each test a
+line, ✓ or ✗ with why, and its own ✔ Check my work wherever the page has
+registered a runner (`IDENotesChecks.setRunner` — the editor and the live
+page; a lesson or class page has none, so its card is the plain list). The
+toolbar's Check my work puts the results in the card too when one is on
+screen, and only falls back to the console when none is. Every test runs
+each time, never one card's, so the result kept for the teacher stays the
+whole check. With **`locked: yes`** as a header line of the notes (beside
+`theme:`/`animate:`, notes.js `takeHeader`), a slide with a card holds the
+next slide until every check on it passes — in the student's own editor
+only (slideView's `locked` option), never the teacher's preview or live. A
+slide once passed stays open in that browser (`pyide-unlocked:<key>`).
+`test_checks_in_notes.py` (the same in all three) runs the card and the
+lock in node on a small fake DOM.
+
 **The token shop** ("The token shop" in `app.py`; `accounts.ShopItem`,
 `ShopRequest`; `/teacher/shop`). What tokens buy: one shop per teacher,
 shared by their classes and all three editors (tokens are), stocked from
