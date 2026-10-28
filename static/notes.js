@@ -376,7 +376,7 @@ window.FlaskIDENotes = (function () {
   /* What the teacher wraps to make it stand out:
 
          :::pop
-         Press the ✔ Check my work button at the top of the IDE.
+         Press ✔ Check my work on the card below.
          :::
 
      around anything — a sentence, a paragraph, a code block. Nothing pops

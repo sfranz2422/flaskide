@@ -309,7 +309,6 @@
     if (!strip) return;
     strip.textContent = "";
     renderNotesButtons();
-    refreshCheck();
     tabOrder().filter(function (name) {
       return !(notesAsButtons() && isNotes(name));
     }).forEach(function (name) {
@@ -462,38 +461,23 @@
      is in the editor now, as often as the student likes. It is feedback:
      the result is kept for the teacher to see, but what counts is the
      teacher's Check all on what was turned in — a check run in this
-     browser could be faked. Shown only when the notes have tests. */
+     browser could be faked. Only from the ✔ on the notes' tests cards
+     (checks_in_notes.js): the button at the top came out, so students
+     check beside the step. */
   function testsHere() {
     return window.PyIDETests ? window.PyIDETests.fromFiles(readProject().files).tests : [];
   }
 
-  function refreshCheck() {
-    var b = $("check");
-    if (b) b.hidden = !testsHere().length;
-  }
-
-  /* Check my work's results open at the slide the student is reading — the
-     step they just did — rather than at the end of a long list. That slide's
-     heading, or the last one before it when it has no tests of its own. */
-  function scrollToSlide(heads) {
-    var view = $("notes-view"), sl = notesSlides;
-    if (!heads.length || !out || !view || view.hidden || !sl || sl.count() < 2) return;
-    var on = sl.at() + 1, pick = heads[0];
-    heads.forEach(function (h) { if (h.slide <= on) pick = h; });
-    out.scrollTop += pick.el.getBoundingClientRect().top - out.getBoundingClientRect().top;
-  }
-
   /* The run itself: every test in the notes, on the project as it is now.
-     Whoever asked shows the results — the notes' tests cards
-     (checks_in_notes.js), or the output — and the student's result is kept
-     for the teacher here, either way. `note` hears Python loading, for the
-     output; the cards have their own "Checking…". Null when it can't run. */
+     The notes' tests cards (checks_in_notes.js) show the results, and their
+     own "Checking…"; the student's result is kept for the teacher here.
+     `note`, when given, hears Python loading. Null when it can't run. */
   async function runChecks(note) {
     if (running) return null;
     var project = readProject(), tests = testsHere();
     if (!tests.length) return null;
     running = true;
-    var btns = [$("run"), $("check")];
+    var btns = [$("run")];
     btns.forEach(function (b) { if (b) b.disabled = true; });
     try {
       await runtime.boot(function (n) { if (n && note) note(n + "\n", "dim"); });
@@ -520,61 +504,6 @@
   // The notes' own ✔ Check my work, on each tests card.
   if (window.IDENotesChecks) window.IDENotesChecks.setRunner(function () { return runChecks(null); });
 
-  /* The ✔ Check my work at the top. With a tests card on screen, the
-     results go there, beside the step they're about; without one (the
-     notes put away, or a slide with no tests), to the output, under the
-     slide each is on. */
-  async function checkWork() {
-    if (running || !testsHere().length) return;
-    if (window.IDENotesChecks && window.IDENotesChecks.onScreen()) {
-      await window.IDENotesChecks.check();
-      return;
-    }
-    // No card on screen: the notes, opened at the slide that needs them (checks_in_notes.js).
-    if (window.IDENotesChecks) {
-      var notes = notesShown || tabOrder().filter(window.FlaskIDENotes.isMarkdown)[0];
-      var shown = await window.IDENotesChecks.checkInNotes({
-        markdown: function () { return notes ? (notes === current && editor ? editor.getValue() : files[notes]) : null; },
-        open: function () { if (notesShown !== notes) showNotes(notes); },
-        slides: window.FlaskIDENotes.slides,
-        tests: function (text) { return window.PyIDETests.parse(text).tests; },
-        viewer: slidesView()
-      });
-      if (shown !== false) return;
-    }
-    var project = readProject(), tests = testsHere();
-    if (notesShown) showPreview();
-    clearOutput();
-    say("Checking your code against " + tests.length + " test" +
-        (tests.length === 1 ? "" : "s") + "…\n", "dim");
-    try {
-      var got = await runChecks(say);
-      if (!got) return;
-      clearOutput();
-      /* Under the slide each test is on (places): students check after
-         every step, and want the step they're on. */
-      var where = window.PyIDETests.places(project.files, window.FlaskIDENotes) || [], last = null;
-      var heads = [];
-      got.results.forEach(function (r, i) {
-        var w = where[i];
-        if (w && w !== last) {
-          say((i ? "\n" : "") + "Slide " + w.slide + (w.title ? " — " + w.title : "") + "\n", "slide-head");
-          heads.push({ slide: w.slide, el: out.lastChild });
-          last = w;
-        }
-        say((r.ok ? "✓ " : "✗ ") + r.label + "\n", r.ok ? "" : "err");
-        if (!r.ok && r.detail) say("    " + r.detail + "\n", "dim");
-      });
-      say("\n" + got.earned + " of " + got.possible + " points" +
-          (got.earned === got.possible ? " — every test passes." : ".") + "\n");
-      say("This check is for you. What counts is your teacher's check of what " +
-          "you turn in.\n", "dim");
-      scrollToSlide(heads);
-    } catch (err) {
-      say("\n" + (err && err.message ? err.message : String(err)) + "\n", "err");
-    }
-  }
-
   async function run() {
     if (running) return;
     // Run with the notes up would run into a pane nobody can see, and look
@@ -584,9 +513,6 @@
     hasRun = true;
     var btn = $("run");
     if (btn) btn.disabled = true;
-    // Not a check while a run is going: both load the app into one Python.
-    var checkBtn = $("check");
-    if (checkBtn) checkBtn.disabled = true;
     clearOutput();
 
     var project = readProject();
@@ -596,7 +522,6 @@
       } finally {
         running = false;
         if (btn) btn.disabled = false;
-        if (checkBtn) checkBtn.disabled = false;
       }
       return;
     }
@@ -643,7 +568,6 @@
     } finally {
       running = false;
       if (btn) btn.disabled = false;
-      if (checkBtn) checkBtn.disabled = false;
     }
   }
 
@@ -1069,8 +993,6 @@
     }
 
     if ($("run")) $("run").addEventListener("click", run);
-    if ($("check")) $("check").addEventListener("click", checkWork);
-    refreshCheck();
     if ($("run-tab")) $("run-tab").addEventListener("click", runInNewTab);
     if ($("preview-back")) $("preview-back").addEventListener("click", function () {
       preview.back();

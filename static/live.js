@@ -50,7 +50,6 @@
 
   var outputEl = $("output");
   var runBtn = $("run");
-  var checkBtn = $("check");
   var liveNotes = "";        // the teacher's notes, for Check my work's tests
   var runLabel = $("run-label");
   var stopBtn = $("stop");
@@ -901,7 +900,6 @@
   function showNotes(data) {
     if (typeof data.notes === "string" && data.notes !== liveNotes) {
       liveNotes = data.notes;
-      refreshCheck();
     }
     if (!notesView || !notesSlides || typeof data.notes !== "string") return;
     var slide = typeof data.slide === "string" ? data.slide : "";
@@ -1334,7 +1332,6 @@
     runBtn.hidden = on;
     stopBtn.hidden = true;        // there is nothing to interrupt: see below
     runBtn.disabled = on;
-    if (checkBtn) checkBtn.disabled = on;
   }
 
   /* Query results as text, in the console — the live page has no results
@@ -1382,24 +1379,10 @@
     return window.PyIDETests && liveNotes ? window.PyIDETests.parse(liveNotes).tests : [];
   }
 
-  function refreshCheck() {
-    if (checkBtn) checkBtn.hidden = !liveTests().length;
-  }
-
-  /* The results open at the slide the student is reading — the step they
-     just did — not at the end of the list: that slide's heading, or the
-     last one before it when it has no tests of its own. */
-  function scrollToSlide(heads) {
-    if (!heads.length || !notesView || notesView.hidden || !notesSlides || notesSlides.count() < 2) return;
-    var on = notesSlides.at() + 1, pick = heads[0];
-    heads.forEach(function (h) { if (h.slide <= on) pick = h; });
-    outputEl.scrollTop += pick.el.getBoundingClientRect().top - outputEl.getBoundingClientRect().top;
-  }
-
-  /* The run itself, on THEIR app — never the mirror's. Whoever asked shows
-     the results: the notes' tests cards (checks_in_notes.js), or the
-     console. `say` hears Python loading, for the console; the cards have
-     their own "Checking…". Null when it can't run now. */
+  /* The run itself, on THEIR app — never the mirror's, from the ✔ on the
+     notes' tests cards (checks_in_notes.js), which show the results and
+     their own "Checking…". `say`, when given, hears Python loading. Null
+     when it can't run now. */
   async function runLiveChecks(say) {
     var tests = liveTests();
     if (running || !tests.length) return null;
@@ -1426,58 +1409,6 @@
     }
   }
   if (window.IDENotesChecks) window.IDENotesChecks.setRunner(function () { return runLiveChecks(null); });
-
-  /* The ✔ Check my work above their editor: into the notes' card when one
-     is on screen, as the card's own button does; the console otherwise. */
-  async function checkWork() {
-    var tests = liveTests();
-    if (running || !tests.length) return;
-    if (window.IDENotesChecks && window.IDENotesChecks.onScreen()) {
-      await window.IDENotesChecks.check();
-      return;
-    }
-    // No card on screen: the notes turned to the slide that needs them (checks_in_notes.js).
-    if (window.IDENotesChecks && notesSlides) {
-      var shown = await window.IDENotesChecks.checkInNotes({
-        markdown: function () { return liveNotes; },
-        open: function () {},
-        slides: window.FlaskIDENotes.slides,
-        tests: function (text) { return window.PyIDETests.parse(text).tests; },
-        viewer: notesSlides
-      });
-      if (shown !== false) return;
-    }
-    showOutputTab(false);
-    showPageTab(false);
-    openConsole(true);
-    clearOutput();
-    write("Checking your code against " + tests.length + " test" +
-          (tests.length === 1 ? "" : "s") + "…\n", "dim");
-    try {
-      var got = await runLiveChecks(write);
-      if (!got) return;
-      clearOutput();
-      // Under the slide each test is on, as in the editor.
-      var where = window.PyIDETests.places({ "notes.md": liveNotes }, window.FlaskIDENotes) || [], last = null, heads = [];
-      got.results.forEach(function (r, i) {
-        var w = where[i];
-        if (w && w !== last) {
-          write((i ? "\n" : "") + "Slide " + w.slide + (w.title ? " — " + w.title : "") + "\n", "slide-head");
-          heads.push({ slide: w.slide, el: outputEl.lastChild });
-          last = w;
-        }
-        write((r.ok ? "✓ " : "✗ ") + r.label + "\n", r.ok ? "" : "err");
-        if (!r.ok && r.detail) write("    " + r.detail + "\n", "dim");
-      });
-      write("\n" + got.earned + " of " + got.possible + " points" +
-            (got.earned === got.possible ? " — every test passes." : ".") + "\n");
-      write("This check is for you. What counts is your teacher's check of what " +
-            "you turn in.\n", "dim");
-      scrollToSlide(heads);
-    } catch (e) {
-      write("\n" + (e && e.message ? e.message : String(e)) + "\n", "err");
-    }
-  }
 
   /* XP for their own run working (xp.js), as in the editor. */
   function reportRun(files) {
@@ -1593,7 +1524,6 @@
   runBtn.disabled = false;
   runLabel.textContent = "Run";
   runBtn.addEventListener("click", run);
-  if (checkBtn) checkBtn.addEventListener("click", checkWork);
 
   /* ------------------------------------------------- their app in a new tab
    *

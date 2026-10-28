@@ -7,6 +7,8 @@
  * ✔ Check my work, and the results land in the card, next to the step they
  * are about, without opening the console. That's how GameIDE's Notes tab
  * does it, and students no longer go looking for their results.
+ * It is the only Check my work there is: the button at the top of the
+ * editor and the class's page came out, so students check beside the step.
  *
  * Elsewhere (a lesson's page, a class page's preview) there is no runner, so
  * the card is the list of what will be checked, as it always was.
@@ -130,55 +132,12 @@ window.IDENotesChecks = window.IDENotesChecks || (function () {
     paintAll(false);
   }
 
-  /* The toolbar's Check my work when no card is on screen — the notes put
-     away, or a slide with no tests on it. The console used to open with the
-     results; the teacher wanted them in the notes, always. So the notes are
-     opened, checked, and turned to the first slide with a check still
-     failing — or, every check passing, the last slide with checks — never
-     past a slide the lock or the player still holds (slideView's reach).
-
-     view: { markdown(): the notes this page shows (null for none),
-             open(): puts them on screen,
-             slides(md): notes.js's slides(), tests(text): the tests in some text,
-             viewer: the notes' slideView }
-     Resolves what the check did — or false when these notes have no tests
-     (they're in another file), and the page shows the results its own way. */
-  function checkInNotes(view) {
-    var md = view.markdown();
-    if (!runner || !md || !view.tests(md).length) return Promise.resolve(false);
-    view.open();
-    return check().then(function (got) {
-      var cut = view.viewer ? view.slides(md) : [];
-      if (!got || cut.length < 2) return got;
-      var withTests = [], failing = [];
-      cut.forEach(function (text, i) {
-        var tests = view.tests(text);
-        if (!tests.length) return;
-        withTests.push(i);
-        if (tests.some(function (t) { var r = latest && latest[t.label]; return !(r && r.ok); })) failing.push(i);
-      });
-      // The first failing slide it may reach; else the last slide with checks it may.
-      var order = failing.concat(withTests.slice().reverse());
-      for (var k = 0; k < order.length; k++) {
-        if (order[k] === view.viewer.at() || view.viewer.reach(order[k])) break;
-      }
-      return got;
-    });
-  }
-
-  /* A card the student can see now: where results can be shown instead of the console. */
-  function onScreen() {
-    return Array.prototype.some.call(document.querySelectorAll(".tests-card[data-checks]"), function (box) {
-      return box.offsetParent !== null;
-    });
-  }
-
   /* New notes, or another student's (a shared Chromebook): forget the last check. */
   function forget() {
     latest = null;
     paintAll(false);
   }
 
-  return { card: card, check: check, checkInNotes: checkInNotes, setRunner: setRunner, onScreen: onScreen, forget: forget,
+  return { card: card, check: check, setRunner: setRunner, forget: forget,
            results: function () { return latest; } };
 })();
