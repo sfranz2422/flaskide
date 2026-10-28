@@ -203,8 +203,9 @@ Add picture / paste / drop, Save or Ctrl+S. The route saves the notes ALONE
 — the notes file is a lesson's `lesson.md`, else the first `.md`, else a new
 `notes.md` (emptied, it goes) — so the code and data files can't be changed
 from there; keys are stored as for any save, and students already working
-see the new notes (`_current_notes`). A lesson's page links to its lesson
-page instead. `test_notes_page.py` is the same in all three.
+see the new notes (`_current_notes`). For the code, Edit project at the
+top of the page opens the whole thing in the editor (`edit_assignment`).
+A lesson's page links to its lesson page instead. `test_notes_page.py` is the same in all three.
 
 **An assignment's notes follow the teacher's edits** (`_current_notes`,
 `_keep_notes` in `app.py`). A draft copies the assignment's files, notes

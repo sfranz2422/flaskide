@@ -33,6 +33,13 @@
     <span id="needs-grading" class="needs-grading" title="Long responses waiting for your points — they're under each student below"
           {% if not waiting %}hidden{% endif %}>{{ waiting }} to grade</span></div>
   <div class="actions">
+    {#  The whole project — code, data files and notes — in the editor, for
+        when the code needs changing too; this page saves the notes alone.
+        A lesson has no code: its notes page is the link below. #}
+    {% if assignment.kind != 'lesson' %}
+      <a class="btn btn-primary" id="edit-project" href="{{ url_for('edit_assignment', slug=assignment.slug) }}"
+         title="Open the code, files and notes in the editor">Edit project</a>
+    {% endif %}
     {% if in_class %}
       <a class="btn" href="{{ url_for('teacher_class', class_id=in_class.id) }}">← {{ in_class.name }}</a>
     {% endif %}
@@ -53,9 +60,7 @@
     {% else %}
       <div class="notes-head">
         <h2>Notes</h2>
-        <span class="dim small">What students read in the notes pane: <code>---</code> on its own line starts a slide,
-          <code>```quiz</code> a question, <code>```tests</code> checks ·
-          <a href="{{ url_for('help_questions') }}" target="_blank" rel="noopener">formats</a></span>
+        <a class="small" href="{{ url_for('help_questions') }}" target="_blank" rel="noopener">formats</a>
         <span class="notes-actions">
           <button id="notes-pic" class="linkbtn" type="button"
                   title="Upload a picture into the notes at the cursor — or paste one, or drop it on the notes">Add picture</button>

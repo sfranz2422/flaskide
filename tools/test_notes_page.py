@@ -20,6 +20,9 @@ WHAT IS BEING GUARDED
   An assignment with no notes gets notes.md; emptied, the file goes again.
       A lesson's notes are lesson.md, and stay even emptied.
 
+  Edit project, at the top, opens the whole project in the editor, for
+      the code; a lesson, having none, has no such button.
+
   Only the teacher who set it can save its notes.
 
   assignment_notes.js is the same in all three editors (checked when the
@@ -115,6 +118,9 @@ HW = assignment("hw1", {"notes.md": OLD, "words.txt": "cat\n"})
 print("the page")
 html = teacher.get("/teacher/hw1").get_data(as_text=True)
 check("the assignment's page has the notes editor", 'id="notes-src"' in html and 'id="notes-save"' in html)
+check("  and a button at the top that opens the whole project in the editor",
+      'id="edit-project" href="/teacher/hw1/edit"' in html and html.index('id="edit-project"') < html.index('id="notes-src"'))
+check("  which opens it, code and all", teacher.get("/teacher/hw1/edit").status_code == 200)
 check("  holding the notes as they are, escaped", "Read &lt;this&gt; &amp; that." in html)
 check("  and the script that edits them, saving to this assignment",
       "assignment_notes.js" in html and "/api/assignment/hw1/notes" in html)
@@ -153,6 +159,8 @@ check("emptied, the notes file goes", "notes.md" not in files_of("hw2") and "wor
 assignment("les", {}, kind="lesson")
 check("a lesson's page points to its lesson page instead",
       'id="notes-src"' not in teacher.get("/teacher/les").get_data(as_text=True))
+check("  and no Edit project, a lesson having no code",
+      'id="edit-project"' not in teacher.get("/teacher/les").get_data(as_text=True))
 teacher.post("/api/assignment/les/notes", json={"notes": "# A lesson\n"})
 check("  its notes are lesson.md", files_of("les").get(P.LESSON_FILE) == "# A lesson\n" and "notes.md" not in files_of("les"))
 teacher.post("/api/assignment/les/notes", json={"notes": ""})
