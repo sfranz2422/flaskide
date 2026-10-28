@@ -128,6 +128,43 @@
     </div>
   </section>
 
+  {#  The week's calendar, under the banner as students get it: the teacher
+      pastes "Monday: … Tuesday: …" and calendar.js draws the days. The box
+      previews as it is typed, so a line that didn't become a day shows
+      before Save. "Also post to" saves the same week to other periods. #}
+  <section class="class-calendar" id="calendar">
+    <div class="cal-bar">
+      <div class="cal-heading md" role="heading" aria-level="2">This week</div>
+      <button class="linkbtn js-cal-edit" type="button">{{ "Edit calendar" if course.calendar else "Add a calendar" }}</button>
+    </div>
+    <div class="cal-view" data-cal="{{ course.calendar }}"></div>
+    {% if not course.calendar %}<p class="dim small cal-hint">The week's to-do, shown at the top of the class's page.
+      Paste it in as text — a line for each day, and the work under it.</p>{% endif %}
+    <div class="cal-edit" hidden>
+      <textarea class="field cal-box" rows="10" maxlength="20000" spellcheck="true"
+                aria-label="This week's calendar"
+                placeholder="Week of Oct 27&#10;Monday:&#10;Loops worksheet&#10;Tuesday: Lab day&#10;- finish the guessing game&#10;Wednesday:&#10;…">{{ course.calendar }}</textarea>
+      <p class="dim small">A line starting with a day (<code>Monday:</code>, <code>Tues</code>,
+        <code>Fri 10/31:</code>) starts that day; the lines under it are its to-do.
+        Anything above the first day is the title. Markdown works: **bold**, [a link](https://…).</p>
+      <p class="cal-problem small" hidden>No day found yet — start a line with a day's name, like <code>Monday:</code></p>
+      {% if others %}
+        <fieldset class="cal-also">
+          <legend class="small">Also post this week to</legend>
+          {% for c in others %}
+            <label class="small"><input type="checkbox" value="{{ c.id }}"> {{ c.name }}</label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      <div class="grade-line">
+        <button class="btn btn-primary js-cal-save" type="button">Save</button>
+        <button class="btn js-cal-cancel" type="button">Cancel</button>
+        <button class="linkbtn danger js-cal-clear" type="button" title="Take the calendar off the class's page">Clear</button>
+        <span class="dim small cal-state" role="status"></span>
+      </div>
+    </div>
+  </section>
+
   {#  Made here, an assignment goes on top with its assignment link and its
       live link already made, and opens in the editor to write its starter. #}
   <section class="class-tools">
@@ -314,6 +351,7 @@
 
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script src="{{ url_for('static', filename='embeds.js') }}"></script>
+<script src="{{ url_for('static', filename='calendar.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/easymde@2.18.0/dist/easymde.min.js"></script>
 {% include "_describe.html" %}
 <script src="{{ url_for('static', filename='keep_place.js') }}"></script>
@@ -619,6 +657,54 @@
         });
       }
     });
+  })();
+
+  // The week's calendar: its own box, saved on the class (and, ticked, on
+  // the teacher's other classes) rather than as an item. The preview is
+  // redrawn as the box is typed in, so what Save will post is on screen.
+  (function () {
+    var box = document.getElementById("calendar");
+    var view = box.querySelector(".cal-view"), heading = box.querySelector(".cal-heading");
+    var edit = box.querySelector(".cal-edit"), area = box.querySelector(".cal-box");
+    var problem = box.querySelector(".cal-problem"), state = box.querySelector(".cal-state");
+    var saved = view.dataset.cal;
+    function render(el, md) { return window.FlaskIDENotes.render(el, md, { trusted: true }); }
+    function show(text) {
+      var week = window.ClassCalendar.draw(view, heading, text, render);
+      problem.hidden = !text.trim() || week.days.length > 0;
+    }
+    function open(on) {
+      edit.hidden = !on;
+      state.textContent = "";
+      if (on) { area.value = saved; area.focus(); } else show(saved);
+    }
+    function save(text) {
+      var also = [].map.call(box.querySelectorAll(".cal-also input:checked"),
+                             function (c) { return +c.value; });
+      state.textContent = "Saving…";
+      send(api + "/calendar", { calendar: text, also: also }).then(function (out) {
+        if (!out.ok) { state.textContent = out.d.error || "Not saved"; return; }
+        saved = out.d.calendar;
+        open(false);
+        var hint = box.querySelector(".cal-hint");
+        if (hint) hint.hidden = !!saved;
+        box.querySelector(".js-cal-edit").textContent = saved ? "Edit calendar" : "Add a calendar";
+      }).catch(function () { state.textContent = "Not saved — check your connection"; });
+    }
+    var timer;
+    area.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(function () { show(area.value); }, 150);
+    });
+    box.addEventListener("click", function (e) {
+      var t = e.target.classList;
+      if (t.contains("js-cal-edit")) open(edit.hidden);
+      else if (t.contains("js-cal-cancel")) open(false);
+      else if (t.contains("js-cal-save")) save(area.value);
+      else if (t.contains("js-cal-clear") &&
+               confirm("Take the calendar off the class's page?")) save("");
+    });
+    show(saved);
   })();
 
   (function () {

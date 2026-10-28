@@ -596,6 +596,11 @@ class Course(Base):
     #: picture, a welcome, office hours. Markdown, like a description, and
     #: shown the same way. Empty is no box.
     banner = Column(Text, nullable=False, default="")
+    #: The week's to-do at the top of the class's page, under the banner:
+    #: the block of text the teacher pasted ("Monday:" … "Tuesday:" …),
+    #: stored as typed and drawn into day cards by static/calendar.js. Empty
+    #: is no calendar.
+    calendar = Column(Text, nullable=False, default="")
     #: The secret in the class's view-only link, /view/<token>: the class's
     #: page as a student sees it, for an administrator, with every assignment
     #: openable as a preview that saves, turns in and records nothing. Made
@@ -906,6 +911,9 @@ LATER_COLUMNS = [
     # Empty is true of every class made before the banner: none had one.
     ("classes", "banner",
      "ALTER TABLE classes ADD COLUMN banner TEXT NOT NULL DEFAULT ''"),
+    # Empty is true of every class made before the calendar: none had one.
+    ("classes", "calendar",
+     "ALTER TABLE classes ADD COLUMN calendar TEXT NOT NULL DEFAULT ''"),
     # 1: every item from before showed its live link, and still should.
     ("class_items", "show_live",
      "ALTER TABLE class_items ADD COLUMN show_live INTEGER NOT NULL DEFAULT 1"),

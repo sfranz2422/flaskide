@@ -37,7 +37,7 @@ loop above keeps the last line of a passing run and shows the tail of a
 failing one, so a red suite cannot scroll past unnoticed — a bare
 `for ... do python3 "$t"; done` will let it.
 
-**`node` is required** by `test_complete.py`, `test_pack.py`, `test_quiz.py`,
+**`node` is required** by `test_calendar.py`, `test_complete.py`, `test_pack.py`, `test_quiz.py`,
 `test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py`, `test_xp.py`, `test_keep_place.py` and `test_autograde.py`. `test_syntax.py`
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
@@ -408,6 +408,20 @@ do. It sets colours only for the default looks (no `data-theme`, or
 written outright anywhere else in it would quietly paint over every theme
 sold. `test_site_look.py` (the same in all three) fails on that, on a page
 that stops loading it, and on an editor that starts.
+
+**The week's calendar** (`static/calendar.js`, the same file in all three;
+`Course.calendar`; `/api/class/<id>/calendar`). The teacher pastes one block
+of text — `Monday:`, its to-do, `Tuesday:`, … — under Edit calendar on the
+class page, and it shows as day cards under the banner on the students'
+page. The text is stored as typed and parsed in the browser, so the format
+can grow without touching a row. A line is a day only when the day's name
+is followed by a colon, a spaced dash or nothing ("Friday quiz" is a to-do);
+lines above the first day are the title. A dated day is "Today" only on its
+date, so last week's calendar left up points at nothing. *Also post to*
+saves the same week to the teacher's other classes in this editor, and one
+that isn't theirs refuses the whole save. The calendar is not copied by
+Duplicate class: a week is out of date by next semester. `test_calendar.py`
+(the same in all three) runs calendar.js in node.
 
 ## Style
 

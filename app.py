@@ -4482,6 +4482,42 @@ def update_class(class_id):
         db.close()
 
 
+@app.post("/api/class/<int:class_id>/calendar")
+def save_class_calendar(class_id):
+    """Set the week's calendar at the top of a class's page: the block of text
+    the teacher pasted, stored as typed (static/calendar.js draws it).
+
+    `also` is the teacher's other classes to post the same week to, because
+    P4 Intro and P7 Intro are two classes doing the same week, and pasting
+    it twice is the chore this exists to remove. Each one must be this
+    teacher's own class in this editor; one that isn't refuses the whole
+    save rather than quietly posting to some and not others."""
+    db = SessionLocal()
+    try:
+        user, course, bounce = _own_class(db, class_id)
+        if bounce:
+            return bounce
+        data = request.get_json(silent=True) or {}
+        text = data.get("calendar")
+        if not isinstance(text, str):
+            return jsonify(error="That isn't a calendar."), 400
+        if len(text) > MAX_DESCRIPTION:
+            return jsonify(error="That calendar is too long."), 413
+        also = data.get("also") or []
+        if not isinstance(also, list) or not all(isinstance(i, int) for i in also):
+            return jsonify(error="Those aren't classes."), 400
+        mine = {c.id: c for c in _my_classes(db, user)}
+        if any(i not in mine for i in also):
+            return jsonify(error="One of those classes isn't yours."), 404
+        text = text.strip()
+        for c in [course] + [mine[i] for i in also if i != course.id]:
+            c.calendar = text
+        db.commit()
+        return jsonify(ok=True, calendar=text, posted=1 + len(set(also) - {course.id}))
+    finally:
+        db.close()
+
+
 @app.delete("/api/class/<int:class_id>")
 def delete_class(class_id):
     """Delete a class: its page, its groups and its roster. Never its

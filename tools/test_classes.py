@@ -727,8 +727,10 @@ for _dir in ("templates", "static"):
         if os.path.isfile(_p) and _f.endswith((".html", ".js")) \
                 and "trusted: true" in open(_p, encoding="utf-8", errors="ignore").read():
             _askers.append(_f)
+# class_teacher.html: the week's calendar preview (calendar.js), which only
+# the class's teacher can write, exactly like a description.
 check("  only the class pages ask for the teacher's rules",
-      sorted(_askers) == ["_describe.html", "class_student.html"], _askers)
+      sorted(_askers) == ["_describe.html", "class_student.html", "class_teacher.html"], _askers)
 check("a description cannot be written by a student, which is what makes it safe",
       kid1.post("/api/class/%d/item/%d" % (C4, hello_row), json={"description": "<iframe>"}).status_code == 403
       and kid1.post("/api/class/%d/material" % C4, json={"title": "x"}).status_code == 403)

@@ -57,6 +57,16 @@
     {% if course.banner %}<div class="md banner-body" data-md="{{ course.banner }}">{{ course.banner }}</div>{% endif %}
   </section>
 
+  {#  The week's calendar the teacher posted (calendar.js draws the days
+      from their text). Until it has, nothing shows: the raw text would be
+      the old junky look for a moment. #}
+  {% if course.calendar %}
+    <section class="class-calendar">
+      <div class="cal-bar"><div class="cal-heading md" role="heading" aria-level="2">This week</div></div>
+      <div class="cal-view" data-cal="{{ course.calendar }}"></div>
+    </section>
+  {% endif %}
+
   {#  The class's last random event, for a day (_latest_event): what
       happened and to whom. A student hidden from the leaderboard is "A
       classmate" here too. #}
@@ -170,7 +180,14 @@
 <script src="{{ url_for('static', filename='avatar.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script src="{{ url_for('static', filename='embeds.js') }}"></script>
+<script src="{{ url_for('static', filename='calendar.js') }}"></script>
 <script>
+  document.querySelectorAll(".class-calendar").forEach(function (box) {
+    var view = box.querySelector(".cal-view");
+    window.ClassCalendar.draw(view, box.querySelector(".cal-heading"), view.dataset.cal,
+      function (el, md) { return window.FlaskIDENotes.render(el, md, { trusted: true }); });
+  });
+
   // Each description, rendered: markdown → sanitised HTML, links to a new
   // tab — then a YouTube link on its own line becomes a player (embeds.js).
   document.querySelectorAll(".md[data-md]").forEach(function (el) {

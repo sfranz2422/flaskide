@@ -334,6 +334,69 @@ a:not(.notes-body *, .slide-nav *, .slide-themed *) { color: var(--accent); }
 .sheet section > h2:first-child:not(.notes-body *, .slide-nav *, .slide-themed *),
 .sheet section :first-child > h2:first-child:not(.notes-body *, .slide-nav *, .slide-themed *) { margin-top: 0; }
 
+/* ------------------------------------------------- the week's calendar
+   Under the banner on a class's page (static/calendar.js draws it). Only
+   the look's own variables, never a colour written out: a bought theme
+   has to repaint this too, like everything else here. A row of day cards
+   that wraps to two or three across on a laptop beside the projector and
+   one across on a phone; today's card wears the accent. */
+.class-calendar {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  padding: 14px 16px 16px;
+  margin: 0 0 20px;
+}
+.cal-bar { display: flex; align-items: baseline; justify-content: space-between;
+           gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.cal-heading { font-size: 19px; font-weight: 700; }
+.cal-heading > * { margin: 0; font-size: inherit; }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cal-days, 5), minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 900px) { .cal-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); } }
+@media (max-width: 560px) { .cal-grid { grid-template-columns: minmax(0, 1fr); } }
+.cal-day {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 10px 12px 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cal-day.is-today {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+.cal-day-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+                padding-bottom: 6px; margin-bottom: 6px;
+                border-bottom: 1px solid var(--line); }
+.cal-dow { font-weight: 700; }
+.cal-date { color: var(--muted); font-size: 13px; }
+.cal-today {
+  margin-left: auto;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+.cal-body { font-size: 14px; line-height: 1.45; }
+.cal-body ul { margin: 0; padding-left: 18px; }
+.cal-body li + li { margin-top: 4px; }
+.cal-body > :last-child { margin-bottom: 0; }
+.cal-body img { max-width: 100%; height: auto; border-radius: 6px; }
+.cal-nothing { color: var(--muted); margin: 0; }
+.class-calendar .cal-edit { margin-top: 14px; }
+.cal-box { width: 100%; box-sizing: border-box; font-family: var(--mono, monospace); }
+.cal-problem { color: var(--amber); margin: 6px 0; }
+.cal-also { border: 0; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.cal-also legend { padding: 0; margin-bottom: 4px; color: var(--muted); }
+.cal-hint { margin: 0; }
+
 /* ------------------------------------------------- slides: the editor's colours
    A slide preview is "what students see", and students see slides in the
    editor, in style.css's colours. So inside a preview the site's colours go
