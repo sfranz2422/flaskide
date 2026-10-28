@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""The teacher's own HTML slides, kept with an assignment.
+
+    python3 tools/test_teacher_deck.py
+
+WHAT IS BEING GUARDED
+
+  The assignment's page has Upload teacher lesson at the top, and once one
+      is uploaded, a link that opens it in a new tab.
+
+  The link serves the file exactly as it was uploaded, scripts and all,
+      never from the browser's cache — the same address serves a replaced
+      deck. Uploading again replaces it; there is only ever one.
+
+  Only the teacher who set the assignment can open or upload it. The file
+      runs with the sign-in of whoever opens it, so a student or another
+      teacher opening it would be the deck's scripts running as them.
+
+  Something that isn't HTML (a PDF picked by mistake), an empty file, a
+      file too big, or a body that didn't arrive whole is refused.
+"""
+import base64
+import json
+import os
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+DB = os.path.join(tempfile.mkdtemp(), "teacher_deck.db")
+os.environ["DATABASE_URL"] = "sqlite:///" + DB
+os.environ["TEACHER_EMAILS"] = "teacher@school.org,other@school.org"
+os.environ["SECRET_KEY"] = "k" * 32
+os.environ.pop("ALLOWED_EMAIL_DOMAINS", None)
+
+sys.path.insert(0, ROOT)
+import app as P                                              # noqa: E402
+import accounts                                              # noqa: E402
+
+results = []
+
+
+def check(label, condition, detail=""):
+    results.append(bool(condition))
+    print("  %-4s %-66s %s" % ("ok" if condition else "FAIL", label, detail))
+
+
+def add(row):
+    db = P.SessionLocal()
+    try:
+        db.add(row)
+        db.commit()
+        return row.id
+    finally:
+        db.close()
+
+
+def client(uid):
+    c = P.app.test_client()
+    if uid is not None:
+        with c.session_transaction() as s:
+            s["uid"] = uid
+    return c
+
+
+def decks():
+    db = P.SessionLocal()
+    try:
+        return db.query(P.TeacherDeck).count()
+    finally:
+        db.close()
+
+
+def send(c, slug, text, name="slides.html"):
+    data = text if isinstance(text, bytes) else text.encode("utf-8")
+    return c.post("/api/assignment/%s/slides" % slug,
+                  json={"name": name, "data": base64.b64encode(data).decode()})
+
+
+TEACHER = add(accounts.User(google_sub="t", email="teacher@school.org", name="T"))
+OTHER = add(accounts.User(google_sub="o", email="other@school.org", name="O"))
+AMY = add(accounts.User(google_sub="a", email="amy@school.org", name="Amy"))
+teacher, other, amy, nobody = client(TEACHER), client(OTHER), client(AMY), client(None)
+add(accounts.Assignment(slug="hw1", app=P.APP_NAME, teacher_id=TEACHER, title="HW1",
+                        code="print(1)\n", files=json.dumps({"notes.md": "# Hi\n"})))
+add(accounts.Assignment(slug="les1", app=P.APP_NAME, teacher_id=TEACHER, title="L1",
+                        code="", files=json.dumps({"lesson.md": "# Hi\n"}), kind="lesson"))
+
+DECK = ("<!doctype html>\n<html><head><title>Dicts</title></head><body>"
+        "<h1>Intro — dictionaries 🐍</h1><script>localStorage.getItem('x')</script>"
+        "</body></html>\n")
+NEWER = DECK.replace("Dicts", "Dicts v2")
+
+print("before any upload")
+html = teacher.get("/teacher/hw1").get_data(as_text=True)
+check("the assignment's page has Upload teacher lesson at the top",
+      'id="deck-upload"' in html and ">Upload teacher lesson<" in html
+      and html.index('id="deck-upload"') < html.index('<main'))
+check("  and its script, posting to this assignment",
+      '+ "/slides"' in html and 'id="deck-file"' in html)
+check("  the link to open it is there but hidden",
+      'id="deck-open"' in html
+      and "hidden" in html[html.index('id="deck-open"'):html.index('>Teacher lesson')])
+check("  a lesson's page has the button too",
+      'id="deck-upload"' in teacher.get("/teacher/les1").get_data(as_text=True))
+check("opening it before one is uploaded is a 404",
+      teacher.get("/teacher/hw1/slides").status_code == 404)
+
+print("uploading")
+r = send(teacher, "hw1", DECK, "Intro_to_Dictionaries_Teacher_Slides.html")
+check("the teacher uploads a deck", r.status_code == 200, r.get_data(as_text=True)[:80])
+check("  and is told where it is", r.get_json().get("url") == "/teacher/hw1/slides")
+r = teacher.get("/teacher/hw1/slides")
+check("it opens, byte for byte as sent, scripts and all",
+      r.status_code == 200 and r.get_data(as_text=True) == DECK)
+check("  as a page", r.mimetype == "text/html")
+check("  never from the browser's cache", r.headers.get("Cache-Control") == "no-store")
+html = teacher.get("/teacher/hw1").get_data(as_text=True)
+at = html.index('id="deck-open"')
+tag = html[html.rindex("<a", 0, at):html.index(">", at)]
+check("the page now shows the link, in a new tab", "hidden" not in tag
+      and 'target="_blank"' in tag and 'href="/teacher/hw1/slides"' in tag, tag)
+check("  and says Replace", ">Replace teacher lesson<" in html)
+
+print("replacing")
+r = send(teacher, "hw1", NEWER)
+check("uploading again works", r.status_code == 200)
+check("  and replaces it", teacher.get("/teacher/hw1/slides").get_data(as_text=True) == NEWER)
+check("  leaving one deck, not two", decks() == 1, decks())
+check("a byte-order mark is not part of the page",
+      send(teacher, "les1", b"\xef\xbb\xbf" + DECK.encode()).status_code == 200
+      and teacher.get("/teacher/les1/slides").get_data(as_text=True) == DECK)
+
+print("who can")
+for label, c in (("another teacher", other), ("a student", amy)):
+    check("%s can't open it" % label, c.get("/teacher/hw1/slides").status_code in (302, 403, 404))
+    check("  nor upload one", send(c, "hw1", DECK).status_code in (403, 404))
+r = nobody.get("/teacher/hw1/slides")
+check("someone signed out is sent to sign in, not shown it",
+      r.status_code in (302, 403) and "Dicts" not in r.get_data(as_text=True))
+check("  and nothing they sent changed it",
+      teacher.get("/teacher/hw1/slides").get_data(as_text=True) == NEWER)
+
+print("what isn't a deck")
+check("a PDF is refused", send(teacher, "hw1", b"%PDF-1.7\n...").status_code == 400)
+check("text that isn't HTML is refused", send(teacher, "hw1", "just some notes").status_code == 400)
+check("a file that isn't text is refused",
+      send(teacher, "hw1", b"<html>\xff\xfe\x00").status_code == 400)
+r = send(teacher, "hw1", b"")
+check("an empty file is refused, as empty", r.status_code == 400
+      and "empty" in r.get_json()["error"])
+check("a file too big is refused",
+      send(teacher, "hw1", "<html>" + "x" * P.DECK_MAX_BYTES).status_code == 413)
+r = teacher.post("/api/assignment/hw1/slides", json={"name": "a.html", "data": "PGh0bWw+<>"})
+check("a body that isn't all base64 is refused, not read past",
+      r.status_code == 400 and "whole" in r.get_json()["error"], r.get_json())
+check("HTML starting with a comment is taken",
+      send(teacher, "hw1", "<!-- made by me -->\n" + DECK).status_code == 200)
+
+print()
+print("ok" if all(results) else "FAIL", "%d/%d" % (sum(results), len(results)))
+sys.exit(0 if all(results) else 1)

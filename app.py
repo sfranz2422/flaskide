@@ -300,6 +300,29 @@ class Project(Base):
             return {}
 
 
+class TeacherDeck(Base):
+    """The teacher's own slides for an assignment: one HTML file they made
+    elsewhere and present from, opened from the top of the assignment's page
+    (teacher_deck). One per assignment; uploading again replaces it.
+
+    In this file's tables, not accounts.py's, on purpose: it is PyIDE's
+    alone, and a table in accounts.py would have to be copied into the other
+    three repos to keep that file identical. No foreign key to assignments
+    for the same reason — the two live in different metadata, and
+    create_all() on this one knows nothing of that table. In the database
+    and not on disk because Render's disk is wiped on every deploy.
+    """
+    __tablename__ = "teacher_decks"
+
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, unique=True, index=True, nullable=False)
+    name = Column(String(200), nullable=False, default="")
+    html = Column(Text, nullable=False)
+    size = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
+
+
 engine = create_engine(
     _database_url(),
     pool_pre_ping=True,
@@ -3117,7 +3140,102 @@ def teacher_assignment(slug):
         # The notes, to edit right here (save_assignment_notes): the whole
         # file, answer keys and all — this page is the teacher's.
         ctx.update(notes=item.file_map().get(_notes_name(item), ""), notes_name=_notes_name(item))
+        ctx.update(deck=db.query(TeacherDeck).filter_by(assignment_id=item.id).first())
         return render_template("teacher_assignment.html", **ctx)
+    finally:
+        db.close()
+
+
+# --------------------------------------------------------------------------
+# The teacher's own slides
+#
+# A teacher presents from HTML decks they make elsewhere — slides, a name
+# picker, a scoreboard, all in one file. Uploaded on the assignment's page,
+# kept in teacher_decks, opened from a link at its top in a new tab.
+#
+# ONLY THE TEACHER WHO SET THE ASSIGNMENT CAN OPEN IT. The file is served
+# from this site as it was uploaded, scripts and all, so it runs with that
+# teacher's sign-in — which is why it is never shown to anyone else: a
+# deck reaching a student's browser would be a teacher's script running as
+# the student. It is not sandboxed the way /img is, because a sandboxed page
+# has no localStorage, and the decks keep their class list and scores
+# there: sandboxed, the roster would quietly be empty on every opening.
+# --------------------------------------------------------------------------
+
+#: A deck with pictures inlined in it can be a few MB; the one this was
+#: built for is 36 KB.
+DECK_MAX_BYTES = 8_000_000
+
+
+@app.get("/teacher/<slug>/slides")
+def teacher_deck(slug):
+    db = SessionLocal()
+    try:
+        user, bounce = _require_teacher(db)
+        if bounce:
+            return bounce
+        item = db.query(accounts.Assignment).filter_by(
+            slug=slug, app=APP_NAME).first()
+        if item is None or item.teacher_id != user.id:
+            abort(404)
+        deck = db.query(TeacherDeck).filter_by(assignment_id=item.id).first()
+        if deck is None:
+            abort(404)
+        # The same address serves whatever was uploaded last; a replaced deck
+        # not coming back from the cache is _no_store_signed_in's doing.
+        resp = Response(deck.html, mimetype="text/html")
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        # Opened in its own tab, never framed by another site.
+        resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+        return resp
+    finally:
+        db.close()
+
+
+@app.post("/api/assignment/<slug>/slides")
+def upload_teacher_deck(slug):
+    """Upload the teacher's slides, replacing any already there.
+
+    The file comes base64 in JSON, never as a plain form upload. Render's
+    firewall answers a request body full of <script> with its own 403 page,
+    the app never sees the request, and the page can only say it couldn't
+    reach the server (it happened to FlaskIDE's saves). Every deck is full
+    of <script>, so a plain upload would be the one most likely blocked.
+    """
+    db = SessionLocal()
+    try:
+        user, item, bounce = _own_assignment(db, slug)
+        if bounce:
+            return bounce
+        body = request.get_json(silent=True) or {}
+        name = clean(body.get("name") or "", 200) or "slides.html"
+        try:
+            data = base64.b64decode(body.get("data") or "", validate=True)
+        except (ValueError, TypeError):
+            return jsonify(error="That file didn't arrive whole. Try again."), 400
+        if not data:
+            return jsonify(error="That file is empty."), 400
+        if len(data) > DECK_MAX_BYTES:
+            return jsonify(error="That file is too big (8 MB at most)."), 413
+        try:
+            html = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            return jsonify(error="That isn't an HTML file."), 400
+        # A PDF or a .pptx picked by mistake would otherwise be saved and
+        # open as a page of nonsense. Anything that starts like HTML is
+        # taken as the teacher made it.
+        if not re.match(r"\s*(<!--.*?-->\s*)*<(!doctype\s+html|html|head|body)\b",
+                        html[:20000], re.I | re.S):
+            return jsonify(error="That isn't an HTML file."), 400
+        deck = db.query(TeacherDeck).filter_by(assignment_id=item.id).first()
+        if deck is None:
+            deck = TeacherDeck(assignment_id=item.id)
+            db.add(deck)
+        deck.name, deck.html, deck.size = name, html, len(data)
+        deck.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return jsonify(ok=True, name=deck.name,
+                       url=url_for("teacher_deck", slug=item.slug))
     finally:
         db.close()
 

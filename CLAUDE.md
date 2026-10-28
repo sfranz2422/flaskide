@@ -207,6 +207,18 @@ see the new notes (`_current_notes`). For the code, Edit project at the
 top of the page opens the whole thing in the editor (`edit_assignment`).
 A lesson's page links to its lesson page instead. `test_notes_page.py` is the same in all three.
 
+**The teacher's own slides** (`TeacherDeck` in `app.py`, table
+`teacher_decks`; `teacher_deck`, `upload_teacher_deck`). One HTML file per
+assignment that the teacher made elsewhere and presents from: Upload / Replace
+teacher lesson at the top of the assignment's page, and a link that opens it
+in a new tab at `/teacher/<slug>/slides`. This editor's own table, not
+`accounts.py`'s, so nothing has to be copied to the other repos. It is served
+as uploaded, scripts and all, with the viewer's sign-in, so **only the teacher
+who set the assignment can open it**. It is not sandboxed like `/img`,
+because the decks keep their class list in localStorage and a sandboxed page
+has none. The page sends it base64 in JSON, because Render's firewall blocks a
+body full of `<script>` before the app sees it. `test_teacher_deck.py` (the same file in PyIDE).
+
 **An assignment's notes follow the teacher's edits** (`_current_notes`,
 `_keep_notes` in `app.py`). A draft copies the assignment's files, notes
 included, but every page that shows a student their draft swaps in the
