@@ -211,7 +211,8 @@ A lesson's page links to its lesson page instead. `test_notes_page.py` is the sa
 `teacher_decks`; `teacher_deck`, `upload_teacher_deck`). One HTML file per
 assignment that the teacher made elsewhere and presents from: Upload / Replace
 teacher lesson at the top of the assignment's page, and a link that opens it
-in a new tab at `/teacher/<slug>/slides`. This editor's own table, not
+in a new tab at `/teacher/<slug>/slides`, and Download beside it for the
+file as it is now (`?download=1`, under the name it was uploaded with). This editor's own table, not
 `accounts.py`'s, so nothing has to be copied to the other repos. It is served
 as uploaded, scripts and all, with the viewer's sign-in, so **only the teacher
 who set the assignment can open it**. It is not sandboxed like `/img`,

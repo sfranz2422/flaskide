@@ -13,6 +13,7 @@ never imported, never executed and never reaches this machine.
 
 import base64
 import hashlib
+import io
 import json
 import os
 import random
@@ -31,6 +32,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -3181,6 +3183,12 @@ def teacher_deck(slug):
         deck = db.query(TeacherDeck).filter_by(assignment_id=item.id).first()
         if deck is None:
             abort(404)
+        if request.args.get("download"):
+            # The file back, to keep or change and upload again. Named as it
+            # was uploaded; a name without .html would open as nothing.
+            name = deck.name if re.search(r"\.html?$", deck.name, re.I) else deck.name + ".html"
+            return send_file(io.BytesIO(deck.html.encode("utf-8")), mimetype="text/html",
+                             as_attachment=True, download_name=name, max_age=0)
         # The same address serves whatever was uploaded last; a replaced deck
         # not coming back from the cache is _no_store_signed_in's doing.
         resp = Response(deck.html, mimetype="text/html")

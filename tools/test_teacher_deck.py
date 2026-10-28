@@ -16,6 +16,9 @@ WHAT IS BEING GUARDED
       runs with the sign-in of whoever opens it, so a student or another
       teacher opening it would be the deck's scripts running as them.
 
+  Download gives the file back as it is now, named as it was uploaded,
+      to the same teacher only.
+
   Something that isn't HTML (a PDF picked by mistake), an empty file, a
       file too big, or a body that didn't arrive whole is refused.
 """
@@ -99,6 +102,11 @@ check("the assignment's page has Upload teacher lesson at the top",
       and html.index('id="deck-upload"') < html.index('<main'))
 check("  and its script, posting to this assignment",
       '+ "/slides"' in html and 'id="deck-file"' in html)
+check("  Download is hidden too, with nothing to download",
+      'id="deck-download"' in html
+      and "hidden" in html[html.index('id="deck-download"'):html.index('>Download</a>')])
+check("  and the page shows it after an upload", 'download.hidden = false' in html
+      and 'download.href = out.d.url + "?download=1"' in html)
 check("  the link to open it is there but hidden",
       'id="deck-open"' in html
       and "hidden" in html[html.index('id="deck-open"'):html.index('>Teacher lesson')])
@@ -122,12 +130,26 @@ tag = html[html.rindex("<a", 0, at):html.index(">", at)]
 check("the page now shows the link, in a new tab", "hidden" not in tag
       and 'target="_blank"' in tag and 'href="/teacher/hw1/slides"' in tag, tag)
 check("  and says Replace", ">Replace teacher lesson<" in html)
+at = html.index('id="deck-download"')
+tag = html[html.rindex("<a", 0, at):html.index(">", at)]
+check("  and a Download link, shown now", "hidden" not in tag
+      and 'href="/teacher/hw1/slides?download=1"' in tag, tag)
 
 print("replacing")
 r = send(teacher, "hw1", NEWER)
 check("uploading again works", r.status_code == 200)
 check("  and replaces it", teacher.get("/teacher/hw1/slides").get_data(as_text=True) == NEWER)
 check("  leaving one deck, not two", decks() == 1, decks())
+r = teacher.get("/teacher/hw1/slides?download=1")
+check("Download gives the file as it is now", r.status_code == 200
+      and r.get_data(as_text=True) == NEWER)
+check("  as a download, under the name it was uploaded with",
+      r.headers.get("Content-Disposition", "").startswith("attachment")
+      and "slides.html" in r.headers.get("Content-Disposition", ""), r.headers.get("Content-Disposition"))
+send(teacher, "les1", DECK, "Week 3 — dictionaries")
+d = teacher.get("/teacher/les1/slides?download=1").headers.get("Content-Disposition", "")
+check("  a name without .html gets it, and a name with a dash in it survives",
+      "Week%203%20%E2%80%94%20dictionaries.html" in d, d)
 check("a byte-order mark is not part of the page",
       send(teacher, "les1", b"\xef\xbb\xbf" + DECK.encode()).status_code == 200
       and teacher.get("/teacher/les1/slides").get_data(as_text=True) == DECK)
@@ -135,6 +157,7 @@ check("a byte-order mark is not part of the page",
 print("who can")
 for label, c in (("another teacher", other), ("a student", amy)):
     check("%s can't open it" % label, c.get("/teacher/hw1/slides").status_code in (302, 403, 404))
+    check("  nor download it", c.get("/teacher/hw1/slides?download=1").status_code in (302, 403, 404))
     check("  nor upload one", send(c, "hw1", DECK).status_code in (403, 404))
 r = nobody.get("/teacher/hw1/slides")
 check("someone signed out is sent to sign in, not shown it",

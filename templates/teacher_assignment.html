@@ -45,6 +45,9 @@
     <a class="btn" id="deck-open" target="_blank" rel="noopener"
        href="{{ url_for('teacher_deck', slug=assignment.slug) }}"
        title="{{ deck.name if deck else '' }}" {% if not deck %}hidden{% endif %}>Teacher lesson ↗</a>
+    <a class="btn" id="deck-download"
+       href="{{ url_for('teacher_deck', slug=assignment.slug, download=1) }}"
+       title="Download the HTML file as it is now" {% if not deck %}hidden{% endif %}>Download</a>
     <button class="btn" id="deck-upload" type="button"
             title="Upload the HTML slides you present this from">{{ "Replace teacher lesson" if deck else "Upload teacher lesson" }}</button>
     <input type="file" id="deck-file" accept=".html,.htm,text/html" hidden>
@@ -437,6 +440,7 @@
   (function () {
     var slug = {{ assignment.slug | tojson }};
     var open = document.getElementById("deck-open");
+    var download = document.getElementById("deck-download");
     var button = document.getElementById("deck-upload");
     var input = document.getElementById("deck-file");
     button.addEventListener("click", function () { input.click(); });
@@ -472,6 +476,8 @@
         open.href = out.d.url;
         open.title = out.d.name;
         open.hidden = false;
+        download.href = out.d.url + "?download=1";
+        download.hidden = false;
         button.textContent = "Replace teacher lesson";
       }).catch(function () {
         button.disabled = false;
