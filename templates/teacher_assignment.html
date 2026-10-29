@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='site_look.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='library.css') }}">
 <script>
   // The editor's light/dark choice, so this page matches it rather than the
   // computer's setting, and never flashes the other one first.
@@ -61,34 +62,46 @@
 
 <main class="sheet">
 
-  {#  The notes, first: most visits here are to change them. Saved alone
-      (save_assignment_notes) — the code isn't on this page to change. A
-      lesson's notes are its lesson page, which presents them too. #}
-  <section class="assignment-notes" id="notes">
-    {% if assignment.kind == 'lesson' %}
-      <h2>Notes</h2>
-      <p>This lesson's notes are written on <a class="btn" href="{{ url_for('edit_lesson', slug=assignment.slug) }}">its lesson page</a>, where you can present them too.</p>
-    {% else %}
-      <div class="notes-head">
-        <h2>Notes</h2>
-        <a class="small" href="{{ url_for('help_questions') }}" target="_blank" rel="noopener">formats</a>
-        <span class="notes-actions">
-          <button id="notes-pic" class="linkbtn" type="button"
-                  title="Upload a picture into the notes at the cursor — or paste one, or drop it on the notes">Add picture</button>
-          <span id="notes-saved" class="savestate" aria-live="polite">Saved</span>
-          <button id="notes-save" class="btn btn-primary" type="button" title="Save (Ctrl+S)">Save notes</button>
-        </span>
+  {#  Its tutorial, first: the notes students read. Edited in the library
+      (library.py) and nowhere else, so nothing here can overwrite it; this
+      shows which one it is, what students see, and links it to another. #}
+  <section class="assignment-notes tutorial-box" id="notes">
+    <div class="notes-head">
+      <h2>Tutorial</h2>
+      <a class="small" href="{{ url_for('library.library_page') }}">All tutorials</a>
+    </div>
+    {% if tutorial %}
+      <p class="tutorial-which" id="tutorial-which">
+        <strong>{{ tutorial.title }}</strong>
+        {% if tutorial_others %}<span class="muted"> · also in {{ tutorial_others }} other assignment{{ '' if tutorial_others == 1 else 's' }}: editing it changes them all</span>{% endif %}
+      </p>
+      <div class="tutorial-actions">
+        <a class="btn btn-primary" id="tutorial-edit" href="{{ url_for('library.library_edit_page', slug=tutorial.slug) }}">Edit in library</a>
+        <label class="small">Use another:
+          <select id="tutorial-choose" aria-label="Use another tutorial">
+            <option value="">Choose…</option>
+            {% for c in tutorial_choices if c.slug != tutorial.slug %}<option value="{{ c.slug }}">{{ c.title }}</option>{% endfor %}
+          </select></label>
+        <button class="linkbtn" id="tutorial-unlink" type="button" data-slug="{{ tutorial.slug }}"
+                title="Keep the notes as they are now, as this assignment's own: changes to the tutorial won't reach it">Unlink</button>
+        <span id="tutorial-state" class="savestate" aria-live="polite"></span>
       </div>
-      <div class="lesson-write notes-write">
-        <div class="pane lesson-src-pane">
-          <div class="editor-wrap"><textarea id="notes-src" aria-label="Notes">{{ notes }}</textarea></div>
+      <div class="pane lesson-preview-pane tutorial-preview">
+        <div class="pane-head"><span>What students see</span></div>
+        <div class="subpane notes-preview-scroll">
+          <div id="notes-preview" class="notes-body prose lesson-body"></div>
         </div>
-        <div class="pane lesson-preview-pane">
-          <div class="pane-head"><span>What students see</span></div>
-          <div class="subpane notes-preview-scroll">
-            <div id="notes-preview" class="notes-body prose lesson-body"></div>
-          </div>
-        </div>
+      </div>
+    {% else %}
+      <p class="muted" id="tutorial-which">{% if notes.strip() %}Its notes are its own (not linked to a tutorial).{% else %}No tutorial yet: students get no notes.{% endif %}</p>
+      <div class="tutorial-actions">
+        <label class="small">Use one from the library:
+          <select id="tutorial-choose" aria-label="Use a tutorial from the library">
+            <option value="">Choose…</option>
+            {% for c in tutorial_choices %}<option value="{{ c.slug }}">{{ c.title }}</option>{% endfor %}
+          </select></label>
+        <button class="btn btn-primary" id="tutorial-new" type="button">New tutorial</button>
+        <span id="tutorial-state" class="savestate" aria-live="polite"></span>
       </div>
     {% endif %}
   </section>
@@ -1109,18 +1122,42 @@
 })();
 </script>
 {% endif %}
-{% if assignment.kind != 'lesson' %}
-<script>
-  window.NOTES_T = {
-    ns: "FlaskIDE",
-    saveUrl: "{{ url_for('save_assignment_notes', slug=assignment.slug) }}"
-  };
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
-<script src="{{ url_for('static', filename='pictures.js') }}"></script>
-<script src="{{ url_for('static', filename='assignment_notes.js') }}"></script>
-{% endif %}
+<script>
+  /* The Tutorial box: what students see, and which tutorial it uses
+     (library.py's /api/library routes; the text is edited in the library). */
+  (function () {
+    "use strict";
+    var N = window.FlaskIDENotes, $ = function (id) { return document.getElementById(id); };
+    var me = {{ assignment.slug|tojson }}, title = {{ assignment.title|tojson }};
+    var text = {{ (notes if tutorial else "")|tojson }};
+    if ($("notes-preview") && N) {
+      N.setQuizContext({ assignment: "", signedIn: true });
+      N.slideView($("notes-preview"), { animate: true, skip: true, key: "author:" + location.pathname }).show(text, 0);
+    }
+    var state = $("tutorial-state");
+    function post(url, body) {
+      return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || "It didn't work."); return d; }); });
+    }
+    function fail(e) { state.textContent = e.message || String(e); }
+    var choose = $("tutorial-choose");
+    if (choose) choose.addEventListener("change", function () {
+      if (!choose.value) return;
+      state.textContent = "Linking…";
+      post("/api/library/" + choose.value + "/link", { link: [me] }).then(function () { location.reload(); }, fail);
+    });
+    var unlink = $("tutorial-unlink");
+    if (unlink) unlink.addEventListener("click", function () {
+      if (!confirm("Unlink it? Its notes stay as they are now, as this assignment's own, and changes to the tutorial won't reach it any more.")) return;
+      post("/api/library/" + unlink.dataset.slug + "/link", { unlink: [me] }).then(function () { location.reload(); }, fail);
+    });
+    var made = $("tutorial-new");
+    if (made) made.addEventListener("click", function () {
+      post("/api/library", { title: title, body: "# " + title + "\n\n", linkTo: me })
+        .then(function (d) { location.href = "/teacher/tutorials/" + d.slug + "/edit"; }, fail);
+    });
+  })();
+</script>
 </body>
 </html>

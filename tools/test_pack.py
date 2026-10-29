@@ -203,7 +203,13 @@ r = c.post("/api/assignment/" + SLUG, data=sent[0]["body"],
            content_type="application/json")
 check("pack.js's body is accepted by Update assignment",
       r.status_code == 200, r.status_code)
-check("the notes are saved exactly", files_of(SLUG).get("notes.md") == NOTES)
+# The notes are the library's now (library.py), written there and nowhere
+# else: the editor's save keeps them as they were. A packed save to the
+# library, then — the firewall turned notes away there just the same.
+r_lib = c.post("/api/library", content_type="application/json", data=json.dumps(
+    {"_packed": base64.b64encode(json.dumps({"body": NOTES, "linkTo": SLUG}).encode("utf-8")).decode("ascii")}))
+check("the notes, packed, are saved exactly by the library",
+      r_lib.status_code == 201 and files_of(SLUG).get("notes.md") == NOTES, r_lib.status_code)
 check("the title, outside the files, came through too",
       (r.get_json() or {}).get("title") == "Day 4 ✏")
 page = c.get("/teacher/%s/edit" % SLUG).get_data(as_text=True)
@@ -213,24 +219,24 @@ check("and they are there when the assignment is opened again",
 r = c.post("/api/assignment/" + SLUG,
            json={"files": {"app.py": "plain = 1\n"}, "title": "Day 4"})
 check("a plain JSON body still saves (a tab opened before the deploy)",
-      r.status_code == 200 and files_of(SLUG) == {"app.py": "plain = 1\n"})
+      r.status_code == 200 and files_of(SLUG).get("app.py") == "plain = 1\n")
 
 r = c.post("/api/assignment/" + SLUG, json={"_packed": "not base64 at all!"})
 check("a packed body that will not decode is refused, not a crash",
       r.status_code == 400, r.status_code)
-check("and saves nothing", files_of(SLUG) == {"app.py": "plain = 1\n"})
+check("and saves nothing", files_of(SLUG).get("app.py") == "plain = 1\n")
 
 sneaky = {"_packed": base64.b64encode(b'{"files": {"app.py": "z"}}').decode(),
           "files": {"app.py": "plain = 2\n"}}
 r = c.post("/api/assignment/" + SLUG, json=sneaky)
 check("only a body that is _packed alone is unwrapped",
-      r.status_code == 200 and files_of(SLUG) == {"app.py": "plain = 2\n"})
+      r.status_code == 200 and files_of(SLUG).get("app.py") == "plain = 2\n")
 
 other = P.app.test_client()
 r = other.post("/api/assignment/" + SLUG, data=sent[0]["body"],
                content_type="application/json")
 check("unpacking skips no check: signed out is still refused",
-      r.status_code == 403 and files_of(SLUG) == {"app.py": "plain = 2\n"},
+      r.status_code == 403 and files_of(SLUG).get("app.py") == "plain = 2\n",
       r.status_code)
 
 

@@ -1,0 +1,31 @@
+/* The tutorial library (library.html, library_edit.html; library.py).
+   THE SAME FILE IN PYIDE, WEBIDE AND FLASKIDE. Colours only by the
+   variables the pages' themes set, so a student's bought theme — and the
+   teacher's light or dark — still wins. */
+.library-about { max-width: 70ch; }
+/* `hidden` must win over the display these set (the drop zone once covered the page for good). */
+.library-drop[hidden], .library-report[hidden] { display: none; }
+.library-tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.library-tools input[type=search] { flex: 1; min-width: 200px; }
+.library-table { width: 100%; border-collapse: collapse; }
+.library-table th, .library-table td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.library-table th { font-weight: 600; color: var(--muted); }
+.library-title { font-weight: 600; }
+.library-kind { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.library-kind.tutorial { border-color: var(--accent); color: var(--accent); }
+.library-actions { white-space: nowrap; }
+.library-actions > * { margin-right: 6px; }
+.library-uses summary { cursor: pointer; }
+.library-uses ul { margin: 4px 0 0; padding-left: 18px; }
+.library-drop { position: fixed; inset: 12px; z-index: 50; display: flex; align-items: center; justify-content: center;
+  border: 3px dashed var(--accent); border-radius: 16px; background: var(--bg); font-size: 22px; opacity: 0.95; }
+.library-report { margin: 10px 0; padding: 8px 12px; border-left: 4px solid var(--accent); background: var(--bg-panel); }
+.library-dialog { max-width: 560px; width: 92vw; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); }
+.library-link-list { max-height: 50vh; overflow: auto; }
+.library-link-list fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; }
+.library-link-item { display: block; padding: 3px 0; }
+.library-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.library-edit .library-uses-line { margin: 0 0 10px; }
+.tutorial-box .tutorial-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.tutorial-box .tutorial-preview { margin-top: 8px; }
+.linkbtn.danger { color: var(--red); }

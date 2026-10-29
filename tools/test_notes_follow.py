@@ -97,6 +97,17 @@ def work(main, notes, words):
     return {"code": main, "files": files}
 
 
+def set_notes(c, slug, text):
+    """An assignment's notes, written where they are written now: its
+    tutorial in the library (library.py), saved — and linked first, if it
+    has none."""
+    items = c.get("/api/library").get_json()["items"]
+    mine = next((i for i in items if any(u["url"].rstrip("/").endswith("/" + slug) for u in i["uses"])), None)
+    if mine is None:
+        return c.post("/api/library", json={"body": text, "linkTo": slug})
+    return c.post("/api/library/" + mine["slug"], json={"body": text})
+
+
 def program(draft_row):
     return json.loads(draft_row.files).get(ENTRY) if ENTRY else draft_row.code
 
@@ -121,10 +132,16 @@ check("Amy's work is saved and turned in", r.status_code == 200, r.status_code)
 handed = one(accounts.Submission, student_id=AMY)
 BEN_SLUG = ben.get("/a/hw1").headers["Location"].rsplit("/", 1)[-1]
 
-# The teacher edits the notes, and nothing else.
+# The editor's save leaves the notes alone: they are the library's, and
+# written there and nowhere else (library.py).
 r = teacher.post("/api/assignment/hw1", json=dict(
     work("print('start')\n", NEW_NOTES, "cat\n"), title="HW"))
-check("the teacher saves new notes", r.status_code == 200, r.get_data(as_text=True)[:80])
+check("saving the project in the editor leaves its notes as they were",
+      r.status_code == 200 and "NEW notes" not in one(accounts.Assignment, slug="hw1").file_map().get("notes.md", ""))
+
+# The teacher edits the notes, in the library, and nothing else.
+r = set_notes(teacher, "hw1", NEW_NOTES)
+check("the teacher saves new notes", r.status_code in (200, 201), r.get_data(as_text=True)[:80])
 
 print("the editor")
 html = amy.get("/p/" + SLUG).get_data(as_text=True)

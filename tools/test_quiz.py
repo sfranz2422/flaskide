@@ -79,6 +79,17 @@ def client(uid=None):
     return c
 
 
+def set_notes(c, slug, text):
+    """An assignment's notes, written where they are written now: its
+    tutorial in the library (library.py), saved — and linked first, if it
+    has none."""
+    items = c.get("/api/library").get_json()["items"]
+    mine = next((i for i in items if any(u["url"].rstrip("/").endswith("/" + slug) for u in i["uses"])), None)
+    if mine is None:
+        return c.post("/api/library", json={"body": text, "linkTo": slug})
+    return c.post("/api/library/" + mine["slug"], json={"body": text})
+
+
 def leaks(text):
     """What would give the key away: an [x], an answer: line, or the words
     that only appear in the key."""
@@ -298,9 +309,10 @@ _vc = teacher.post("/api/class", json={"name": "Viewed"}).get_json()["id"]
 _va = teacher.post("/api/class/%d/new" % _vc, json={"title": "Viewed code"}).get_json()["slug"]
 teacher.post("/api/assignment/%s" % _va, json={
     "title": "Viewed code", "files": {ENTRY: 'from flask import Flask\n', "notes.md": NOTES}})
+set_notes(teacher, _va, NOTES)   # the notes are the library's (library.py)
 _vl = teacher.post("/api/class/%d/new" % _vc, json={"title": "Viewed lesson",
                                                     "kind": "lesson"}).get_json()["slug"]
-teacher.post("/api/lesson/%s" % _vl, json={"notes": NOTES})
+set_notes(teacher, _vl, NOTES)
 _vt = re.search(r'/view/([A-Za-z0-9_-]+)"',
                 teacher.get("/teacher/class/%d" % _vc).get_data(as_text=True)).group(1)
 for _what, _slug in (("an assignment", _va), ("a lesson", _vl)):
@@ -433,6 +445,7 @@ check("  and calls it synced", d.get("synced") == [sub_id(KID)], repr(d))
 FIXED = NOTES.replace("- [x] 5\n- [ ] 4", "- [ ] 5\n- [x] 4")
 teacher.post("/api/assignment/" + SLUG, json={
     "title": "Loops", "files": {ENTRY: 'from flask import Flask\n', "notes.md": FIXED}})
+set_notes(teacher, SLUG, FIXED)
 r = teacher.post("/api/assignment/%s/feedback" % SLUG,
                  json={"submission": sub_id(KID), "feedback": ""})
 d = r.get_json()

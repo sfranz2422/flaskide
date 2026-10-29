@@ -70,6 +70,17 @@ def client(uid=None):
     return c
 
 
+def set_notes(c, slug, text):
+    """An assignment's notes, written where they are written now: its
+    tutorial in the library (library.py), saved — and linked first, if it
+    has none."""
+    items = c.get("/api/library").get_json()["items"]
+    mine = next((i for i in items if any(u["url"].rstrip("/").endswith("/" + slug) for u in i["uses"])), None)
+    if mine is None:
+        return c.post("/api/library", json={"body": text, "linkTo": slug})
+    return c.post("/api/library/" + mine["slug"], json={"body": text})
+
+
 def count(model, **by):
     db = P.SessionLocal()
     try:
@@ -94,10 +105,11 @@ teacher.post("/api/assignment/%s" % HELLO, json={
     "title": "Hello World",
     # This app keeps its whole project in files, the starter included.
     "files": {"app.py": "print('starter')\n", "notes.md": NOTES}})
+set_notes(teacher, HELLO, NOTES)   # the notes are the library's (library.py)
 SECRET = teacher.post(NEW, json={"title": "Secret one"}).get_json()["slug"]
 OLD = teacher.post(NEW, json={"title": "Old one"}).get_json()["slug"]
 LESSON = teacher.post(NEW, json={"title": "Loops lesson", "kind": "lesson"}).get_json()["slug"]
-teacher.post("/api/lesson/%s" % LESSON, json={"notes": NOTES})
+set_notes(teacher, LESSON, NOTES)
 ELSEWHERE = teacher.post("/api/class/%d/new" % C2, json={"title": "Period 7 only"}).get_json()["slug"]
 
 db = P.SessionLocal()

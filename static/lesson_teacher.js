@@ -31,6 +31,9 @@
   var editor = CodeMirror.fromTextArea($("lesson-src"), {
     mode: "markdown", lineWrapping: true, lineNumbers: false,
     theme: isDark() ? "material-darker" : "default", indentUnit: 4,
+    // Read only: a lesson's notes are a tutorial, edited in the library
+    // (library.py), and only there. Here they are presented and taken live.
+    readOnly: !!T.readOnly,
     extraKeys: { "Ctrl-S": save, "Cmd-S": save }
   });
   // `animate:` notes play here as they will for students, with Skip to get
@@ -78,8 +81,9 @@
   /* Pictures: Add picture, or paste or drop one on the notes (pictures.js).
      Each goes in as ![name](/img/...) where the cursor was, and reaches the
      class like any other edit — on Save, or at once while live. */
-  window.FlaskIDEPictures.attach(editor);
-  $("lesson-pic").addEventListener("click", function () {
+  // (Not while read only: pictures go in from the library's editor then.)
+  if (!T.readOnly) window.FlaskIDEPictures.attach(editor);
+  if ($("lesson-pic")) $("lesson-pic").addEventListener("click", function () {
     window.FlaskIDEPictures.choose(function (files) {
       window.FlaskIDEPictures.insertInto(editor.getDoc(), files);
       editor.focus();

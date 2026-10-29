@@ -64,8 +64,9 @@
         <span class="hint">--- on its own line starts a slide · ```quiz for a question ·
           <a href="{{ url_for('help_questions') }}" target="_blank" rel="noopener">Question formats</a> ·
           <a href="{{ url_for('help_questions') }}#themes" target="_blank" rel="noopener">Themes</a></span>
-        <button id="lesson-pic" class="linkbtn" type="button"
-                title="Upload a picture into the notes at the cursor — or paste one, or drop it on the notes">Add picture</button></div>
+        {#  Edited in the library, and only there (library.py). #}
+        {% if tutorial %}<a class="btn btn-primary" id="lesson-edit" href="{{ url_for('library.library_edit_page', slug=tutorial.slug) }}"
+           title="This lesson's notes are a tutorial: edit it in the library">Edit in library</a>{% endif %}</div>
       <div class="editor-wrap"><textarea id="lesson-src">{{ notes }}</textarea></div>
     </div>
     <div class="pane lesson-preview-pane">
@@ -84,6 +85,7 @@
   window.LESSON_T = {
     ns: "FlaskIDE",
     themeKey: "flaskide-theme",
+    readOnly: true,
     saveUrl: "{{ url_for('save_lesson', slug=item.slug) }}",
     liveCode: {{ live_code | tojson }},
     liveOn: {{ 'true' if live_on else 'false' }},

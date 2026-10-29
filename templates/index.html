@@ -350,10 +350,20 @@
             {% if is_teacher %}
               <button class="linkbtn js-popout" type="button"
                       title="The notes as big slides in a tab of their own, for the projector. While you're live, moving there moves the class.">Pop out</button>
-              <button id="notes-pic" class="linkbtn" type="button"
-                      title="Upload a picture into the notes at the cursor — or paste one, or drop it on the source">Add picture</button>
             {% endif %}
-            <button id="notes-edit" class="linkbtn">Edit source</button>
+            {#  An assignment's notes are a library tutorial (library.py),
+                edited there and nowhere else: saving here keeps them as they
+                are (update_assignment). Your own project's notes are yours. #}
+            {% if editing_assignment %}
+              {% if tutorial %}<a id="notes-library" class="linkbtn" href="{{ url_for('library.library_edit_page', slug=tutorial.slug) }}"
+                 target="_blank" rel="noopener" title="These notes are a tutorial: edit it in the library">Edit in library</a>{% endif %}
+            {% else %}
+              {% if is_teacher %}
+                <button id="notes-pic" class="linkbtn" type="button"
+                        title="Upload a picture into the notes at the cursor — or paste one, or drop it on the source">Add picture</button>
+              {% endif %}
+              <button id="notes-edit" class="linkbtn">Edit source</button>
+            {% endif %}
           {% endif %}
           <span class="view-switch" role="group" aria-label="Show in this pane" hidden>
             <button type="button" class="view-btn" data-view="notes">Notes</button>

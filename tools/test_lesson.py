@@ -71,6 +71,17 @@ def client(uid=None):
     return c
 
 
+def set_notes(c, slug, text):
+    """An assignment's notes, written where they are written now: its
+    tutorial in the library (library.py), saved — and linked first, if it
+    has none."""
+    items = c.get("/api/library").get_json()["items"]
+    mine = next((i for i in items if any(u["url"].rstrip("/").endswith("/" + slug) for u in i["uses"])), None)
+    if mine is None:
+        return c.post("/api/library", json={"body": text, "linkTo": slug})
+    return c.post("/api/library/" + mine["slug"], json={"body": text})
+
+
 def item(slug):
     db = P.SessionLocal()
     try:
@@ -130,17 +141,24 @@ page = teacher.get("/teacher/%s/lesson" % SLUG).get_data(as_text=True)
 check("its page has Write and Present, Save and Go live",
       'data-mode="write"' in page and 'data-mode="present"' in page
       and 'id="lesson-save"' in page and 'id="go-live"' in page)
+check("  its notes read only there, with Edit in library",
+      "readOnly: true" in page and 'id="lesson-edit"' in page and "/teacher/tutorials/" in page)
 check("  only for its teacher",
       other.get("/teacher/%s/lesson" % SLUG).status_code == 404
       and kid.get("/teacher/%s/lesson" % SLUG).status_code == 404)
 
-r = teacher.post("/api/lesson/%s" % SLUG, json={"title": "Water", "notes": NOTES})
-check("saving it keeps the title and the notes",
+r = teacher.post("/api/lesson/%s" % SLUG, json={"title": "Water", "notes": "# Not here\n"})
+check("saving it keeps the title, and leaves its notes alone (the library's)",
       r.status_code == 200 and item(SLUG).title == "Water"
-      and item(SLUG).file_map() == {"lesson.md": NOTES})
+      and "Not here" not in item(SLUG).file_map()["lesson.md"])
+check("  it was made with a tutorial of its own, in the library",
+      item(SLUG).tutorial_id and any(i["uses"] for i in teacher.get("/api/library").get_json()["items"]))
+r = set_notes(teacher, SLUG, NOTES)
+check("its notes are written in the library, as its tutorial",
+      r.status_code in (200, 201) and item(SLUG).file_map() == {"lesson.md": NOTES}, r.get_data(as_text=True)[:80])
 check("  only for its teacher",
-      other.post("/api/lesson/%s" % SLUG, json={"notes": "x"}).status_code in (403, 404)
-      and item(SLUG).file_map() == {"lesson.md": NOTES})
+      other.post("/api/lesson/%s" % SLUG, json={"title": "Mine"}).status_code in (403, 404)
+      and item(SLUG).file_map() == {"lesson.md": NOTES} and item(SLUG).title == "Water")
 page = teacher.get("/teacher/%s/lesson" % SLUG).get_data(as_text=True)
 check("the teacher's page has the key, to write it",
       "- [x] Condensation" in page and "answer: nitrogen" in page)
@@ -222,14 +240,14 @@ check("  with no Open link, there being no code",
 check("  and the points: 2 of 3 from the questions",
       "Questions 2/3" in page, re.findall(r"Questions [^<]*", page))
 # A wrong [x] fixed and saved: everyone's marks follow the key as it is now.
-teacher.post("/api/lesson/%s" % SLUG, json={"notes": NOTES.replace(
-    "- [ ] Evaporation\n- [x] Condensation", "- [x] Evaporation\n- [ ] Condensation")})
+set_notes(teacher, SLUG, NOTES.replace(
+    "- [ ] Evaporation\n- [x] Condensation", "- [x] Evaporation\n- [ ] Condensation"))
 db = P.SessionLocal()
 earned_now = P._quiz_earned(db, item(SLUG).id).get(KID)
 db.close()
 check("saving a lesson with the [x] moved remarks answers already given",
       earned_now == 0, "kid's points %r, should be 0 now" % earned_now)
-teacher.post("/api/lesson/%s" % SLUG, json={"notes": NOTES})
+set_notes(teacher, SLUG, NOTES)
 turned = page.split("Turned in <span")[1].split("</section>")[0]
 check("one who answered and never pressed Turn in is turned in all the same",
       "B Student" in turned and "Started but not turned in" not in page)

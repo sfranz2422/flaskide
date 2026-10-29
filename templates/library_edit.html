@@ -1,0 +1,93 @@
+<!doctype html>
+{#  One tutorial, edited (library.py). THE SAME FILE IN PYIDE, WEBIDE AND
+    FLASKIDE. Saving writes it into every assignment linked to it; the
+    editor is assignment_notes.js, the one the assignment page had. #}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{#  FlaskIDE's: every JSON body packed past Render's firewall (pack.js),
+    loaded before any other script so none keeps the plain fetch. #}
+{% if pack_js %}<script src="{{ url_for('static', filename='pack.js') }}"></script>{% endif %}
+<title>{{ item.title }} — {{ brand }}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>{{ logo }}</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Sans+3:wght@400;600;700&family=Ubuntu:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='site_look.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='library.css') }}">
+<script>
+  try {
+    var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem({{ theme_key|tojson }});
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+  } catch (e) {}
+</script>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ home_url }}"><span class="logo">{{ logo }}</span> {{ brand }}</a></div>
+  <div class="meta">
+    <input id="lib-title" class="title-input" type="text" maxlength="200" value="{{ item.title }}" aria-label="Title">
+  </div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('library.library_page') }}">All tutorials</a>
+  </div>
+</header>
+
+<main class="sheet library library-edit">
+  <p class="library-uses-line small" id="lib-uses">
+    {% if uses %}Used in
+      {% for u in uses %}<a href="{{ u.url }}">{{ (u.class ~ ': ') if u.class }}{{ u.title }}</a>{{ ', ' if not loop.last }}{% endfor %}:
+      saving changes {{ 'it' if uses|length == 1 else 'all of them' }}.
+    {% else %}Not used yet: link it to an assignment from <a href="{{ url_for('library.library_page') }}">the library</a>.{% endif %}
+  </p>
+  <section class="assignment-notes" id="notes">
+    <div class="notes-head">
+      <h2>Tutorial</h2>
+      <a class="small" href="{{ help_url }}" target="_blank" rel="noopener">formats</a>
+      <span class="notes-actions">
+        <button id="notes-pic" class="linkbtn" type="button"
+                title="Upload a picture into the tutorial at the cursor — or paste one, or drop it on the text">Add picture</button>
+        <span id="notes-saved" class="savestate" aria-live="polite">Saved</span>
+        <button id="notes-save" class="btn btn-primary" type="button" title="Save (Ctrl+S)">Save</button>
+      </span>
+    </div>
+    <div class="lesson-write notes-write">
+      <div class="pane lesson-src-pane">
+        <div class="editor-wrap"><textarea id="notes-src" aria-label="Tutorial">{{ item.body }}</textarea></div>
+      </div>
+      <div class="pane lesson-preview-pane">
+        <div class="pane-head"><span>What students see</span></div>
+        <div class="subpane notes-preview-scroll">
+          <div id="notes-preview" class="notes-body prose lesson-body"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  window.NOTES_T = { ns: {{ ns|tojson }}, saveUrl: "/api/library/{{ item.slug }}" };
+  /* The title, renamed on its own as it's left (the text saves with Save). */
+  (function () {
+    var box = document.getElementById("lib-title"), was = box.value;
+    box.addEventListener("change", function () {
+      var title = box.value.trim();
+      if (!title || title === was) return;
+      fetch(window.NOTES_T.saveUrl, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ title: title }) })
+        .then(function (r) { if (r.ok) { was = title; document.title = title + " — " + {{ brand|tojson }}; } });
+    });
+  })();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
+<script src="{{ url_for('static', filename='pictures.js') }}"></script>
+<script src="{{ url_for('static', filename='assignment_notes.js') }}"></script>
+</body>
+</html>

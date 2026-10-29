@@ -173,6 +173,14 @@ class Assignment(Base):
     #: XP paid once to each student who gets full marks on it (xp.py). 0 is
     #: no bonus, which is what every assignment is until a teacher sets one.
     xp_bonus = Column(Integer, nullable=False, default=0)
+    #: The library tutorial (LibraryItem) whose text its notes are, kept in
+    #: step by writing through (library.py): saving the tutorial rewrites
+    #: the notes of every assignment linked to it. NULL: never looked at by
+    #: the library's import yet; 0: unlinked on purpose, its notes its own.
+    tutorial_id = Column(Integer, nullable=True)
+    #: The library deck (a LibraryItem of kind "deck") the teacher presents
+    #: it from, at /teacher/<slug>/slides. NULL: none.
+    deck_id = Column(Integer, nullable=True)
 
     @property
     def changed(self):
@@ -732,6 +740,37 @@ class Image(Base):
 
 
 # --------------------------------------------------------------------------
+# The tutorial library
+# --------------------------------------------------------------------------
+
+class LibraryItem(Base):
+    """A teacher's tutorial (markdown: the notes students read, slides,
+    questions, tests) or teacher deck (an HTML lesson they present from),
+    kept once and linked to any number of assignments (Assignment.tutorial_id,
+    deck_id). library.py has the rules.
+
+    One editor's at a time (`app`): the four editors' tests and notes differ
+    in what they understand, so a teacher's PyIDE tutorials are never listed
+    in WebIDE. `visibility` is GameIDE's — its students browse tutorials a
+    teacher shares — and "private" everywhere else.
+    """
+    __tablename__ = "library_items"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(16), unique=True, index=True, nullable=False)
+    app = Column(String(16), nullable=False, index=True)
+    teacher_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    kind = Column(String(16), nullable=False, default="tutorial")   # "tutorial" | "deck"
+    title = Column(String(200), nullable=False, default="Untitled tutorial")
+    body = Column(Text, nullable=False, default="")
+    size = Column(Integer, nullable=False, default=0)
+    visibility = Column(String(12), nullable=False, default="private")
+    created_at = Column(DateTime, nullable=False, default=now)
+    updated_at = Column(DateTime, nullable=False, default=now)
+    archived = Column(Integer, nullable=False, default=0)
+
+
+# --------------------------------------------------------------------------
 # Teaching live
 # --------------------------------------------------------------------------
 
@@ -900,6 +939,13 @@ def _as_map(raw) -> dict:
 # from an earlier deploy needs these. Every default has to leave existing rows
 # correct: an assignment that existed before archiving did is not archived.
 LATER_COLUMNS = [
+    # The tutorial library. NULL on every assignment from before it is the
+    # truth: none was linked to a tutorial yet, and the library's import
+    # (library.import_existing) takes NULL to mean "not looked at".
+    ("assignments", "tutorial_id",
+     "ALTER TABLE assignments ADD COLUMN tutorial_id INTEGER"),
+    ("assignments", "deck_id",
+     "ALTER TABLE assignments ADD COLUMN deck_id INTEGER"),
     # NULL is true of every answer from before long responses: none of them
     # was one, and NULL is "not marked by hand", which they never need.
     # 0 is true of every submission from before: each snapshot was made by

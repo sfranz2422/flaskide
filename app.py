@@ -43,6 +43,7 @@ from werkzeug.exceptions import BadRequest
 import accounts
 import autograde
 import quiz
+import library
 import xp
 
 APP_NAME = "flaskide"       # this editor, in the shared account tables
@@ -1624,6 +1625,7 @@ def publish_assignment():
         db.add(item)
         db.commit()
         _store_quiz_keys(db, item.id, files.values())
+        library.adopt(db, item)
         return jsonify(slug=item.slug,
                        url=url_for("open_assignment", slug=item.slug,
                                    _external=True, _scheme=_scheme()))
@@ -1745,6 +1747,9 @@ def edit_assignment(slug):
             editing_assignment=item.slug,
             editing_started=started,
         )
+        library.import_existing(db, user)
+        db.refresh(item)
+        ctx.update(library.tutorial_box(db, user, item))
         return render_template("index.html", **ctx)
     finally:
         db.close()
@@ -1772,6 +1777,11 @@ def update_assignment(slug):
         files, file_error = validate_files(data.get("files"))
         if file_error:
             return jsonify(error=file_error), 400
+        # The notes are the library's (library.py): edited there and nowhere
+        # else, so the editor can never overwrite a tutorial — the stored
+        # notes stay whatever the editor sent, as a draft's do (_keep_notes).
+        files = {k: v for k, v in files.items() if not _is_notes(k)}
+        files.update({k: v for k, v in item.file_map().items() if _is_notes(k)})
 
         item.title = clean(data.get("title"), 200) or item.title
         item.files = json.dumps(files)
@@ -2575,6 +2585,7 @@ def create_lesson():
         db.add(item)
         db.commit()
         _store_quiz_keys(db, item.id, item.file_map().values())
+        library.adopt(db, item, title)
         return jsonify(slug=item.slug, url=url_for("edit_lesson", slug=item.slug))
     finally:
         db.close()
@@ -2601,6 +2612,10 @@ def edit_lesson(slug):
                    live_url=url_for("live_page", code=lesson.code, _external=True,
                                     _scheme=_scheme()),
                    go_live=request.args.get("go") == "live")
+        # Its notes are a library tutorial, edited there (library.py).
+        library.import_existing(db, user)
+        db.refresh(item)
+        ctx.update(library.tutorial_box(db, user, item))
         return render_template("lesson_teacher.html", **ctx)
     finally:
         db.close()
@@ -2618,17 +2633,12 @@ def save_lesson(slug):
             return bounce
         if not _is_lesson(item):
             return jsonify(error="That isn't a lesson."), 400
+        # Its title. Its notes are a library tutorial (library.py), edited
+        # there and nowhere else; any sent here are left alone.
         data = request.get_json(silent=True) or {}
-        notes = data.get("notes")
-        if not isinstance(notes, str):
-            return jsonify(error="Nothing to save."), 400
-        if len(notes.encode("utf-8")) > MAX_FILE_BYTES:
-            return jsonify(error="Those notes are too long to save."), 413
         item.title = clean(data.get("title"), 200) or item.title
-        item.files = json.dumps({LESSON_FILE: notes})
         item.updated_at = accounts.now()
         db.commit()
-        _store_quiz_keys(db, item.id, [notes])
         return jsonify(ok=True, title=item.title)
     finally:
         db.close()
@@ -2654,40 +2664,39 @@ def _notes_name(item):
     return next((n for n in item.file_map() if _is_notes(n)), "notes.md")
 
 
-@app.post("/api/assignment/<slug>/notes")
-def save_assignment_notes(slug):
-    """Save an assignment's notes. Emptied, the notes file goes, as it was
-    before there were any — except a lesson's, which is all the lesson is."""
-    db = SessionLocal()
-    try:
-        user, item, bounce = _own_assignment(db, slug)
-        if bounce:
-            return bounce
-        notes = (request.get_json(silent=True) or {}).get("notes")
-        if not isinstance(notes, str):
-            return jsonify(error="Nothing to save."), 400
-        name = _notes_name(item)
-        files = item.file_map()
-        if notes.strip() or _is_lesson(item):
-            files[name] = notes
-        else:
-            files.pop(name, None)
-        if _is_lesson(item):
-            # A lesson is its notes and nothing else — no program for
-            # validate_files to insist on — so only their size is checked,
-            # as save_lesson does.
-            problem = "Those notes are too large to save." if len(notes.encode("utf-8")) > MAX_FILE_BYTES else None
-        else:
-            files, problem = validate_files(files)
-        if problem:
-            return jsonify(error=problem), 413 if "large" in problem else 400
-        item.files = json.dumps(files)
-        item.updated_at = accounts.now()
-        db.commit()
-        _store_quiz_keys(db, item.id, [notes])
-        return jsonify(ok=True, name=name)
-    finally:
-        db.close()
+# The tutorial library (library.py, the same file in all four editors):
+# where an assignment's notes are written, and the only place. Saving a
+# tutorial writes it into every assignment linked to it, here.
+
+def _write_notes(db, item, text):
+    """An assignment's notes become `text`: its notes file, and its answer
+    keys kept. A lesson's notes file stays even emptied (it's all the lesson
+    is); an assignment's goes, as before it had any."""
+    files = item.file_map()
+    name = _notes_name(item)
+    if text.strip() or _is_lesson(item):
+        files[name] = text
+    else:
+        files.pop(name, None)
+    item.files = json.dumps(files)
+    item.updated_at = accounts.now()
+    db.commit()
+    _store_quiz_keys(db, item.id, [text])
+
+
+library.init(
+    app,
+    app_name=APP_NAME,
+    session=lambda: SessionLocal(),
+    current_user=lambda db: current_user(db),
+    is_teacher=lambda user: accounts.is_teacher(user.email),
+    notes_of=lambda item: item.file_map().get(_notes_name(item), ""),
+    write_notes=_write_notes,
+    assignment_url=lambda item: url_for("teacher_assignment", slug=item.slug),
+    page=lambda db, user: {"brand": "FlaskIDE", "logo": "🧪", "ns": "FlaskIDE", "theme_key": "flaskide-theme",
+                           "home_url": url_for("teacher_home"), "help_url": url_for("help_questions"),
+                           "max_tutorial": library.MAX_TUTORIAL, "pack_js": True},
+)
 
 
 @app.post("/api/lesson/<slug>/turnin")
@@ -3142,6 +3151,12 @@ def teacher_assignment(slug):
         # The notes, to edit right here (save_assignment_notes): the whole
         # file, answer keys and all — this page is the teacher's.
         ctx.update(notes=item.file_map().get(_notes_name(item), ""), notes_name=_notes_name(item))
+        # Its tutorial, from the library — the only place notes are edited.
+        # Notes from before the library are taken into it first, so every
+        # assignment that has notes shows the tutorial they are.
+        library.import_existing(db, user)
+        db.refresh(item)
+        ctx.update(library.tutorial_box(db, user, item))
         ctx.update(deck=db.query(TeacherDeck).filter_by(assignment_id=item.id).first())
         return render_template("teacher_assignment.html", **ctx)
     finally:
@@ -4585,7 +4600,8 @@ def duplicate_class(class_id):
                 copy = accounts.Assignment(
                     slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
                     teacher_id=user.id, title=item.title, kind=item.kind,
-                    code=item.code, files=item.files, out_of=item.out_of)
+                    code=item.code, files=item.files, out_of=item.out_of,
+                    tutorial_id=item.tutorial_id, deck_id=item.deck_id)
                 db.add(copy)
                 db.commit()
                 _store_quiz_keys(db, copy.id, copy.file_map().values())
@@ -4902,7 +4918,8 @@ def copy_assignment(slug):
         copy = accounts.Assignment(
             slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
             teacher_id=user.id, title=item.title, kind=item.kind,
-            code=item.code, files=item.files, out_of=item.out_of)
+            code=item.code, files=item.files, out_of=item.out_of,
+            tutorial_id=item.tutorial_id, deck_id=item.deck_id)
         db.add(copy)
         db.commit()
         _store_quiz_keys(db, copy.id, copy.file_map().values())

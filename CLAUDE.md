@@ -195,17 +195,29 @@ assignment opens on its notes, except for its author, who gets Edit source.
 **The rescue** (`static/rescue.js`, identical in all three apps). Work typed
 while signed out is kept in the browser and restored after signing in.
 
-**An assignment's notes are edited on its page** (`assignment_notes.js`,
-the same file in all three editors; `save_assignment_notes`). Most visits to
-an assignment are to change its notes, not its code, so its page opens with
-them: markdown on the left, the slides as students get them on the right,
-Add picture / paste / drop, Save or Ctrl+S. The route saves the notes ALONE
-— the notes file is a lesson's `lesson.md`, else the first `.md`, else a new
-`notes.md` (emptied, it goes) — so the code and data files can't be changed
-from there; keys are stored as for any save, and students already working
-see the new notes (`_current_notes`). For the code, Edit project at the
-top of the page opens the whole thing in the editor (`edit_assignment`).
-A lesson's page links to its lesson page instead. `test_notes_page.py` is the same in all three.
+**The tutorial library is the ONLY place notes are edited** (`library.py`,
+`templates/library.html`, `library_edit.html`, `static/library.js`,
+`library.css` — the same files in all three; `library.py` and `accounts.py`
+in GameIDE too). A tutorial (`accounts.LibraryItem`, table `library_items`)
+is kept once and linked to any number of assignments
+(`Assignment.tutorial_id`), so Period 2's and Period 5's copies can't drift
+apart. **Write-through, not read-through:** saving a tutorial writes its text
+into every linked assignment's notes file (`_write_notes`: `_notes_name`,
+then `_store_quiz_keys`), so every exit to a student still reads
+`Assignment.files` and redacts as it always did. Nothing else writes notes,
+by the teacher's choice, to avoid collisions: the assignment page has a
+read-only Tutorial box (Edit in library / Use another / Unlink), the lesson
+page's notes are read only (`LESSON_T.readOnly`; `save_lesson` saves the
+title only), and `update_assignment` keeps the stored notes whatever the
+editor sends. `tutorial_id` NULL means the import (`library.import_existing`,
+run when the library or an assignment page opens) hasn't taken it yet —
+identical notes become ONE tutorial linked to all of them; 0 means unlinked
+on purpose, its notes its own copy. New lessons and published projects get
+their own tutorial at once (`library.adopt`), or every untouched lesson
+starter would merge into one. Copies (`copy_assignment`, `duplicate_class`)
+keep `tutorial_id` and `deck_id`. Bulk upload replaces a tutorial of the same
+title (links kept, so the change reaches every assignment), base64 in JSON
+for Render's firewall. `test_library.py` is the same in all three.
 
 **The teacher's own slides** (`TeacherDeck` in `app.py`, table
 `teacher_decks`; `teacher_deck`, `upload_teacher_deck`). One HTML file per

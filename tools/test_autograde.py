@@ -58,6 +58,17 @@ def check(label, ok, detail=""):
     print("  %-4s %-64s %s" % ("ok" if ok else "FAIL", label, detail))
 
 
+def set_notes(c, slug, text):
+    """An assignment's notes, written where they are written now: its
+    tutorial in the library (library.py), saved — and linked first, if it
+    has none."""
+    items = c.get("/api/library").get_json()["items"]
+    mine = next((i for i in items if any(u["url"].rstrip("/").endswith("/" + slug) for u in i["uses"])), None)
+    if mine is None:
+        return c.post("/api/library", json={"body": text, "linkTo": slug})
+    return c.post("/api/library/" + mine["slug"], json={"body": text})
+
+
 NOTES = """# A greeting site
 
 ```tests
@@ -326,6 +337,7 @@ _db.close()
 SLUG = teacher.post("/api/class/%d/new" % CLASS, json={"title": "Greeting"}).get_json()["slug"]
 STARTER = {"app.py": "from flask import Flask\n", "notes.md": NOTES}
 teacher.post("/api/assignment/%s" % SLUG, json={"title": "Greeting", "files": STARTER})
+set_notes(teacher, SLUG, NOTES)   # the notes are the library's (library.py)
 teacher.post("/api/assignment/%s/out-of" % SLUG, json={"out_of": 9})
 
 

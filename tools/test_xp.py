@@ -57,6 +57,17 @@ def check(label, condition, detail=""):
     print("  %-4s %-64s %s" % ("ok" if condition else "FAIL", label, detail))
 
 
+def set_notes(c, slug, text):
+    """An assignment's notes, written where they are written now: its
+    tutorial in the library (library.py), saved — and linked first, if it
+    has none."""
+    items = c.get("/api/library").get_json()["items"]
+    mine = next((i for i in items if any(u["url"].rstrip("/").endswith("/" + slug) for u in i["uses"])), None)
+    if mine is None:
+        return c.post("/api/library", json={"body": text, "linkTo": slug})
+    return c.post("/api/library/" + mine["slug"], json={"body": text})
+
+
 def add(row):
     db = P.SessionLocal()
     try:
@@ -192,6 +203,7 @@ def starter(notes):
 
 SLUG = teacher.post("/api/class/%d/new" % CLASS, json={"title": "Loops"}).get_json()["slug"]
 teacher.post("/api/assignment/%s" % SLUG, json=dict(starter(NOTES), title="Loops"))
+set_notes(teacher, SLUG, NOTES)   # the notes are the library's (library.py)
 
 
 def answer(c, qid, response):

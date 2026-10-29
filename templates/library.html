@@ -1,0 +1,86 @@
+<!doctype html>
+{#  The tutorial library (library.py). THE SAME FILE IN PYIDE, WEBIDE AND
+    FLASKIDE: what differs — the editor's name, its logo, where home is —
+    comes from library.init()'s page hook. #}
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{#  FlaskIDE's: every JSON body packed past Render's firewall (pack.js),
+    loaded before any other script so none keeps the plain fetch. #}
+{% if pack_js %}<script src="{{ url_for('static', filename='pack.js') }}"></script>{% endif %}
+<title>Tutorials — {{ brand }}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>{{ logo }}</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Sans+3:wght@400;600;700&family=Ubuntu:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='site_look.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='library.css') }}">
+<script>
+  try {
+    var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem({{ theme_key|tojson }});
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+  } catch (e) {}
+</script>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ home_url }}"><span class="logo">{{ logo }}</span> {{ brand }}</a></div>
+  <div class="meta"><span class="pagetitle">Tutorials</span></div>
+  <div class="actions">
+    <button id="lib-new" class="btn btn-primary" type="button">New tutorial</button>
+    <button id="lib-upload" class="btn" type="button"
+            title="Markdown tutorials (.md) and teacher decks (.html) from your computer. One with the same title as one here replaces it, and every assignment using it gets the new version.">Upload…</button>
+    <input id="lib-files" type="file" multiple accept=".md,.markdown,.txt,.html,.htm" hidden>
+    <a class="btn" href="{{ home_url }}">Assignments</a>
+  </div>
+</header>
+
+<main class="sheet library">
+  <p class="muted library-about">
+    Every tutorial you've written for {{ brand }}, in one place. Link one to as many assignments and lessons as you like:
+    edit it here, and every one of them changes. This is the only place tutorials are edited.
+    <a href="{{ help_url }}" target="_blank" rel="noopener">The formats</a>.
+  </p>
+
+  <div class="library-drop" id="lib-drop" hidden>Drop .md tutorials and .html decks here</div>
+  <div class="library-report" id="lib-report" role="status" hidden></div>
+
+  <div class="library-tools">
+    <input id="lib-search" type="search" placeholder="Search titles" aria-label="Search titles">
+    <select id="lib-kind" aria-label="Show">
+      <option value="">Tutorials and decks</option>
+      <option value="tutorial">Tutorials</option>
+      <option value="deck">Teacher decks</option>
+    </select>
+    <select id="lib-sort" aria-label="Sort">
+      <option value="updated">Recently changed</option>
+      <option value="title">By title</option>
+      <option value="uses">Most used</option>
+    </select>
+  </div>
+
+  <table class="library-table" id="lib-table">
+    <thead><tr><th>Title</th><th>Used in</th><th>Changed</th><th></th></tr></thead>
+    <tbody id="lib-rows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+  </table>
+</main>
+
+<dialog id="lib-link" class="library-dialog" aria-labelledby="lib-link-title">
+  <form method="dialog">
+    <h2 id="lib-link-title">Link to assignments</h2>
+    <p class="muted small">Ticked ones use this tutorial: its text is their notes, and stays in step with it. Unticking one keeps its notes as they are now, as its own.</p>
+    <div id="lib-link-list" class="library-link-list"></div>
+    <div class="library-dialog-actions">
+      <button class="btn" value="cancel" type="submit">Cancel</button>
+      <button class="btn btn-primary" id="lib-link-save" value="save" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>window.LIBRARY_T = { editUrl: "/teacher/tutorials/" };</script>
+<script src="{{ url_for('static', filename='library.js') }}"></script>
+</body>
+</html>

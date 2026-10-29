@@ -250,8 +250,10 @@ else:
     live = teacher.post("/api/live/start", json={"body": CODE, "filename": "app.py",
                                                  "title": "Laser"}).get_json()["code"]
     lesson = teacher.post("/api/lesson", json={"title": "Laser lesson"}).get_json()
-    teacher.post("/api/lesson/" + lesson["slug"], json={
-        "notes": "# Photosynthesis\n\nPlants turn **sunlight** into food.\n\n---\n\n## Two\n\nMore.\n"})
+    # Its notes, written where they are now: its tutorial in the library (library.py).
+    tut = teacher.get("/api/library").get_json()["items"][0]["slug"]
+    teacher.post("/api/library/" + tut, json={
+        "body": "# Photosynthesis\n\nPlants turn **sunlight** into food.\n\n---\n\n## Two\n\nMore.\n"})
     setup = os.path.join(TMP, "setup.json")
     with open(setup, "w") as f:
         json.dump({"cookie": P.app.session_interface.get_signing_serializer(P.app).dumps({"uid": tid}),

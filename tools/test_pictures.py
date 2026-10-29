@@ -75,26 +75,28 @@ stranger = client()
 PICS = '<script src="/static/pictures.js"></script>'
 
 # ------------------------------------------------------------- the pages
-print("\nThe lesson page")
+print("\nThe library's tutorial page")
+# Pictures go into a tutorial where it is edited: the library (library.py).
+# The lesson page and an assignment in the editor show its notes read only.
 lesson = teacher.post("/api/lesson", json={"title": "Pictures"}).get_json()["slug"]
+tut = teacher.get("/api/library").get_json()["items"][0]["slug"]
+page = teacher.get("/teacher/tutorials/%s/edit" % tut).get_data(as_text=True)
+check("has Add picture beside the tutorial", 'id="notes-pic"' in page)
+check("  and loads pictures.js before assignment_notes.js, which uses it",
+      PICS in page and page.index(PICS) < page.index('src="/static/assignment_notes.js"'))
 page = teacher.get("/teacher/%s/lesson" % lesson).get_data(as_text=True)
-check("has Add picture beside the notes", 'id="lesson-pic"' in page)
-check("  and loads pictures.js before lesson_teacher.js, which uses it",
-      PICS in page and page.index(PICS) < page.index('src="/static/lesson_teacher.js"'))
+check("the lesson page has none: its notes are read only there", 'id="lesson-pic"' not in page)
 js = open(os.path.join(PYIDE, "static", "lesson_teacher.js")).read()
-check("  its button opens the picker and writes into the notes",
-      re.search(r'\$\("lesson-pic"\)\.addEventListener\("click", function \(\) \{\s*'
-                r'window\.FlaskIDEPictures\.choose\(function \(files\) \{\s*'
-                r'window\.FlaskIDEPictures\.insertInto\(editor\.getDoc\(\), files\);', js) is not None)
-check("  and paste and drop go to the notes editor",
-      "window.FlaskIDEPictures.attach(editor);" in js)
+check("  and paste and drop there wait for an editable page",
+      "if (!T.readOnly) window.FlaskIDEPictures.attach(editor);" in js)
 
 print("\nThe editor's notes")
 hw = teacher.post("/api/assignment", json={"title": "Pics", "files": {"app.py": "from flask import Flask\n",
                                                                  "notes.md": "# Hi\n"}}).get_json()["slug"]
 page = teacher.get("/teacher/%s/edit" % hw).get_data(as_text=True)
-check("a teacher editing an assignment has Add picture", 'id="notes-pic"' in page)
-check("  and pictures.js, before app.js", PICS in page and page.index(PICS) < page.index('src="/static/app.js"'))
+check("a teacher editing an assignment edits its notes in the library, not here",
+      'id="notes-pic"' not in page and 'id="notes-library"' in page)
+check("  pictures.js is still there, before app.js", PICS in page and page.index(PICS) < page.index('src="/static/app.js"'))
 page = teacher.get("/new").get_data(as_text=True)
 check("  and in a new project of their own", 'id="notes-pic"' in page)
 check("a student's own new project has none: the upload would refuse them",

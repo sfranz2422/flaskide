@@ -1,7 +1,7 @@
-/* An assignment's notes, edited on its page (teacher_assignment.html;
- * save_assignment_notes in app.py) — most of the time a teacher opens an
- * assignment to change its notes, not its code, and this saves opening the
- * editor for that.
+/* A tutorial, edited in the library (library_edit.html; library.py saves
+ * it, and writes it into every assignment linked to it). It began as the
+ * assignment page's notes editor; the library is now the only place notes
+ * are edited, so the name stayed and the page moved.
  *
  * THE SAME FILE IN PYIDE, WEBIDE AND FLASKIDE. What differs between them —
  * the name their notes and pictures scripts go by (PyIDENotes,
