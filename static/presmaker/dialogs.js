@@ -441,12 +441,16 @@ window.PMDialogs = (function () {
     var preview = previewBox();
     var source = h("pre", { class: "pm-source" });
     var problems = h("div", { class: "pm-problems" });
-    function block() { return "```tests\n" + box.value.replace(/\s+$/, "") + "\n```"; }
+    var server = window.PMBridge.server || {};
+    var fence = server.testsFence || "tests";
+    function block() { return "```" + fence + "\n" + box.value.replace(/\s+$/, "") + "\n```"; }
     var timer = null;
     function changed() {
       clearTimeout(timer);
       timer = setTimeout(function () {
-        var md = block(), got = Tests.parseBlock(box.value);
+        // GameIDE's checks are read by its own editor, not by the autograde.js
+        // here (PyIDE's): there, every line is taken as written.
+        var md = block(), got = server.testsUnchecked ? { errors: [] } : Tests.parseBlock(box.value);
         source.textContent = md;
         preview.show(md, theme);
         problems.textContent = got.errors.join("\n");

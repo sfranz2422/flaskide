@@ -765,6 +765,10 @@ class LibraryItem(Base):
     body = Column(Text, nullable=False, default="")
     size = Column(Integer, nullable=False, default=0)
     visibility = Column(String(12), nullable=False, default="private")
+    #: Where it came from, when that matters: "builtin:<name>" is GameIDE's
+    #: built-in tutorial of that name, taken into this teacher's library when
+    #: they first assigned it (and theirs to change from then on).
+    origin = Column(String(80), nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=now)
     updated_at = Column(DateTime, nullable=False, default=now)
     archived = Column(Integer, nullable=False, default=0)
@@ -946,6 +950,10 @@ LATER_COLUMNS = [
      "ALTER TABLE assignments ADD COLUMN tutorial_id INTEGER"),
     ("assignments", "deck_id",
      "ALTER TABLE assignments ADD COLUMN deck_id INTEGER"),
+    # "" is true of every library item from before: none came from a
+    # built-in tutorial (only GameIDE has those).
+    ("library_items", "origin",
+     "ALTER TABLE library_items ADD COLUMN origin VARCHAR(80) NOT NULL DEFAULT ''"),
     # NULL is true of every answer from before long responses: none of them
     # was one, and NULL is "not marked by hand", which they never need.
     # 0 is true of every submission from before: each snapshot was made by

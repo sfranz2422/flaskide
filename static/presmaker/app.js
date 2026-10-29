@@ -828,7 +828,8 @@
         return D.question(q, shown.theme, function (md) { putBlock(md, q); });
       }
       case "tests": {
-        var t = blockHere("tests");
+        // An IDE whose tests are another fence (GameIDE's ```check) says so (bridge.js PM_SERVER).
+        var t = blockHere((B.server && B.server.testsFence) || "tests");
         return D.tests(t, shown.theme, function (md) { putBlock(md, t); });
       }
       case "themes":

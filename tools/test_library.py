@@ -284,6 +284,12 @@ for name in ("library.py", "static/library.js", "static/library.css", "templates
         path = os.path.join(there, name)
         check("%s is the same as %s's" % (name, repo), os.path.exists(path) and open(path, "rb").read() == mine_bytes)
 
+# GameIDE keeps its copies in backend/ (its tutorial library is the same file).
+gb = os.path.join(home, "gameide", "backend")
+if os.path.isdir(gb):
+    for name in ("library.py", "accounts.py"):
+        check("%s is the same as gameide's" % name, open(os.path.join(ROOT, name), "rb").read() == open(os.path.join(gb, name), "rb").read())
+
 print()
 failed = results.count(False)
 print("%d checks, %s" % (len(results), "all ok" if not failed else "%d FAILED" % failed))

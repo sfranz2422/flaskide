@@ -32,7 +32,7 @@ import json
 import re
 import secrets
 
-from flask import Blueprint, Response, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, redirect, render_template, request
 from sqlalchemy import func
 
 import accounts
@@ -59,6 +59,14 @@ def init(app, **hooks):
                       its answer keys; commits
         page          () -> dict for the pages: brand, logo, ns, home, user_theme…
         assignment_url (assignment) -> the teacher's page for it
+      and, optionally:
+        old_decks     (db, user) -> [(assignment, name, html)] from an old table
+        known         (text) -> {origin, title} for notes that ARE a known
+                      tutorial (GameIDE's built-ins), else None
+        page_url      the library's page, when it's the editor's own (GameIDE's
+                      is a React page): /teacher/tutorials goes there
+        visibilities  who a tutorial may be shown to (default only "private")
+        is_admin      (user) -> bool: may make one "site" wide
     """
     H.update(hooks)
     app.register_blueprint(bp)
@@ -173,6 +181,19 @@ def unlink(db, item, a):
     db.commit()
 
 
+def builtin_row(db, teacher_id, origin, title, body):
+    """The teacher's row for a known tutorial (origin "builtin:<name>"),
+    made the first time it's used."""
+    row = (db.query(accounts.LibraryItem)
+           .filter_by(teacher_id=teacher_id, app=H["app_name"], origin=origin, archived=0).first())
+    if row is None:
+        row = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=teacher_id, kind="tutorial",
+                                   title=title[:200], body=body, size=len(body.encode("utf-8")), origin=origin)
+        db.add(row)
+        db.flush()
+    return row
+
+
 def adopt(db, a, title=None):
     """A new assignment's notes, made its own tutorial at once (a lesson's
     starter, a project published from the editor). Not left to the import:
@@ -209,6 +230,14 @@ def import_existing(db, user):
             groups.setdefault(text, []).append(a)
     made = 0
     for text, items in groups.items():
+        # A known tutorial (GameIDE's built-ins): the teacher's row for it,
+        # found by where it came from, so it's one row however its text changes.
+        known = H["known"](text) if H.get("known") else None
+        if known:
+            same = builtin_row(db, user.id, known["origin"], known["title"], text)
+            for a in items:
+                a.tutorial_id = same.id
+            continue
         # Already in the library word for word (another period's copy imported
         # earlier, or the same file uploaded): link to that one.
         same = (db.query(accounts.LibraryItem)
@@ -290,7 +319,7 @@ def _assignment_out(a, classes):
 
 
 def _item_out(item, uses):
-    return {"id": item.id, "slug": item.slug, "kind": item.kind, "title": item.title, "size": item.size,
+    return {"id": item.id, "slug": item.slug, "kind": item.kind, "title": item.title, "size": item.size, "origin": item.origin,
             "updated": item.updated_at.isoformat() + "Z", "visibility": item.visibility, "uses": uses}
 
 
@@ -320,6 +349,8 @@ def library_page():
         user, bounce = _teacher(db)
         if bounce:
             return Response("Only a teacher can open the tutorial library.", 403)
+        if H.get("page_url"):
+            return redirect(H["page_url"])
         import_existing(db, user)
         return render_template("library.html", **H["page"](db, user))
     finally:
@@ -346,7 +377,9 @@ def library_edit_page(slug):
                   "saveUrl": "/api/library/" + item.slug, "libraryUrl": "/teacher/tutorials", "brand": page["brand"],
                   # PyIDE's tests have a form; the others' are typed as lines,
                   # read by their own autograde.js as they're typed.
-                  "tests": page.get("pm_tests", "form"), "testExamples": page.get("pm_test_examples", [])}
+                  "tests": page.get("pm_tests", "form"), "testExamples": page.get("pm_test_examples", []),
+                  # GameIDE's: ```check lines, read by its own editor, not autograde.js.
+                  "testsFence": page.get("pm_tests_fence", "tests"), "testsUnchecked": page.get("pm_tests_fence") == "check"}
         return render_template("presmaker.html", item=item, uses=[_assignment_out(a, classes) for a in uses],
                                pm_server=server, **page)
     finally:
@@ -407,10 +440,19 @@ def new_item():
         if problem:
             return jsonify(error=problem), 400
         title = str(data.get("title") or "").strip()[:200] or title_of(body, "Untitled tutorial")
-        item = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=user.id, kind=kind,
-                                    title=title, body=body, size=len(body.encode("utf-8")))
-        db.add(item)
-        db.commit()
+        origin = str(data.get("origin") or "")
+        if origin:
+            # A known tutorial taken into the library (GameIDE's built-ins):
+            # their one row for it, made now if it isn't yet.
+            if not re.fullmatch(r"builtin:[a-z0-9-]{1,40}", origin) or not H.get("known"):
+                return jsonify(error="Not a tutorial the library knows."), 400
+            item = builtin_row(db, user.id, origin, title, body)
+            db.commit()
+        else:
+            item = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=user.id, kind=kind,
+                                        title=title, body=body, size=len(body.encode("utf-8")))
+            db.add(item)
+            db.commit()
         # Made for an assignment ("New tutorial" in its Tutorial box): linked to it at once.
         if data.get("linkTo"):
             a = db.query(accounts.Assignment).filter_by(slug=str(data["linkTo"])[:16], app=H["app_name"],
@@ -453,8 +495,17 @@ def save_item(slug):
         title = str(title).strip()[:200] if isinstance(title, str) and title.strip() else None
         # assignment_notes.js saves {notes}; the library's own pages {body};
         # a new name alone, {title}.
+        vis = data.get("visibility")
+        if vis is not None:
+            if vis not in H.get("visibilities", ("private",)) or (vis == "site" and not (H.get("is_admin") and H["is_admin"](user))):
+                return jsonify(error="It can't be shown to them."), 400
+            item.visibility = vis
+            item.updated_at = accounts.now()
+            db.commit()
         sent = data.get("body", data.get("notes"))
-        if sent is None and title is not None:
+        if sent is None and (title is not None or vis is not None):
+            if title is None:
+                return jsonify(ok=True, updated=0)
             item.title = title
             item.updated_at = accounts.now()
             db.commit()

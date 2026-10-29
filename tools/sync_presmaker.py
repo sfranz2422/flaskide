@@ -30,8 +30,14 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SRC = os.path.expanduser(os.environ.get("PRESMAKER", "~/presMaker/web"))
-OUT = os.path.join(ROOT, "static", "presmaker")
-TEMPLATE = os.path.join(ROOT, "templates", "presmaker.html")
+# Where this IDE keeps its static files and templates. GameIDE's are not
+# beside this script (frontend/public/static, backend/templates): it says so.
+STATIC = os.environ.get("PRESMAKER_STATIC", os.path.join(ROOT, "static"))
+OUT = os.path.join(STATIC, "presmaker")
+TEMPLATE = os.path.join(os.environ.get("PRESMAKER_TEMPLATES", os.path.join(ROOT, "templates")), "presmaker.html")
+# An IDE with no notes.js of its own (GameIDE, which is React) gets PyIDE's,
+# copied beside PresMaker: PRESMAKER_OWN_FROM=~/pyide/static.
+OWN_FROM = os.environ.get("PRESMAKER_OWN_FROM")
 
 # This IDE's own files, which PresMaker keeps copies of in web/pyide/.
 OWN = {"pyide/style.css": "style.css", "pyide/notes.js": "notes.js", "pyide/checks_in_notes.js": "checks_in_notes.js",
@@ -54,6 +60,9 @@ def copy_files():
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             shutil.copy2(os.path.join(dirpath, name), dest)
     commit = subprocess.run(["git", "-C", SRC, "log", "-1", "--format=%h %cs %s"], capture_output=True, text=True).stdout.strip()
+    if OWN_FROM:
+        for name in sorted(set(OWN.values()) | {"snippet_worker.js"}):
+            shutil.copy2(os.path.join(os.path.expanduser(OWN_FROM), name), os.path.join(STATIC, name))
     with open(os.path.join(OUT, "FROM_PRESMAKER.txt"), "w") as f:
         f.write("Copied from ~/presMaker/web by tools/sync_presmaker.py. Edit PresMaker, then sync.\n%s\n" % commit)
 
@@ -63,7 +72,8 @@ def static(path):
 
 
 def make_template():
-    html = open(os.path.join(SRC, "index.html")).read()
+    with open(os.path.join(SRC, "index.html")) as f:
+        html = f.read()
 
     def address(m):
         attr, path = m.group(1), m.group(2)
@@ -100,7 +110,7 @@ def make_template():
 ''' + old_bits + html[end:]
     html = html.replace('''      <button class="btn" data-cmd="save" title="Save (⌘S)">Save</button>''',
                         '''      <button class="btn" data-cmd="save" title="Save (⌘S): every assignment using it gets it">Save</button>
-      <button class="btn" id="lib-pic" type="button" title="Upload a picture into the tutorial at the cursor — or paste one, or drop it on the text">Add picture</button>''', 1)
+      {% if not no_pictures %}<button class="btn" id="lib-pic" type="button" title="Upload a picture into the tutorial at the cursor — or paste one, or drop it on the text">Add picture</button>{% endif %}''', 1)
     html = html.replace('''    <span id="status"></span>''', '''    <span id="status"></span>
     <span class="pm-uses" id="lib-uses">{% if uses %}Used in {% for u in uses %}<a href="{{ u.url }}">{{ (u.class ~ ': ') if u.class }}{{ u.title }}</a>{{ ', ' if not loop.last }}{% endfor %}{% else %}Not used yet: link it from <a href="{{ url_for('library.library_page') }}">the library</a>{% endif %}</span>''', 1)
 
@@ -113,8 +123,51 @@ def make_template():
     window.PyIDENotes = window.PyIDENotes || window[{{ ns|tojson }} + "Notes"];
     window.PyIDETests = window.PyIDETests || window[{{ ns|tojson }} + "Tests"];
   </script>
+  {% if pm_adapter == "gameide" %}
+  <script>
+    /* GameIDE's tutorials, drawn by PyIDE's notes.js: a ```check block (the
+       checks Next waits for) as a list of them, and a highlight: line (part
+       of the editor the step points at) said in words — rather than as code
+       and stray text. */
+    (function () {
+      var N = window.PyIDENotes;
+      if (!N) return;
+      function adapt(md) {
+        // The tutorial's header (title:, level:, starter:…) is a slide of its
+        // own here, cut at its --- lines: a title card, not key: value text.
+        var head = /^\\s*((?:[a-z]+\\s*:.*(?:\\n|$))+)\\s*$/i.exec(String(md || ""));
+        if (head && /^\\s*title\\s*:/im.test(head[1])) {
+          var f = {};
+          head[1].split("\\n").forEach(function (l) { var m = /^\\s*([a-z]+)\\s*:\\s*(.*)$/i.exec(l); if (m) f[m[1].toLowerCase()] = m[2]; });
+          return "## 📘 " + (f.title || "") + "\\n\\n" + (f.description ? f.description + "\\n\\n" : "") +
+            "*" + [f.level, f.time, f.starter ? "starts from: " + f.starter : ""].filter(Boolean).join(" · ") + "*";
+        }
+        var out = [], inCheck = false, fence = null;
+        String(md || "").split("\\n").forEach(function (ln) {
+          var f = /^\\s*(```+|~~~+)\\s*(\\S*)/.exec(ln);
+          if (inCheck) {
+            if (f && !f[2]) { inCheck = false; out.push(""); return; }
+            if (ln.trim()) out.push("- `" + ln.trim().replace(/`/g, "'") + "`");
+            return;
+          }
+          if (f && fence === null && f[2].toLowerCase() === "check") {
+            inCheck = true;
+            out.push("", "**✔ Checks — Next waits for these:**", "");
+            return;
+          }
+          if (f) fence = fence === null ? f[1] : null;
+          var h = fence === null && /^\\s*highlight\\s*:\\s*([\\w-]+)\\s*$/i.exec(ln);
+          out.push(h ? "> 🔦 Points at **" + h[1] + "** in the editor" : ln);
+        });
+        return out.join("\\n");
+      }
+      var render = N.render;
+      N.render = function (el, md, opts) { return render.call(N, el, adapt(md), opts); };
+    })();
+  </script>
+  {% endif %}
   ''' + html[first_pm:]
-    html = html.replace('''</body>''', '''  <script src="''' + static("pictures.js") + '''"></script>
+    html = html.replace('''</body>''', '''  {% if not no_pictures %}<script src="''' + static("pictures.js") + '''"></script>{% endif %}
   <script>
     /* Pictures (pictures.js, this IDE's): Add picture, paste or drop, put in
        at the cursor as ![name](/img/...). And the title, renamed on its own. */
@@ -140,6 +193,7 @@ def make_template():
 </body>''', 1)
     banner = ("{#  MADE BY tools/sync_presmaker.py FROM ~/presMaker/web/index.html — change\n"
               "    PresMaker (or the script), then sync; edits here are lost. #}\n")
+    os.makedirs(os.path.dirname(TEMPLATE), exist_ok=True)
     with open(TEMPLATE, "w") as f:
         f.write(banner + html)
 

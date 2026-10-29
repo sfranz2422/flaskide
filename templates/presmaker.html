@@ -37,7 +37,7 @@
       </div>
       <button class="btn" data-cmd="open" hidden title="Open (⌘O)">Open</button>
       <button class="btn" data-cmd="save" title="Save (⌘S): every assignment using it gets it">Save</button>
-      <button class="btn" id="lib-pic" type="button" title="Upload a picture into the tutorial at the cursor — or paste one, or drop it on the text">Add picture</button>
+      {% if not no_pictures %}<button class="btn" id="lib-pic" type="button" title="Upload a picture into the tutorial at the cursor — or paste one, or drop it on the text">Add picture</button>{% endif %}
     </div>
     <div class="pm-group md-only">
       <label class="pm-label">Format
@@ -212,6 +212,49 @@
     window.PyIDENotes = window.PyIDENotes || window[{{ ns|tojson }} + "Notes"];
     window.PyIDETests = window.PyIDETests || window[{{ ns|tojson }} + "Tests"];
   </script>
+  {% if pm_adapter == "gameide" %}
+  <script>
+    /* GameIDE's tutorials, drawn by PyIDE's notes.js: a ```check block (the
+       checks Next waits for) as a list of them, and a highlight: line (part
+       of the editor the step points at) said in words — rather than as code
+       and stray text. */
+    (function () {
+      var N = window.PyIDENotes;
+      if (!N) return;
+      function adapt(md) {
+        // The tutorial's header (title:, level:, starter:…) is a slide of its
+        // own here, cut at its --- lines: a title card, not key: value text.
+        var head = /^\s*((?:[a-z]+\s*:.*(?:\n|$))+)\s*$/i.exec(String(md || ""));
+        if (head && /^\s*title\s*:/im.test(head[1])) {
+          var f = {};
+          head[1].split("\n").forEach(function (l) { var m = /^\s*([a-z]+)\s*:\s*(.*)$/i.exec(l); if (m) f[m[1].toLowerCase()] = m[2]; });
+          return "## 📘 " + (f.title || "") + "\n\n" + (f.description ? f.description + "\n\n" : "") +
+            "*" + [f.level, f.time, f.starter ? "starts from: " + f.starter : ""].filter(Boolean).join(" · ") + "*";
+        }
+        var out = [], inCheck = false, fence = null;
+        String(md || "").split("\n").forEach(function (ln) {
+          var f = /^\s*(```+|~~~+)\s*(\S*)/.exec(ln);
+          if (inCheck) {
+            if (f && !f[2]) { inCheck = false; out.push(""); return; }
+            if (ln.trim()) out.push("- `" + ln.trim().replace(/`/g, "'") + "`");
+            return;
+          }
+          if (f && fence === null && f[2].toLowerCase() === "check") {
+            inCheck = true;
+            out.push("", "**✔ Checks — Next waits for these:**", "");
+            return;
+          }
+          if (f) fence = fence === null ? f[1] : null;
+          var h = fence === null && /^\s*highlight\s*:\s*([\w-]+)\s*$/i.exec(ln);
+          out.push(h ? "> 🔦 Points at **" + h[1] + "** in the editor" : ln);
+        });
+        return out.join("\n");
+      }
+      var render = N.render;
+      N.render = function (el, md, opts) { return render.call(N, el, adapt(md), opts); };
+    })();
+  </script>
+  {% endif %}
   <script src="{{ url_for('static', filename='presmaker/compose.js') }}"></script>
   <script src="{{ url_for('static', filename='presmaker/pages.js') }}"></script>
   <script src="{{ url_for('static', filename='presmaker/bridge.js') }}"></script>
@@ -222,7 +265,7 @@
   <script src="{{ url_for('static', filename='presmaker/deckfile.js') }}"></script>
   <script src="{{ url_for('static', filename='presmaker/deckedit.js') }}"></script>
   <script src="{{ url_for('static', filename='presmaker/app.js') }}"></script>
-  <script src="{{ url_for('static', filename='pictures.js') }}"></script>
+  {% if not no_pictures %}<script src="{{ url_for('static', filename='pictures.js') }}"></script>{% endif %}
   <script>
     /* Pictures (pictures.js, this IDE's): Add picture, paste or drop, put in
        at the cursor as ![name](/img/...). And the title, renamed on its own. */
