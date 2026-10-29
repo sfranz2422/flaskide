@@ -339,12 +339,6 @@
         <span id="notes-name">Notes</span>
         <span class="head-right">
           {% if authoring %}
-            <a class="linkbtn" href="{{ url_for('help_questions') }}" target="_blank" rel="noopener"
-               title="How to write ```quiz questions in these notes">Question formats</a>
-            <a class="linkbtn" href="{{ url_for('help_questions') }}#tests" target="_blank" rel="noopener"
-               title="A ```tests block: what Check my work and Check all check the code against">Tests</a>
-            <a class="linkbtn" href="{{ url_for('help_questions') }}#themes" target="_blank" rel="noopener"
-               title="A look for the slides: theme: and a name on the first line">Themes</a>
             {#  Only a teacher may upload (/api/image); anyone else
                 authoring their own notes links to a picture by address. #}
             {% if is_teacher %}
