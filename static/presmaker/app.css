@@ -331,3 +331,6 @@ body.pm-deck-html-off #dh-apply { display: none; }
 
 /* Tests typed as lines, in an IDE's own words (dialogs.js testsAsLines). */
 .pm-test-lines { width: 100%; box-sizing: border-box; font-size: 13px; line-height: 1.5; resize: vertical; }
+
+/* Save, just done (app.js savedFlash). */
+.btn.pm-saved { background: #1f8a4c; border-color: #1f8a4c; color: #fff; transition: background 0.2s; }

@@ -600,9 +600,28 @@
       lastState = null;
       tellState();
       B.call("recovery.clear");
-      say("Saved " + file.name);
+      var reach = r.updated ? " — " + r.updated + " assignment" + (r.updated === 1 ? "" : "s") + " updated" : "";
+      say("Saved " + file.name + reach);
+      savedFlash(r.updated);
       return true;
     }).catch(function (e) { alert("Couldn't save: " + (e.message || e)); return false; });
+  }
+
+  /* The Save button says it worked, where the teacher is looking: the status
+     line at the bottom said so, and nobody saw it (the button just went
+     down and up, when every other button visibly does something). */
+  var flashTimer = null;
+  function savedFlash(updated) {
+    var btn = document.querySelector('[data-cmd="save"]');
+    if (!btn) return;
+    if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+    btn.textContent = updated ? "✓ Saved · " + updated + " updated" : "✓ Saved";
+    btn.classList.add("pm-saved");
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () {
+      btn.textContent = btn.dataset.label;
+      btn.classList.remove("pm-saved");
+    }, 2500);
   }
 
   function guarded(then) {
