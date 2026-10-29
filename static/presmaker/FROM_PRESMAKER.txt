@@ -1,0 +1,2 @@
+Copied from ~/presMaker/web by tools/sync_presmaker.py. Edit PresMaker, then sync.
+68860f3 2026-10-29 Served by the IDEs as their tutorial library's editor: a server branch in bridge.js, no PDF without the app, the menu's keys in a browser, tests as lines in an IDE's own words

@@ -1,0 +1,125 @@
+/* PresMaker — pages (pages.js): a slide at 960 × 540, a document sheet at
+   612 × 792. Those are points as well as pixels — createPDF draws one CSS
+   pixel as one point — so a slide is PowerPoint's widescreen 13.33 × 7.5 in
+   and a sheet is US Letter. Used by the preview, the PDF and the .html, so
+   all three put a line break in the same place. */
+
+.pm-page {
+  width: var(--pm-w, 960px);
+  height: var(--pm-h, 540px);
+  position: relative;
+  overflow: hidden;
+  flex: none;
+}
+
+/* A slide is a notes body like the IDEs' — the same classes, so the same
+   theme rules and question cards — set big, for the back of the room. */
+.pm-slide.notes-body,
+.pm-sheet-body.notes-body {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  max-width: none;
+  background: var(--theme-bg, var(--bg));
+  color: var(--text);
+}
+.pm-slide.notes-body { padding: 34px 54px 30px; font-size: 21px; }
+:where(.pm-slide.prose) > * { max-width: none; }
+.pm-slide.pm-title {
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  text-align: center;
+}
+.pm-slide.pm-title h1 { font-size: 2.3em; border-bottom: 0; margin: 0 0 .3em; }
+.pm-slide.pm-title > * { max-width: 85%; }
+/* A slide that still doesn't fit at the smallest size: marked in the preview
+   (app.css), never hidden. */
+
+/* A document sheet: print-sized type and margins. */
+.pm-sheet-body.notes-body { padding: 54px 62px; font-size: 11.5px; }
+:where(.pm-sheet-body.prose) > * { max-width: none; }
+.pm-flow.notes-body { width: 612px; padding: 54px 62px; font-size: 11.5px; max-width: none; }
+.pm-flow.prose > * { max-width: none; }
+
+/* Unthemed pages are always the light palette, whatever the Mac is set to:
+   a PDF or a projected deck shouldn't come out black because the author's
+   laptop was in dark mode. Same values as style.css's light block. */
+.pm-plain {
+  --bg: #ffffff; --bg-panel: #f4f4f4; --bg-head: #ebebeb; --line: #d6d6d6;
+  --text: #141414; --muted: #5e5e5e; --accent: #ba0c30; --accent-hover: #960a27;
+  --green: #15803d; --red: #b91c1c; --amber: #b45309; --purple: #6b21a8;
+  --hover-bg: #ececec; --hover-line: #a6a6a6; color-scheme: light;
+}
+
+/* Questions on paper: nothing on a page can be clicked. */
+.pm-page .quiz input, .pm-page .quiz select { opacity: 1; }
+.pm-page .quiz-key[hidden] { display: none; }
+/* The answer, on an answer key: in the theme's own text colour on a green
+   wash, because the IDEs' green is chosen for their page, and on a dark
+   theme it was dark green on navy — an answer key nobody could read. */
+.pm-page .quiz-key {
+  display: inline-block; font-weight: 600; color: var(--text);
+  background: rgba(62, 207, 142, .2); border: 1px solid rgba(62, 207, 142, .7);
+  border-radius: 6px; padding: .15em .6em;
+}
+.pm-page .quiz-key::before { content: "✓ "; color: #3ecf8e; }
+.pm-page .quiz-is-key { border-color: #3ecf8e !important; background: rgba(62, 207, 142, .14); }
+
+/* ------------------------------------------------------ export pages */
+html.pm-export-root, body.pm-export {
+  margin: 0; height: auto; overflow: visible; background: #fff;
+}
+/* The PDF: one page at a time, at the top left, which is all createPDF draws. */
+body.pm-export[data-mode="pdf"] .pm-page { display: none; }
+body.pm-export[data-mode="pdf"] .pm-page.pm-on { display: block; }
+body.pm-export[data-mode="pdf"] .pm-chrome { display: none; }
+body.pm-export.pm-laying .pm-page { display: block !important; }
+/* The background alone, for its snapshot (pages.js, setPicture). */
+body.pm-bg-only .pm-slide > *, body.pm-bg-only .pm-sheet-body > * { visibility: hidden !important; }
+
+/* The .html viewer. */
+body.pm-export[data-mode="viewer"].pm-kind-slides {
+  background: #111; height: 100vh; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+body.pm-export[data-mode="viewer"].pm-kind-slides .pm-pages {
+  width: calc(var(--pm-w) * var(--pm-scale, 1)); height: calc(var(--pm-h) * var(--pm-scale, 1));
+  position: relative;
+}
+body.pm-export[data-mode="viewer"].pm-kind-slides .pm-page {
+  position: absolute; left: 0; top: 0; display: none;
+  transform: scale(var(--pm-scale, 1)); transform-origin: 0 0;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .5);
+}
+body.pm-export[data-mode="viewer"].pm-kind-slides .pm-page.pm-on { display: block; }
+.pm-chrome {
+  height: 40px; display: flex; align-items: center; gap: 14px; color: #ddd;
+  font: 14px/1 system-ui, -apple-system, sans-serif;
+}
+.pm-chrome button {
+  background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 6px;
+  min-width: 44px; height: 28px; font-size: 14px; cursor: pointer;
+}
+.pm-chrome button:hover { background: #3a3a3a; }
+.pm-count { font-variant-numeric: tabular-nums; min-width: 60px; text-align: center; }
+
+/* A document as .html is just the document: a column, no sheets. */
+body.pm-export[data-mode="viewer"].pm-kind-doc { background: var(--pm-doc-bg, #f3f3f3); }
+body.pm-export[data-mode="viewer"].pm-kind-doc .pm-flow.notes-body {
+  width: auto; max-width: 820px; margin: 0 auto; min-height: 100vh;
+  font-size: 17px; padding: 48px 56px; box-sizing: border-box;
+  background: var(--theme-bg, var(--bg));
+}
+
+/* A page never scrolls, so the notebook's lines needn't scroll with the
+   writing (style.css gives it background-attachment: local for the IDEs'
+   pane). And they must not: createPDF draws no background at all under
+   `local` — not the lines, not even the paper colour — so a notebook PDF
+   came out black, with dark text on it, and nothing said why. */
+.pm-page .notes-body { background-attachment: scroll; }
+
+
+/* Played slides (`animate:`; pages.js, player). A part's wrapper makes no
+   box of its own, so a slide lays out exactly as it would whole — fitted
+   once, nothing moving as parts play in; a part not played yet is there,
+   invisible, holding its room. */
+.pm-part { display: contents; }
+.pm-waiting { visibility: hidden; }

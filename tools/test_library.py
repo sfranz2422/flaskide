@@ -148,8 +148,12 @@ print("the pages")
 html = teacher.get("/teacher/tutorials").get_data(as_text=True)
 check("the library page", "library.js" in html and 'id="lib-upload"' in html)
 html = teacher.get("/teacher/tutorials/%s/edit" % loops["slug"]).get_data(as_text=True)
-check("a tutorial's page edits it, saving to the library",
-      'id="notes-src"' in html and '"/api/library/%s"' % loops["slug"] in html and "Read this." in html)
+check("a tutorial's page is PresMaker, saving to the library",
+      "presmaker/app.js" in html and "presmaker/bridge.js" in html and "window.PM_SERVER" in html
+      and '"saveUrl": "/api/library/%s"' % loops["slug"] in html and "Read this." in html)
+check("  with this editor's own notes.js and tests, not PresMaker's copies",
+      'src="/static/notes.js"' in html and 'src="/static/autograde.js"' in html
+      and "presmaker/pyide/" not in html)
 check("  and says where it's used", "P2" in html and "P5" in html)
 html = teacher.get("/teacher/p2").get_data(as_text=True)
 check("an assignment's page has its Tutorial box, and no notes editor",
@@ -270,7 +274,8 @@ check("  nor anyone signed out", stranger.get("/api/library").status_code == 403
 print("the same in all three")
 home = os.path.expanduser("~")
 for name in ("library.py", "static/library.js", "static/library.css", "templates/library.html",
-             "templates/library_edit.html", "tools/test_library.py", "accounts.py"):
+             "templates/presmaker.html", "tools/sync_presmaker.py", "static/presmaker/app.js",
+             "static/presmaker/bridge.js", "static/presmaker/dialogs.js", "tools/test_library.py", "accounts.py"):
     mine_bytes = open(os.path.join(ROOT, name), "rb").read()
     for repo in ("pyide", "webide", "flaskide"):
         there = os.path.join(home, repo)

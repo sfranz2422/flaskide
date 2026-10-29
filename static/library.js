@@ -99,15 +99,13 @@
     }
     list.forEach(function (item) {
       var tutorial = item.kind === "tutorial";
-      var title = tutorial
-        ? el("a", { href: window.LIBRARY_T.editUrl + item.slug + "/edit", text: item.title, "class": "library-title" })
-        : el("span", { text: item.title, "class": "library-title" });
+      var title = el("a", { href: window.LIBRARY_T.editUrl + item.slug + "/edit", text: item.title, "class": "library-title" });
       body.appendChild(el("tr", { "data-slug": item.slug, "data-testid": "library-row" }, [
         el("td", {}, [el("span", { "class": "library-kind " + item.kind, text: tutorial ? "Tutorial" : "Deck" }), " ", title]),
         el("td", {}, [usedIn(item)]),
         el("td", { "class": "muted small", text: when(item.updated) }),
         el("td", { "class": "library-actions" }, [
-          tutorial ? el("a", { "class": "btn small", href: window.LIBRARY_T.editUrl + item.slug + "/edit", text: "Edit" }) : null,
+          el("a", { "class": "btn small", href: window.LIBRARY_T.editUrl + item.slug + "/edit", text: "Edit" }),
           el("button", { "class": "btn small", type: "button", text: "Link to…", "data-testid": "library-link",
                          onclick: function () { openLink(item); } }),
           el("button", { "class": "linkbtn", type: "button", text: "Duplicate", onclick: function () { duplicate(item); } }),

@@ -1004,12 +1004,17 @@ check("it opens, signed out, with every example",
 _global = re.search(r"window\.(\w+) = \(function", notes_js).group(1)
 check("  and draws its examples with this editor's notes.js",
       "window.%s.render(el, el.dataset.md)" % _global in page, _global)
-check("the code editor's notes link to it",
-      'href="/help/questions"' in teacher.get("/teacher/%s/edit" % SLUG).get_data(as_text=True))
+# The tutorial editor (the library's, PresMaker) covers the formats now, so
+# the code editor and the lesson page lost their links (the teacher's call);
+# the library page links to them.
+check("the library links to it",
+      'href="/help/questions"' in teacher.get("/teacher/tutorials").get_data(as_text=True))
+check("  and the code editor's notes no longer do",
+      'href="/help/questions"' not in teacher.get("/teacher/%s/edit" % SLUG).get_data(as_text=True))
 r = teacher.post("/api/lesson", json={"title": "Help"})
 LESSON = r.get_json()["slug"]
-check("  and so does the lesson editor",
-      'href="/help/questions"' in teacher.get("/teacher/%s/lesson" % LESSON).get_data(as_text=True))
+check("  nor the lesson page",
+      'href="/help/questions"' not in teacher.get("/teacher/%s/lesson" % LESSON).get_data(as_text=True))
 db = P.SessionLocal()
 starter = quiz.file_keys(db.query(accounts.Assignment).filter_by(slug=LESSON).first().file_map())
 db.close()

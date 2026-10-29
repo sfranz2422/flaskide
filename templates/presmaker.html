@@ -1,0 +1,249 @@
+{#  MADE BY tools/sync_presmaker.py FROM ~/presMaker/web/index.html — change
+    PresMaker (or the script), then sync; edits here are lost. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {#  FlaskIDE's: every JSON body packed past Render's firewall (pack.js),
+      loaded before any other script so none keeps the plain fetch. #}
+  {% if pack_js %}<script src="{{ url_for('static', filename='pack.js') }}"></script>{% endif %}
+  <script>
+    try {
+      var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem({{ theme_key|tojson }});
+      if (saved) document.documentElement.setAttribute("data-theme", saved);
+    } catch (e) {}
+  </script>
+  <title>{{ item.title }} — {{ brand }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='presmaker/vendor/codemirror.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='presmaker/pages.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='presmaker/app.css') }}">
+  <!-- Themes made in PresMaker (themes.js puts them here). -->
+  <style id="made-themes"></style>
+</head>
+<body class="is-authoring">
+  <header class="pm-bar">
+    <div class="pm-group">
+      <a class="btn" href="{{ url_for('library.library_page') }}" title="Every tutorial, to open another or link this one">← Tutorials</a>
+      <input id="lib-title" class="field pm-title" type="text" maxlength="200" value="{{ item.title }}" aria-label="Title"
+             title="This tutorial's name in the library">
+      <div class="pm-menu" hidden>
+        <button class="btn" id="b-new" title="New slideshow or document">New ▾</button>
+        <div class="pm-menu-list" hidden>
+          <button data-cmd="new-slides">Slideshow</button>
+          <button data-cmd="new-doc">Document (no slides)</button>
+        </div>
+      </div>
+      <button class="btn" data-cmd="open" hidden title="Open (⌘O)">Open</button>
+      <button class="btn" data-cmd="save" title="Save (⌘S): every assignment using it gets it">Save</button>
+      <button class="btn" id="lib-pic" type="button" title="Upload a picture into the tutorial at the cursor — or paste one, or drop it on the text">Add picture</button>
+    </div>
+    <div class="pm-group md-only">
+      <label class="pm-label">Format
+        <select class="field pm-select" id="format" title="Slides are cut at every --- line; a document has none">
+          <option value="slides">Slides</option>
+          <option value="doc">Document</option>
+        </select>
+      </label>
+      <button class="btn" data-cmd="slide" id="b-slide" title="Start a new slide at the cursor (⌘↩)">+ Slide</button>
+    </div>
+    <div class="pm-group md-only">
+      <label class="pm-label">Theme
+        <select class="field pm-select" id="theme"></select>
+      </label>
+      <button class="btn" data-cmd="themes" title="Make and change your own themes (⇧⌘Y)">Themes…</button>
+    </div>
+    <div class="pm-group md-only">
+      <label class="pm-label" title="Play each slide a part at a time when presented, as the IDEs do for students">Animate
+        <select class="field pm-select" id="animate">
+          <option value="">Off</option>
+          <option value="words">Word by word</option>
+          <option value="type">Typewriter</option>
+        </select>
+      </label>
+      <select class="field pm-select" id="speed" title="How fast it plays" hidden>
+        <option value="slow">Slow</option>
+        <option value="normal">Normal</option>
+        <option value="fast">Fast</option>
+      </select>
+      <label class="pm-label" title="In the IDEs, a slide with tests waits until every test on it passes (locked: yes). You and a live lesson are never held.">
+        <input type="checkbox" id="locked"> Lock slides
+      </label>
+    </div>
+    <div class="pm-group md-only">
+      <button class="btn" data-cmd="question" title="Insert a question, or change the one at the cursor (⇧⌘K)">+ Question</button>
+      <button class="btn" data-cmd="tests" title="Insert tests, or change the ones at the cursor (⇧⌘T)">+ Tests</button>
+      <div class="pm-menu">
+        <button class="btn" id="b-insert" title="Parts, pauses, pop boxes, flip cards, checklists, code that runs">Insert ▾</button>
+        <div class="pm-menu-list" hidden>
+          <button data-cmd="part" title="A line of ... — the slide plays up to here, then waits for the next press (⇧⌘.)">Part break (…)</button>
+          <button data-cmd="pause" title="^ — a second's pause while a part plays; ^^ is two (⇧⌘6)">Pause (^)</button>
+          <button data-cmd="pop" title="Wraps the selection in :::pop … ::: — a box that stands out">Pop box</button>
+          <button data-cmd="cards" title="A ```cards block: front -> back, a card a line">Flip cards</button>
+          <button data-cmd="checklist" title="- [ ] items students tick">Checklist</button>
+          <button data-cmd="run-code" title="```python run — code students can change and run">Code that runs</button>
+          <button data-cmd="predict-code" title="```python predict — they say what it prints, then Run">Predict, then run</button>
+        </div>
+      </div>
+    </div>
+    <!-- Teacher slides (.html) opened to change them: deckedit.js -->
+    <div class="pm-group deck-only">
+      <button class="btn" id="d-undo" title="Undo the last change to the slides (⌘Z)">↶</button>
+      <button class="btn" id="d-redo" title="Redo (⇧⌘Z)">↷</button>
+    </div>
+    <div class="pm-group deck-only">
+      <label class="pm-label">Theme
+        <select class="field pm-select" id="d-theme" title="Re-colour the deck in a PresMaker theme"></select>
+      </label>
+    </div>
+    <div class="pm-group deck-only">
+      <div class="pm-menu">
+        <button class="btn" id="b-dinsert" title="Add a slide after this one, written the way the deck's slides are">+ Slide ▾</button>
+        <div class="pm-menu-list" id="d-insert-list" hidden></div>
+      </div>
+    </div>
+    <span class="pm-spacer"></span>
+    <div class="pm-group">
+      <button class="btn" data-cmd="present" title="Present full screen (⌥⌘P)">▶ Present</button>
+      <button class="btn btn-primary md-only" data-cmd="export" title="PDF, a presentation page, or a copy without questions (⌘E)">Export…</button>
+    </div>
+  </header>
+
+  <main class="pm-main md-only" id="main">
+    <section class="pm-editor"><div id="editor"></div></section>
+    <div class="pm-split" id="split" title="Drag to resize"></div>
+    <section class="pm-preview">
+      <div class="pm-preview-head">
+        <span class="pm-preview-title">Preview</span>
+        <button class="btn pm-small" id="p-play" hidden>▶ Play</button>
+        <span class="pm-slide-nav" id="slide-nav">
+          <button class="btn slide-btn" id="p-prev" title="Previous slide">◀</button>
+          <span class="slide-pos" id="p-pos"></span>
+          <button class="btn slide-btn" id="p-next" title="Next slide">▶</button>
+        </span>
+        <label class="pm-follow" title="Show the slide the cursor is on"><input type="checkbox" id="follow" checked> Follow cursor</label>
+      </div>
+      <div class="pm-stage" id="stage"></div>
+      <div class="pm-strip" id="strip"></div>
+    </section>
+  </main>
+
+  <main class="pm-deck deck-only" id="deck-main">
+    <aside class="pm-dl">
+      <div class="pm-dl-list" id="deck-list"></div>
+      <div class="pm-dl-tools">
+        <button class="btn pm-small" id="dl-up" title="Move this slide up">↑</button>
+        <button class="btn pm-small" id="dl-down" title="Move this slide down">↓</button>
+        <button class="btn pm-small" id="dl-dup" title="Copy this slide">⧉ Copy</button>
+        <button class="btn pm-small" id="dl-del" title="Delete this slide">🗑 Delete</button>
+      </div>
+    </aside>
+    <section class="pm-dw">
+      <div class="pm-dw-head">
+        <span class="pm-slide-nav">
+          <button class="btn slide-btn" id="d-prev" title="Previous slide">◀</button>
+          <button class="btn slide-btn" id="d-next" title="Next slide">▶</button>
+        </span>
+        <span class="pm-spacer"></span>
+        <span class="pm-hint" id="d-steps"></span>
+        <button class="btn pm-small" id="d-step-back" title="Hide the last step shown">◀ Step</button>
+        <button class="btn pm-small" id="d-step-fwd" title="Show the next step, as → will in class">Step ▶</button>
+        <button class="btn pm-small" id="d-step-all" title="Show every step, to change them all">Show all</button>
+      </div>
+      <div class="pm-dw-stage" id="deck-stage"><div class="pm-dw-box"><iframe id="deck-frame" title="The slide"></iframe></div></div>
+      <div class="pm-dw-traces" id="deck-traces" hidden></div>
+      <div class="pm-dw-html">
+        <div class="pm-dw-html-head">
+          <button class="btn pm-small" id="dh-toggle" title="Show or hide this slide's HTML">HTML ▾</button>
+          <span class="pm-hint">This slide's HTML. Change anything, then apply it.</span>
+          <span class="pm-spacer"></span>
+          <button class="btn btn-primary pm-small" id="dh-apply" disabled title="Put the HTML on the slide (⌘↩)">Apply</button>
+        </div>
+        <div class="pm-dw-html-ed" id="deck-html"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="pm-deck-present" id="deck-present" hidden>
+    <iframe id="deck-present-frame" title="Presenting"></iframe>
+    <button class="pm-deck-present-done" id="deck-present-done" title="Stop presenting (Esc)">Done</button>
+  </div>
+
+  <footer class="pm-status">
+    <span id="status"></span>
+    <span class="pm-uses" id="lib-uses">{% if uses %}Used in {% for u in uses %}<a href="{{ u.url }}">{{ (u.class ~ ': ') if u.class }}{{ u.title }}</a>{{ ', ' if not loop.last }}{% endfor %}{% else %}Not used yet: link it from <a href="{{ url_for('library.library_page') }}">the library</a>{% endif %}</span>
+    <span class="pm-spacer"></span>
+    <span id="notice"></span>
+  </footer>
+
+  <div class="pm-present" id="present" hidden>
+    <div class="pm-present-stage" id="present-stage"></div>
+    <div class="pm-present-bar">
+      <button id="pr-prev" title="Previous (←)">◀</button>
+      <span id="pr-pos"></span>
+      <button id="pr-next" title="Next (→)">▶</button>
+      <button id="pr-exit" title="Stop presenting (Esc)">Done</button>
+    </div>
+  </div>
+
+  <div class="pm-modal" id="modal" hidden><div class="pm-dialog" id="dialog"></div></div>
+  <!-- Off screen: where export pages are drawn before they're copied out. -->
+  <div id="workbench" aria-hidden="true"></div>
+
+  <script src="{{ url_for('static', filename='presmaker/vendor/marked.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/purify.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/codemirror.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/python.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/xml.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/javascript.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/css.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/htmlmixed.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/markdown.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/vendor/continuelist.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='notes.js') }}"></script>
+  <script src="{{ url_for('static', filename='checks_in_notes.js') }}"></script>
+  <script src="{{ url_for('static', filename='autograde.js') }}"></script>
+  <script src="{{ url_for('static', filename='snippets.js') }}"></script>
+  <script>
+    /* Which tutorial this is (bridge.js's server branch), and this IDE's own
+       notes and tests under the names PresMaker uses. */
+    window.PM_SERVER = {{ pm_server|tojson }};
+    window.PyIDENotes = window.PyIDENotes || window[{{ ns|tojson }} + "Notes"];
+    window.PyIDETests = window.PyIDETests || window[{{ ns|tojson }} + "Tests"];
+  </script>
+  <script src="{{ url_for('static', filename='presmaker/compose.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/pages.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/bridge.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/themes.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/export.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/teacher.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/dialogs.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/deckfile.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/deckedit.js') }}"></script>
+  <script src="{{ url_for('static', filename='presmaker/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='pictures.js') }}"></script>
+  <script>
+    /* Pictures (pictures.js, this IDE's): Add picture, paste or drop, put in
+       at the cursor as ![name](/img/...). And the title, renamed on its own. */
+    (function () {
+      var P = window[{{ ns|tojson }} + "Pictures"], cm = window.PM && window.PM.editor();
+      if (P && cm) {
+        P.attach(cm);
+        document.getElementById("lib-pic").addEventListener("click", function () {
+          P.choose(function (files) { P.insertInto(cm.getDoc(), files); cm.focus(); });
+        });
+      }
+      var box = document.getElementById("lib-title"), was = box.value;
+      box.addEventListener("change", function () {
+        var title = box.value.trim();
+        if (!title || title === was) return;
+        fetch(window.PM_SERVER.saveUrl, { method: "POST", credentials: "same-origin",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ title: title }) })
+          .then(function (r) { if (r.ok) { was = title; window.PM_SERVER.title = title; } });
+      });
+    })();
+  </script>
+</body>
+</html>

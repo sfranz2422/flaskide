@@ -223,7 +223,53 @@ def import_existing(db, user):
         for a in items:
             a.tutorial_id = same.id
     db.commit()
+    # Teacher decks from before the library (an editor's own old table, by
+    # its old_decks hook): each becomes a library deck, linked to its
+    # assignment; the same file on several assignments, one deck.
+    if H.get("old_decks"):
+        decks = {}
+        for a, name, html in H["old_decks"](db, user):
+            decks.setdefault(html, []).append((a, name))
+        for html, uses in decks.items():
+            same = (db.query(accounts.LibraryItem)
+                    .filter_by(teacher_id=user.id, app=H["app_name"], kind="deck", archived=0, body=html).first())
+            if same is None:
+                name = re.sub(r"\.html?$", "", uses[0][1] or "", flags=re.I).strip() or uses[0][0].title
+                same = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=user.id, kind="deck",
+                                            title=name[:200], body=html, size=len(html.encode("utf-8")))
+                db.add(same)
+                db.flush()
+                made += 1
+            for a, _ in uses:
+                a.deck_id = same.id
+        db.commit()
     return made
+
+
+def deck_of(db, a):
+    """An assignment's library deck (a LibraryItem), or None."""
+    if not a.deck_id:
+        return None
+    d = db.query(accounts.LibraryItem).get(a.deck_id)
+    return d if d is not None and not d.archived and d.kind == "deck" else None
+
+
+def set_deck(db, a, name, html):
+    """The assignment page's Upload / Replace teacher lesson: into the
+    library — its deck replaced, or a new one made and linked."""
+    d = deck_of(db, a)
+    if d is None:
+        title = re.sub(r"\.html?$", "", name or "", flags=re.I).strip() or a.title
+        d = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=a.teacher_id, kind="deck",
+                                 title=title[:200], body=html, size=len(html.encode("utf-8")))
+        db.add(d)
+        db.flush()
+        a.deck_id = d.id
+        db.commit()
+    else:
+        # Named as the file just uploaded (Download gives it that name back).
+        save(db, d, html, re.sub(r"\.html?$", "", name or "", flags=re.I).strip()[:200] or None)
+    return d
 
 
 # ---------------------------------------------------------------- what the page is sent
@@ -282,18 +328,27 @@ def library_page():
 
 @bp.get("/teacher/tutorials/<slug>/edit")
 def library_edit_page(slug):
+    """PresMaker, as the library's editor (templates/presmaker.html, made by
+    tools/sync_presmaker.py): a tutorial in its markdown editor, a teacher
+    deck in its slides editor. Saving comes back here (save_item)."""
     db = H["session"]()
     try:
         user, bounce = _teacher(db)
         if bounce:
             return Response("Only a teacher can edit tutorials.", 403)
         item = _own_item(db, user, slug)
-        if item is None or item.kind != "tutorial":
+        if item is None:
             return Response("No such tutorial.", 404)
         uses = linked(db, item)
         classes = _class_names(db, [a.id for a in uses])
-        return render_template("library_edit.html", item=item, uses=[_assignment_out(a, classes) for a in uses],
-                               **H["page"](db, user))
+        page = H["page"](db, user)
+        server = {"slug": item.slug, "title": item.title, "kind": item.kind, "body": item.body,
+                  "saveUrl": "/api/library/" + item.slug, "libraryUrl": "/teacher/tutorials", "brand": page["brand"],
+                  # PyIDE's tests have a form; the others' are typed as lines,
+                  # read by their own autograde.js as they're typed.
+                  "tests": page.get("pm_tests", "form"), "testExamples": page.get("pm_test_examples", [])}
+        return render_template("presmaker.html", item=item, uses=[_assignment_out(a, classes) for a in uses],
+                               pm_server=server, **page)
     finally:
         db.close()
 

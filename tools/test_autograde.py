@@ -471,8 +471,10 @@ got, bad = autograde.parse(bare)
 check("the help page's example is all tests", len(got) == 9 and not bad, (len(got), bad))
 
 edit = teacher.get("/teacher/%s/edit" % SLUG).get_data(as_text=True)
-check("the teacher's notes pane links to how to write tests",
-      'help/questions#tests"' in edit and ">Tests</a>" in edit)
+# Writing tests is the tutorial editor's now (the library's, PresMaker, + Tests):
+# the editor's link to the format came out (the teacher's call).
+check("writing the notes in the editor, the format link is gone: the tutorial editor has + Tests",
+      'help/questions#tests"' not in edit)
 
 editor = amy.get("/p/" + DRAFTS[AMY]).get_data(as_text=True)
 # Checking is on the notes' tests cards only; the button at the top came out.

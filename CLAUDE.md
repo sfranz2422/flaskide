@@ -217,7 +217,14 @@ their own tutorial at once (`library.adopt`), or every untouched lesson
 starter would merge into one. Copies (`copy_assignment`, `duplicate_class`)
 keep `tutorial_id` and `deck_id`. Bulk upload replaces a tutorial of the same
 title (links kept, so the change reaches every assignment), base64 in JSON
-for Render's firewall. `test_library.py` is the same in all three.
+for Render's firewall. `test_library.py` is the same in all three. The library's editor is PresMaker,
+made web-based (`templates/presmaker.html` and `static/presmaker/`, both MADE
+by `tools/sync_presmaker.py` from `~/presMaker/web` — change PresMaker, then
+sync all three; never edit them here). It draws with this editor's own
+notes.js, style.css and autograde.js. Teacher decks are library items too
+(`Assignment.deck_id`): the old `teacher_decks` rows are taken in by the
+import (`old_decks` hook) and only read after that; Upload / Replace teacher
+lesson writes to the library (`library.set_deck`).
 
 **The teacher's own slides** (`TeacherDeck` in `app.py`, table
 `teacher_decks`; `teacher_deck`, `upload_teacher_deck`). One HTML file per

@@ -81,9 +81,9 @@ print("\nThe library's tutorial page")
 lesson = teacher.post("/api/lesson", json={"title": "Pictures"}).get_json()["slug"]
 tut = teacher.get("/api/library").get_json()["items"][0]["slug"]
 page = teacher.get("/teacher/tutorials/%s/edit" % tut).get_data(as_text=True)
-check("has Add picture beside the tutorial", 'id="notes-pic"' in page)
-check("  and loads pictures.js before assignment_notes.js, which uses it",
-      PICS in page and page.index(PICS) < page.index('src="/static/assignment_notes.js"'))
+check("has Add picture beside the tutorial", 'id="lib-pic"' in page)
+check("  and loads pictures.js after PresMaker, whose editor it attaches to",
+      PICS in page and page.index(PICS) > page.index('src="/static/presmaker/app.js"'))
 page = teacher.get("/teacher/%s/lesson" % lesson).get_data(as_text=True)
 check("the lesson page has none: its notes are read only there", 'id="lesson-pic"' not in page)
 js = open(os.path.join(PYIDE, "static", "lesson_teacher.js")).read()

@@ -70,7 +70,9 @@ def client(uid):
 def decks():
     db = P.SessionLocal()
     try:
-        return db.query(P.TeacherDeck).count()
+        # In the tutorial library now (library.py); teacher_decks is only
+        # read, for decks from before it.
+        return db.query(accounts.LibraryItem).filter_by(kind="deck").count()
     finally:
         db.close()
 
@@ -180,6 +182,35 @@ check("a body that isn't all base64 is refused, not read past",
       r.status_code == 400 and "whole" in r.get_json()["error"], r.get_json())
 check("HTML starting with a comment is taken",
       send(teacher, "hw1", "<!-- made by me -->\n" + DECK).status_code == 200)
+
+print("decks from before the library")
+# Uploaded to teacher_decks before the tutorial library (library.py) kept
+# them: each is taken into the library the first time the assignment's page
+# or the library opens, linked to its assignment; the same file on two
+# assignments (a period's copy) is one deck.
+OLD_DECK = "<!doctype html><html><body><h1>Function review</h1></body></html>"
+for slug in ("old1", "old2", "old3"):
+    aid = add(accounts.Assignment(slug=slug, app=P.APP_NAME, teacher_id=TEACHER, title=slug.upper(),
+                                  code="print(1)\n", files="{}"))
+    add(P.TeacherDeck(assignment_id=aid, name="Function Review.html",
+                      html=OLD_DECK if slug != "old3" else OLD_DECK.replace("review", "practice"),
+                      size=len(OLD_DECK)))
+page = teacher.get("/teacher/old1").get_data(as_text=True)
+check("an old deck shows on its assignment's page",
+      ">Teacher lesson" in page and "hidden>Teacher lesson" not in page)
+check("  and opens as it was", teacher.get("/teacher/old1/slides").get_data(as_text=True) == OLD_DECK)
+lib = teacher.get("/api/library").get_json()["items"]
+mine = [i for i in lib if i["kind"] == "deck" and i["title"] == "Function Review"]
+check("it's in the library, named as it was uploaded", len(mine) == 2, [(i["title"], len(i["uses"])) for i in lib if i["kind"] == "deck"])
+same = next((i for i in mine if len(i["uses"]) == 2), None)
+check("  the same file on two assignments is one deck, linked to both",
+      same is not None and sorted(u["title"] for u in same["uses"]) == ["OLD1", "OLD2"])
+r = teacher.get("/teacher/old2/slides?download=1")
+check("  and downloads under its old name", 'filename="Function Review.html"' in r.headers.get("Content-Disposition", "")
+      or "filename=Function Review.html" in r.headers.get("Content-Disposition", ""), r.headers.get("Content-Disposition"))
+before = decks()
+teacher.get("/api/library")
+check("  taken once", decks() == before)
 
 print()
 print("ok" if all(results) else "FAIL", "%d/%d" % (sum(results), len(results)))

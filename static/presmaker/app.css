@@ -1,0 +1,333 @@
+/* PresMaker's own window. Colours are style.css's variables, which follow
+   the Mac's light or dark setting; slides keep their own (pages.css). */
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr 28px;
+  height: 100vh;
+  font-size: 14px;
+}
+.pm-spacer { flex: 1 1 auto; }
+
+/* ------------------------------------------------------------ the bar */
+.pm-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px;
+  padding: 8px 14px; background: var(--bg-head); border-bottom: 1px solid var(--line);
+}
+.pm-group { display: flex; align-items: center; gap: 6px; }
+.pm-label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.pm-select { height: 30px; padding: 0 8px; color: var(--text); }
+.pm-bar .btn { height: 30px; }
+.pm-menu { position: relative; }
+.pm-menu-list {
+  position: absolute; top: 34px; left: 0; z-index: 50; min-width: 210px;
+  display: flex; flex-direction: column; padding: 4px;
+  background: var(--bg-panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px var(--shadow);
+}
+.pm-menu-list[hidden] { display: none; }
+.pm-menu-list button {
+  text-align: left; background: none; border: 0; color: var(--text); padding: 8px 10px;
+  border-radius: 6px; font: inherit; cursor: pointer;
+}
+.pm-menu-list button:hover { background: var(--hover-bg); }
+
+/* ------------------------------------------------------------- layout */
+.pm-main {
+  display: grid; grid-template-columns: var(--pm-left, 44%) 6px 1fr;
+  min-height: 0; min-width: 0;
+}
+.pm-editor { min-width: 0; min-height: 0; display: flex; }
+#editor { flex: 1 1 auto; min-width: 0; }
+.pm-split { cursor: col-resize; background: var(--line); }
+.pm-split:hover { background: var(--accent); }
+
+/* ------------------------------------------------------------ editor */
+.CodeMirror {
+  height: 100%; font-family: var(--mono); font-size: 14px; line-height: 1.55;
+  background: var(--bg); color: var(--text);
+}
+.CodeMirror-gutters { background: var(--bg-panel); border-right: 1px solid var(--line); }
+.CodeMirror-linenumber { color: var(--muted); }
+.CodeMirror-cursor { border-left-color: var(--text); }
+.CodeMirror-selected, .CodeMirror-focused .CodeMirror-selected { background: rgba(120, 140, 255, .25); }
+.CodeMirror-line::selection, .CodeMirror-line > span::selection { background: rgba(120, 140, 255, .25); }
+/* .cm-s-default: CodeMirror's own colours are set that way, and win otherwise. */
+.cm-s-default .cm-header { color: var(--accent); font-weight: 700; }
+.cm-s-default .cm-header-1 { font-size: 1.15em; }
+.cm-s-default .cm-strong { font-weight: 700; }
+.cm-s-default .cm-em { font-style: italic; }
+.cm-s-default .cm-link, .cm-s-default .cm-url { color: var(--accent); }
+.cm-s-default .cm-comment { color: var(--green); }          /* markdown mode: inline code and fences */
+.cm-s-default .cm-quote { color: var(--muted); font-style: italic; }
+.cm-s-default .cm-variable-2 { color: var(--text); }        /* list items */
+.cm-s-default .cm-hr { color: var(--accent); font-weight: 700; }
+.cm-s-default .cm-keyword { color: var(--purple); }
+.cm-s-default .cm-string { color: var(--amber); }
+.cm-s-default .cm-number { color: var(--amber); }
+.cm-s-default .cm-def, .cm-s-default .cm-builtin { color: var(--accent); }
+
+/* A --- that starts a slide, labelled; question and tests blocks, tinted. */
+.pm-cut { background: rgba(127, 127, 127, .10); }
+.pm-cut::after {
+  content: "new slide"; position: absolute; right: 10px; top: 0;
+  font: 11px var(--sans); color: var(--muted); letter-spacing: .04em; text-transform: uppercase;
+}
+.pm-block-quiz { background: rgba(160, 120, 255, .09); }
+.pm-block-tests { background: rgba(60, 200, 140, .09); }
+.pm-block-first { border-top: 1px solid rgba(127, 127, 127, .25); }
+.pm-block-last { border-bottom: 1px solid rgba(127, 127, 127, .25); }
+
+/* ----------------------------------------------------------- preview */
+.pm-preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-panel); }
+.pm-preview-head {
+  display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 12px;
+  border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted);
+}
+.pm-preview-title { font-weight: 600; color: var(--text); }
+.pm-slide-nav { display: flex; align-items: center; gap: 6px; }
+.pm-slide-nav[hidden], .pm-follow[hidden] { display: none; }
+.pm-slide-nav .btn { height: 26px; min-width: 34px; padding: 0 8px; }
+.pm-follow { margin-left: auto; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.pm-stage {
+  flex: 1 1 auto; min-height: 0; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.pm-stage.pm-doc {
+  overflow-y: auto; flex-direction: column; justify-content: flex-start; gap: 22px; padding: 20px 0 40px;
+}
+.pm-frame { position: relative; flex: none; box-shadow: 0 4px 22px var(--shadow); border-radius: 4px; overflow: hidden; }
+.pm-frame > .pm-page { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.pm-sheet-frame::after {
+  content: attr(data-page); position: absolute; right: 8px; bottom: 6px;
+  font-size: 11px; color: rgba(0, 0, 0, .35); pointer-events: none;
+}
+.pm-stage .quiz, .pm-stage .tests-card { cursor: default; }
+.pm-stage .quiz:hover, .pm-stage .tests-card:hover { outline: 2px dashed rgba(127, 127, 127, .35); outline-offset: 3px; }
+.pm-slide.pm-overfull { box-shadow: inset 0 -6px 0 #e0a020; }
+
+/* The strip of every slide. */
+.pm-strip {
+  flex: 0 0 auto; display: flex; gap: 10px; overflow-x: auto; padding: 10px 12px 12px;
+  border-top: 1px solid var(--line); background: var(--bg-head);
+}
+.pm-strip[hidden] { display: none; }
+.pm-thumb {
+  position: relative; flex: none; text-align: left; padding: 0; border: 2px solid transparent; border-radius: 6px;
+  background: none; cursor: pointer;
+}
+.pm-thumb .pm-frame { box-shadow: 0 1px 4px var(--shadow); pointer-events: none; }
+.pm-thumb.pm-on { border-color: var(--accent); }
+.pm-thumb::before {
+  content: attr(data-n); position: absolute; left: 4px; top: 3px; z-index: 2;
+  font: 600 10px var(--sans); color: #fff; background: rgba(0, 0, 0, .55); border-radius: 4px; padding: 1px 5px;
+}
+.pm-thumb:has(.pm-overfull)::after {
+  content: "!"; position: absolute; right: 4px; top: 3px; z-index: 2;
+  font: 700 10px var(--sans); color: #000; background: #e0a020; border-radius: 4px; padding: 1px 5px;
+}
+
+/* --------------------------------------------------------- status bar */
+.pm-status {
+  display: flex; align-items: center; gap: 12px; padding: 0 12px; font-size: 12px; color: var(--muted);
+  border-top: 1px solid var(--line); background: var(--bg-head); white-space: nowrap; overflow: hidden;
+}
+#notice { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#notice.pm-warn { color: var(--amber); }
+.pm-flash { color: var(--text); }
+.pm-flash .linkbtn { margin-left: 10px; background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* ----------------------------------------------------------- present */
+.pm-present { position: fixed; inset: 0; z-index: 1000; background: #000; display: flex; flex-direction: column; }
+.pm-present[hidden] { display: none; }
+.pm-present-stage { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.pm-present-stage .pm-frame { box-shadow: none; border-radius: 0; }
+.pm-present.pm-doc .pm-present-stage { overflow-y: auto; align-items: flex-start; }
+.pm-present-doc.notes-body { width: 100%; min-height: 100%; font-size: clamp(20px, 1.8vw, 32px); padding: 4vh 8vw; background: var(--theme-bg, var(--bg)); }
+.pm-present-doc.prose > * { max-width: 46em; margin-left: auto; margin-right: auto; }
+.pm-present-bar {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px;
+  background: rgba(30, 30, 30, .8); color: #ddd; font: 13px var(--sans);
+  opacity: 0; transition: opacity .25s;
+}
+.pm-present:hover .pm-present-bar { opacity: 1; }
+.pm-present-bar button {
+  background: #333; color: #eee; border: 1px solid #555; border-radius: 6px; height: 28px; min-width: 40px; cursor: pointer;
+}
+
+/* -------------------------------------------------------- the workbench */
+#workbench { position: fixed; left: -30000px; top: 0; visibility: hidden; pointer-events: none; }
+
+/* ------------------------------------------------------------ dialogs */
+.pm-modal {
+  position: fixed; inset: 0; z-index: 900; background: rgba(0, 0, 0, .45);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.pm-modal[hidden] { display: none; }
+.pm-dialog {
+  width: min(560px, 100%); max-height: 100%; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
+}
+.pm-dialog.pm-wide { width: min(1240px, 100%); height: min(860px, 100%); }
+.pm-dialog-title { margin: 0; padding: 16px 20px 10px; font-size: 18px; }
+.pm-dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 20px 12px; }
+.pm-dialog-foot { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.pm-danger { color: var(--red) !important; }
+
+.pm-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; min-height: 100%; }
+.pm-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pm-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pm-field { display: flex; flex-direction: column; gap: 5px; }
+.pm-field-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.pm-hint { font-size: 12.5px; color: var(--muted); margin: 0; line-height: 1.45; }
+.pm-about { min-height: 2.9em; }
+.pm-dialog .field { padding: 7px 9px; font: inherit; color: var(--text); }
+.pm-area { resize: vertical; min-height: 60px; line-height: 1.45; }
+.pm-mono { font-family: var(--mono) !important; font-size: 13px !important; }
+.pm-points { width: 90px; }
+.pm-small { height: 28px; font-size: 12.5px; align-self: flex-start; }
+.pm-seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.pm-seg-btn {
+  padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg-panel);
+  color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+}
+.pm-seg-btn:hover { border-color: var(--hover-line); }
+.pm-seg-btn.pm-on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.pm-rows { display: flex; flex-direction: column; gap: 6px; }
+.pm-row { display: flex; align-items: center; gap: 6px; }
+.pm-row .field { flex: 1 1 auto; min-width: 0; }
+.pm-row .pm-points, .pm-row .pm-test-kind { flex: 0 0 auto; }
+.pm-row .pm-test-kind { width: 130px; }
+.pm-row .pm-w-in { flex: 1 1 40%; }
+.pm-row .pm-w-out { flex: 1 1 45%; }
+.pm-tick { width: 18px; height: 18px; flex: none; accent-color: var(--green); }
+.pm-x { flex: none; width: 28px; height: 28px; border: 0; background: none; color: var(--muted); cursor: pointer; border-radius: 6px; }
+.pm-x:hover:not(:disabled) { background: var(--hover-bg); color: var(--red); }
+.pm-x:disabled { opacity: .3; cursor: default; }
+.pm-add { align-self: flex-start; height: 28px; font-size: 12.5px; }
+.pm-arrow { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.pm-inline { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.pm-inline.pm-off { opacity: .45; cursor: default; }
+.pm-problems { white-space: pre-line; color: var(--amber); font-size: 12.5px; }
+.pm-problems[hidden] { display: none; }
+.pm-guide { padding-left: 18px; }
+.pm-guide li { margin: 2px 0; }
+.pm-mini.notes-body {
+  border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow: auto;
+  flex: 1 1 auto; min-height: 200px; max-width: none; background: var(--theme-bg, var(--bg));
+}
+.pm-source {
+  margin: 6px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--bg-panel);
+  border: 1px solid var(--line); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow: auto; max-height: 260px;
+}
+.pm-details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+/* The theme maker: the list, the form, the sample slide. */
+.pm-themes { display: grid; grid-template-columns: 200px minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; min-height: 100%; }
+.pm-theme-list { display: flex; flex-direction: column; gap: 3px; overflow: auto; }
+.pm-theme-list .pm-field-label { margin: 8px 0 4px; }
+.pm-theme-item {
+  display: flex; align-items: center; gap: 8px; text-align: left; font: inherit; font-size: 13px;
+  padding: 5px 8px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--text); cursor: pointer;
+}
+.pm-theme-item:hover { background: var(--hover-bg); }
+.pm-theme-item.pm-on { border-color: var(--accent); }
+.pm-theme-new { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.pm-swatch.notes-body {
+  display: inline-flex; gap: 3px; align-items: center; justify-content: center; flex: none;
+  width: 34px; height: 22px; padding: 0; border-radius: 5px; overflow: hidden; border: 1px solid var(--line);
+  background: var(--theme-bg, var(--bg));
+}
+.pm-swatch i, .pm-swatch b { display: block; width: 7px; height: 7px; border-radius: 50%; }
+.pm-swatch i { background: var(--heading); }
+.pm-swatch b { background: var(--accent); }
+.pm-theme-form { display: flex; flex-direction: column; gap: 12px; overflow: auto; padding-right: 4px; }
+.pm-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pm-colours { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.pm-colours-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pm-colour { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.pm-colour input[type=color] { width: 38px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+.pm-theme-note.pm-bad { color: var(--red); }
+.pm-theme-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+.pm-theme-empty p { margin: 0 0 10px; }
+.pm-theme-stage { display: flex; align-items: flex-start; justify-content: flex-start; }
+.pm-theme-stage { flex-direction: column; gap: 8px; min-width: 0; }
+.pm-theme-frame { flex: none; }
+.pm-theme-page.pm-page { --pm-w: 960px; --pm-h: 540px; }
+.pm-details textarea { width: 100%; margin-top: 6px; }
+
+/* Export. */
+.pm-export { display: flex; flex-direction: column; gap: 12px; }
+.pm-radios { display: flex; flex-direction: column; gap: 6px; }
+.pm-radio { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }
+.pm-radio.pm-on { border-color: var(--accent); background: var(--bg-panel); }
+.pm-radio input { margin-top: 3px; }
+.pm-checks { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.pm-presets { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pm-presets .pm-small { align-self: auto; }
+
+.pm-help { max-width: none; }
+.pm-help h3 { margin-top: 1.2em; }
+
+/* the teacher-slides export: which examples get a step-through trace */
+.pm-trace-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+.pm-trace-list code { font-size: 12px; }
+
+/* ---------------------------------------------- teacher slides (.html) */
+body.is-deck .md-only, body:not(.is-deck) .deck-only { display: none !important; }
+.pm-deck { display: grid; grid-template-columns: 250px 1fr; min-height: 0; min-width: 0; }
+.pm-dl { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg-panel); }
+.pm-dl-list { flex: 1 1 auto; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+.pm-dl-item {
+  display: grid; grid-template-columns: 26px 1fr; grid-template-rows: auto auto; gap: 0 6px; text-align: left;
+  padding: 6px 8px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--text);
+  font: inherit; cursor: pointer; position: relative;
+}
+.pm-dl-item:hover { background: var(--hover-bg); }
+.pm-dl-item.pm-on { border-color: var(--accent); background: var(--hover-bg); }
+.pm-dl-n { grid-row: span 2; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; padding-top: 1px; }
+.pm-dl-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-dl-b { font-size: 11.5px; color: var(--muted); min-height: 1px; }
+.pm-dl-item.pm-drop-above { box-shadow: 0 -3px 0 var(--accent); }
+.pm-dl-item.pm-drop-below { box-shadow: 0 3px 0 var(--accent); }
+.pm-dl-tools { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; border-top: 1px solid var(--line); }
+.pm-dl-tools .pm-small { align-self: auto; }
+
+.pm-dw { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pm-dw-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+.pm-dw-head .pm-small { align-self: auto; }
+.pm-dw-stage { flex: 1 1 auto; min-height: 120px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--bg); }
+.pm-dw-box { position: relative; box-shadow: 0 6px 24px var(--shadow); border-radius: 4px; overflow: hidden; }
+#deck-frame { border: 0; transform-origin: 0 0; position: absolute; left: 0; top: 0; background: #000; }
+.pm-dw-traces { padding: 6px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.pm-dw-traces[hidden] { display: none; }
+.pm-trace-row { display: flex; align-items: center; gap: 8px; }
+.pm-trace-row .pm-small { align-self: auto; }
+.pm-trace-name { font-weight: 600; }
+.pm-dw-html { display: flex; flex-direction: column; height: 34%; min-height: 0; border-top: 1px solid var(--line); }
+.pm-dw-html-head { display: flex; align-items: center; gap: 8px; padding: 5px 12px; }
+.pm-dw-html-head .pm-small { align-self: auto; }
+.pm-dw-html-ed { flex: 1 1 auto; min-height: 0; display: flex; }
+.pm-dw-html-ed .CodeMirror { flex: 1 1 auto; font-size: 13px; }
+body.pm-deck-html-off .pm-dw-html { height: auto; }
+body.pm-deck-html-off .pm-dw-html-ed, body.pm-deck-html-off .pm-dw-html-head .pm-hint,
+body.pm-deck-html-off #dh-apply { display: none; }
+.cm-s-default .cm-tag { color: var(--accent); }
+.cm-s-default .cm-attribute { color: var(--purple); }
+
+.pm-steps { display: flex; flex-direction: column; gap: 8px; height: 100%; }
+.pm-steps-area { flex: 1 1 auto; min-height: 320px; font-family: var(--mono); font-size: 12.5px; white-space: pre; }
+
+.pm-deck-present { position: fixed; inset: 0; z-index: 100; background: #000; }
+.pm-deck-present[hidden] { display: none; }
+.pm-deck-present iframe { border: 0; width: 100%; height: 100%; }
+.pm-deck-present-done {
+  position: absolute; top: 10px; right: 12px; opacity: .25; border: 0; border-radius: 6px;
+  padding: 5px 10px; background: #333; color: #fff; font: 13px var(--sans); cursor: pointer;
+}
+.pm-deck-present-done:hover { opacity: 1; }
+
+/* Tests typed as lines, in an IDE's own words (dialogs.js testsAsLines). */
+.pm-test-lines { width: 100%; box-sizing: border-box; font-size: 13px; line-height: 1.5; resize: vertical; }
