@@ -338,6 +338,14 @@ SLUG = teacher.post("/api/class/%d/new" % CLASS, json={"title": "Greeting"}).get
 STARTER = {"app.py": "from flask import Flask\n", "notes.md": NOTES}
 teacher.post("/api/assignment/%s" % SLUG, json={"title": "Greeting", "files": STARTER})
 set_notes(teacher, SLUG, NOTES)   # the notes are the library's (library.py)
+_page = teacher.get("/teacher/%s" % SLUG).get_data(as_text=True)
+check("an empty Out of is filled with what the tests are worth, not yet saved",
+      re.search(r'id="out-of"[^>]*value="9"', _page) is not None and "Not saved yet" in _page)
+teacher.post("/api/assignment/%s/out-of" % SLUG, json={"out_of": 5})
+_page = teacher.get("/teacher/%s" % SLUG).get_data(as_text=True)
+check("  a saved Out of below that is kept, and said to be too low",
+      re.search(r'id="out-of"[^>]*value="5"', _page) is not None and "That's more than Out of" in _page
+      and "Not saved yet" not in _page)
 teacher.post("/api/assignment/%s/out-of" % SLUG, json={"out_of": 9})
 
 
@@ -446,7 +454,7 @@ page = teacher.get("/teacher/" + SLUG).get_data(as_text=True)
 check("the results page has Check all, and each student's tests",
       "tests-check-all" in page and "Tests 9 / 9" in page and "✗ GET / shows Welcome" in page)
 check("  says how many tests the notes have, and loads Flask's runtime for them",
-      "8 tests" in page and "9 points" in page and "flask.js" in page)
+      "8 tests: 9 pts" in page and "flask.js" in page)
 mine = amy.get("/my").get_data(as_text=True)
 check("My work shows the grade with the tests in it",
       "Score: <strong>9 / 9</strong>" in mine and "9 from the questions and tests" in mine)

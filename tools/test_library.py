@@ -159,6 +159,9 @@ html = teacher.get("/teacher/p2").get_data(as_text=True)
 check("an assignment's page has its Tutorial box, and no notes editor",
       'id="tutorial-edit"' in html and "/teacher/tutorials/%s/edit" % loops["slug"] in html and 'id="notes-src"' not in html)
 check("  saying it's in one other assignment", "also in 1 other assignment" in html)
+check("  and what students see at the very bottom, after the turned-in work",
+      'id="notes-preview"' in html and html.index('id="notes-preview"') > html.index("Turned in <span")
+      and 'id="notes-preview"' not in html.split('id="notes-seen"')[0])
 check("  and still the button that opens the whole project", 'id="edit-project"' in html)
 check("the dashboard links to the library", "/teacher/tutorials" in teacher.get("/teacher").get_data(as_text=True))
 

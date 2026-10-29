@@ -13,6 +13,7 @@ never imported, never executed and never reaches this machine.
 
 import base64
 import hashlib
+import math
 import io
 import json
 import os
@@ -3173,6 +3174,12 @@ def teacher_assignment(slug):
         ctx.update(waiting=_ungraded(db, [item.id]).get(item.id, 0))
         ctx.update(tests=tests, test_errors=test_errors,
                    tests_points=_score_text(sum(t["points"] for t in tests)))
+        # What the questions and tests are worth together: Out of is filled
+        # with it while it is empty, because both are added to the score the
+        # teacher gives, so Out of has to count them — and adding them up by
+        # hand was a step teachers missed. Rounded up: Out of is whole.
+        ctx.update(points_auto=math.ceil(sum(q["points"] for q in possible)
+                                         + sum(t["points"] for t in tests)))
         ctx.update(assignment=item, handed_in=handed_in, not_yet=not_yet,
                    share_url=url_for("open_assignment", slug=item.slug,
                                      _external=True, _scheme=_scheme()))

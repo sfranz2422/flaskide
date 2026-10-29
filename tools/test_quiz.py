@@ -401,7 +401,7 @@ check("the dashboard shows the questions' points beside the score",
       "Questions 1/3" in page and '<span class="fb-total">6</span>' in page,
       re.findall(r"Questions [^<]*", page))
 check("  and how many questions the notes have",
-      "<strong>2 questions</strong>" in page and "<strong>3 points</strong>" in page)
+      "2 questions: 3 pts" in page)
 turned = page.split("Turned in <span")[1].split("</section>")[0]
 check("  a student who only answered live is turned in by answering, with their points",
       "B Student" in turned and re.search(r"B Student.*?Questions 1/3", turned, re.S),

@@ -540,11 +540,11 @@ check("  while Period 4, not asked, got the assignment link as before",
       (room[P4]["work"] or {}).get("description", ""))
 check("the page has the topic dropdown, hidden until a class is chosen",
       'id="gc-topic" class="field" hidden' in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
-check("the page offers the choice, the assignment ticked",
-      'name="gc-link" value="assignment" checked' in
-      teacher.get("/teacher/%s" % hw).get_data(as_text=True))
-check("the page offers the draft box, ticked",
-      'id="gc-draft" checked' in teacher.get("/teacher/%s" % hw).get_data(as_text=True))
+_page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
+check("the page gives no choice of link: it is always the assignment's",
+      'name="gc-link"' not in _page and "linked to the live lesson" not in _page)
+check("the draft box is there, and not ticked: it posts straight away unless asked",
+      'id="gc-draft">' in _page and 'id="gc-draft" checked' not in _page)
 page = teacher.get("/teacher/%s" % hw).get_data(as_text=True)
 check("the page names both classes, and offers Sync",
       "<strong>Programming 1 — Period 4</strong>" in page

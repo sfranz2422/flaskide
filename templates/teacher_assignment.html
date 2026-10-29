@@ -86,12 +86,6 @@
                 title="Keep the notes as they are now, as this assignment's own: changes to the tutorial won't reach it">Unlink</button>
         <span id="tutorial-state" class="savestate" aria-live="polite"></span>
       </div>
-      <div class="pane lesson-preview-pane tutorial-preview">
-        <div class="pane-head"><span>What students see</span></div>
-        <div class="subpane notes-preview-scroll">
-          <div id="notes-preview" class="notes-body prose lesson-body"></div>
-        </div>
-      </div>
     {% else %}
       <p class="muted" id="tutorial-which">{% if notes.strip() %}Its notes are its own (not linked to a tutorial).{% else %}No tutorial yet: students get no notes.{% endif %}</p>
       <div class="tutorial-actions">
@@ -171,15 +165,27 @@
       only takes grades on work with points. #}
   <section class="handout grading">
     <h2>Grading</h2>
+    {#  Empty Out of is filled with what the questions and tests are worth
+        (points_auto), since both are added to the score given here — but
+        only filled, not saved: Save is still what makes it graded. #}
+    {% set filled = not assignment.out_of and points_auto %}
     <div class="grade-line">
       <label for="out-of">Out of</label>
       <input id="out-of" class="field out-of" type="number" min="1" max="1000"
-             value="{{ assignment.out_of or '' }}" placeholder="—">
+             value="{{ assignment.out_of or points_auto or '' }}" placeholder="—"
+             title="Leave it empty for an assignment you don't grade">
       <span>points</span>
-      <button id="out-of-save" class="btn">Save</button>
-      <span id="out-of-state" class="dim small"></span>
+      <button id="out-of-save" class="btn{{ ' btn-primary' if filled }}">Save</button>
+      <span id="out-of-state" class="dim small">{% if filled %}Not saved yet{% endif %}</span>
     </div>
-    <p class="dim small">Leave it empty for an assignment you don't grade.</p>
+    {% if quiz_count or tests %}
+      <p class="small dim" id="points-from">
+        {%- if quiz_count %}{{ quiz_count }} question{{ "" if quiz_count == 1 else "s" }}: {{ quiz_points }} pt{{ "" if quiz_points == "1" else "s" }}{% endif -%}
+        {%- if quiz_count and tests %} · {% endif -%}
+        {%- if tests %}{{ tests|length }} test{{ "" if tests|length == 1 else "s" }}: {{ tests_points }} pt{{ "" if tests_points == "1" else "s" }}{% endif -%}
+        , added to the score you give.
+        {%- if assignment.out_of and assignment.out_of < points_auto %} <strong>That's more than Out of.</strong>{% endif %}</p>
+    {% endif %}
     {#  A quest: XP for full marks (_full_marks_xp), paid once to each
         student who reaches Out of — or, ungraded, gets every question's
         points. Setting it pays those already there. Students see it marked
@@ -187,29 +193,21 @@
     <div class="grade-line">
       <label for="xp-bonus">⚔️ Quest reward</label>
       <input id="xp-bonus" class="field out-of" type="number" min="0" max="1000"
-             value="{{ assignment.xp_bonus or '' }}" placeholder="0">
-      <span>XP for full marks. Any amount makes this a quest; 0 makes it an ordinary assignment.</span>
+             value="{{ assignment.xp_bonus or '' }}" placeholder="0"
+             title="Any amount makes this a quest; 0 makes it an ordinary assignment">
+      <span>XP for full marks</span>
       <button id="xp-bonus-save" class="btn">Save</button>
       <span id="xp-bonus-state" class="dim small" role="status"></span>
     </div>
-    {% if quiz_count %}
-      <p class="small">The notes have <strong>{{ quiz_count }} question{{ "" if quiz_count == 1 else "s" }}</strong>
-        worth <strong>{{ quiz_points }} point{{ "" if quiz_points == "1" else "s" }}</strong>.
-        Each student's points from them are added to the score you give, and the
-        two together are what goes to Classroom — so count them in Out of.</p>
-    {% endif %}
 
     {#  Tests (autograde.py): students check their own work as often as they
         like; Check all runs every turned-in project here, in this browser,
         and only that result counts toward the grade. #}
     {% if tests or test_errors %}
       <div class="tests-teacher" id="tests-teacher">
-        <p class="small">The notes have <strong>{{ tests|length }} test{{ "" if tests|length == 1 else "s" }}</strong>
-          worth <strong>{{ tests_points }} point{{ "" if tests_points == "1" else "s" }}</strong>.
-          Students can check their own work as often as they like. <strong>Check all</strong>
-          runs what each student turned in, here in your browser, and only that result is
-          added to their grade — count the tests in Out of.</p>
-        <p class="small"><a href="{{ url_for('help_questions') }}#tests" target="_blank" rel="noopener">How to write tests</a></p>
+        <p class="small dim">Students check their own work as often as they like; only
+          <strong>Check all</strong>, run here on what they turned in, counts toward the grade.
+          <a href="{{ url_for('help_questions') }}#tests" target="_blank" rel="noopener">How to write tests</a></p>
         {% for e in test_errors %}<p class="small tests-error">⚠ {{ e }}</p>{% endfor %}
         {% if tests %}
           <div class="grade-line">
@@ -273,15 +271,8 @@
             <label>at <input type="time" id="gc-due-time" class="field" value="23:59"></label>
             <span class="dim">Leave the date blank for no due date.</span>
           </div>
-          <label class="small"><input type="checkbox" id="gc-draft" checked>
+          <label class="small"><input type="checkbox" id="gc-draft">
             Post as a draft — assign it from Classroom when you're ready</label>
-          {#  Which link the class is given in Classroom. The live lesson's is
-              the one shown above, made ahead for exactly this; turning in
-              from it still goes to this assignment, so grades sync the same. #}
-          <div class="gc-link small">Link students to:
-            <label><input type="radio" name="gc-link" value="assignment" checked> the assignment</label>
-            <label><input type="radio" name="gc-link" value="live"> the live lesson</label>
-          </div>
           {% if not posts %}
             <p class="dim small">Creates this assignment in that class with a link
               here, worth {{ assignment.out_of or "—" }} points. Grades can only be
@@ -441,6 +432,19 @@
       <ul class="names">
         {% for n in not_yet %}<li>{{ n.name }}{% if n.quiz %} <span class="small">· questions {{ n.quiz }}{% if quiz_points %}/{{ quiz_points }}{% endif %}</span>{% endif %}</li>{% endfor %}
       </ul>
+    </section>
+  {% endif %}
+
+  {#  What students see of the tutorial, last: it is long, and the links,
+      grading and turned-in work are what this page is opened for. #}
+  {% if tutorial %}
+    <section class="tutorial-box" id="notes-seen">
+      <div class="pane lesson-preview-pane tutorial-preview">
+        <div class="pane-head"><span>What students see</span></div>
+        <div class="subpane notes-preview-scroll">
+          <div id="notes-preview" class="notes-body prose lesson-body"></div>
+        </div>
+      </div>
     </section>
   {% endif %}
 
@@ -801,7 +805,6 @@
       var choice = picker.options[picker.selectedIndex];
       if (!picker.value) { state.textContent = "Choose a class first."; return; }
       var draft = document.getElementById("gc-draft").checked;
-      var live = (document.querySelector('input[name="gc-link"]:checked') || {}).value === "live";
       /* The due date as the teacher meant it, on their own clock, sent as
          UTC: Classroom's dueDate and dueTime are UTC, so 11:59 PM here is
          already tomorrow there. new Date("YYYY-MM-DDTHH:MM") reads local
@@ -819,7 +822,6 @@
                      day: "numeric", hour: "numeric", minute: "2-digit" }) + ",";
       }
       if (!confirm("Post \u201c" + {{ assignment.title | tojson }} + "\u201d to " + choice.textContent
-                   + (live ? " (linked to the live lesson)" : "")
                    + (!topicPick.hidden && topicPick.value
                       ? " under \u201c" + topicPick.options[topicPick.selectedIndex].textContent + "\u201d" : "")
                    + dueWords
@@ -828,7 +830,7 @@
       this.disabled = true;
       var btn = this;
       post(base + "/classroom/post", { course: picker.value, draft: draft,
-                                       link: live ? "live" : "assignment", due: due,
+                                       due: due,
                                        topic: topicPick.hidden ? "" : topicPick.value }).then(function (out) {
         if (!out.ok) { btn.disabled = false; state.textContent = out.d.error || "Not posted"; return; }
         location.reload();
