@@ -396,6 +396,66 @@ def _flaskide_check(files_json):
             })
     return ''
 
+def _flaskide_patch_hashing():
+    """Password hashing for Werkzeug in the browser.
+
+    Pyodide's Python has no OpenSSL, so hashlib has neither scrypt (what
+    Werkzeug's generate_password_hash uses by default) nor pbkdf2_hmac: a
+    sign-up page crashed with AttributeError here, while the same code ran
+    on any computer -- and in the checks' tests, which run on real Python.
+    So pbkdf2_hmac is supplied in plain Python (RFC 8018, the same bytes as
+    hashlib's), and a hash that would have been scrypt is made with
+    pbkdf2:sha256 instead. check_password_hash reads the method from the
+    stored hash, so both work with it. 20000 rounds: plain Python is slow,
+    and a class's sign-ups don't need a server's cost.
+    """
+    import hashlib
+    if not hasattr(hashlib, "pbkdf2_hmac"):
+        def pbkdf2_hmac(hash_name, password, salt, iterations, dklen=None):
+            password, salt = bytes(password), bytes(salt)
+            inner, outer = hashlib.new(hash_name), hashlib.new(hash_name)
+            size = getattr(inner, "block_size", 64)
+            if len(password) > size:
+                password = hashlib.new(hash_name, password).digest()
+            password = password + bytes(size - len(password))
+            inner.update(password.translate(bytes((x ^ 0x36) for x in range(256))))
+            outer.update(password.translate(bytes((x ^ 0x5C) for x in range(256))))
+
+            def prf(msg):
+                i, o = inner.copy(), outer.copy()
+                i.update(msg)
+                o.update(i.digest())
+                return o.digest()
+            dklen = dklen or outer.digest_size
+            key, block = b"", 1
+            while len(key) < dklen:
+                prev = prf(salt + block.to_bytes(4, "big"))
+                acc = int.from_bytes(prev, "big")
+                for _ in range(iterations - 1):
+                    prev = prf(prev)
+                    acc ^= int.from_bytes(prev, "big")
+                key += acc.to_bytes(outer.digest_size, "big")
+                block += 1
+            return key[:dklen]
+        hashlib.pbkdf2_hmac = pbkdf2_hmac
+    if hasattr(hashlib, "scrypt"):
+        return
+    try:
+        import werkzeug.security as ws
+    except ImportError:
+        return
+    if getattr(ws.generate_password_hash, "_flaskide", False):
+        return
+    real = ws.generate_password_hash
+
+    def generate_password_hash(password, method="pbkdf2:sha256:20000", salt_length=16):
+        if not method or str(method).startswith("scrypt"):
+            method = "pbkdf2:sha256:20000"
+        return real(password, method=method, salt_length=salt_length)
+    generate_password_hash._flaskide = True
+    ws.generate_password_hash = generate_password_hash
+
+
 def _flaskide_load(files_json):
     """Write the files, import app.py, and find the Flask object in it."""
     from flask import Flask
@@ -425,6 +485,7 @@ def _flaskide_load(files_json):
     if built is not None and not built["ok"]:
         return json.dumps({"ok": False, "error": built["error"]})
 
+    _flaskide_patch_hashing()
     try:
         import importlib
         module = importlib.import_module("app")

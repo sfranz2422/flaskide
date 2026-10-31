@@ -37,7 +37,7 @@ loop above keeps the last line of a passing run and shows the tail of a
 failing one, so a red suite cannot scroll past unnoticed — a bare
 `for ... do python3 "$t"; done` will let it.
 
-**`node` is required** by `test_preview.py`, `test_calendar.py`, `test_complete.py`, `test_pack.py`, `test_quiz.py`,
+**`node` is required** by `test_hashing.py`, `test_preview.py`, `test_calendar.py`, `test_complete.py`, `test_pack.py`, `test_quiz.py`,
 `test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py`, `test_xp.py`, `test_keep_place.py` and `test_autograde.py`. `test_syntax.py`
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
@@ -112,6 +112,16 @@ form data, PUT and DELETE included. A JSON reply shows as text. The checks
 work the same way: one client per Check, in the order the tests are
 written, and `-> contains` follows a redirect while a status test sees it.
 `test_preview.py` (node), `test_bridge.py`, `test_autograde.py`.
+
+**Password hashing in the browser** (`_flaskide_patch_hashing` in the
+bridge, run before the student's app is imported). Pyodide has no OpenSSL,
+so hashlib has neither scrypt (Werkzeug's default) nor pbkdf2_hmac, and
+`generate_password_hash` raised AttributeError: a sign-up page crashed in the
+editor while every test passed, because the tests run on real Python. A
+plain-Python pbkdf2_hmac is supplied and a hash that would have been scrypt
+is made with pbkdf2:sha256 instead. `test_hashing.py` runs it in the real
+Pyodide against RFC 6070. Anything a lesson needs from the standard library
+should be tried in Pyodide, not only in the checker.
 
 **Teaching live** (`/live`, `static/live.js`). The teacher's file mirrored
 above, the student's own editor below, and this app's preview on the right,
