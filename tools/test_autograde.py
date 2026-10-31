@@ -252,6 +252,16 @@ jobs["blank"] = [{"app.py": "from flask import Flask, request\napp = Flask(__nam
                   "@app.route('/add', methods=['POST'])\ndef add():\n"
                   "    return 'Please give a title' if request.form['title'] == '' else 'ok'\n"},
                  autograde.parse("```tests\nPOST /add title= -> contains Please give a title\n```")[0]]
+# A duplicate caught without rollback() left data.db locked for the next
+# test's write: "Still running after 5 seconds" on a right app.
+jobs["locky"] = [{"schema.sql": "CREATE TABLE t (name TEXT UNIQUE);\nINSERT INTO t VALUES ('a');",
+                  "app.py": "import sqlite3\nfrom flask import Flask, request\napp = Flask(__name__)\n"
+                            "@app.route('/add', methods=['POST'])\ndef add():\n"
+                            "    db = sqlite3.connect('data.db')\n    try:\n"
+                            "        db.execute('INSERT INTO t VALUES (?)', (request.form['name'],))\n"
+                            "        db.commit()\n        return 'added'\n"
+                            "    except sqlite3.IntegrityError:\n        return 'taken'\n"},
+                 autograde.parse("```tests\nPOST /add name=a -> contains taken\nPOST /add name=b -> contains added\n```")[0]]
 jobs["login"] = [{"app.py": LOGIN}, autograde.parse(
     "```tests\nGET /secret -> 401\nPOST /login name=sam -> contains Welcome, sam\n"
     "GET /secret contains Welcome, sam\nPOST /login name=ana -> 302\n```")[0]]
@@ -269,6 +279,8 @@ except (ValueError, IndexError):
 check("every app was checked", len(ran) == len(jobs), out.stderr[-500:])
 check("a field sent empty (title=) reaches the route as an empty string",
       [x["ok"] for x in ran.get("blank", {}).get("results", [])] == [True], ran.get("blank"))
+check("a duplicate caught without rollback() doesn't lock the next test's write",
+      [x["ok"] for x in ran.get("locky", {}).get("results", [])] == [True, True], ran.get("locky"))
 lg = [x["ok"] for x in ran.get("login", {}).get("results", [])]
 check("a POST that redirects is followed for `contains`, as a browser follows it", lg[1:2] == [True], ran.get("login"))
 check("  a login in one test is still logged in for the next (one client per check)", lg[2:3] == [True], ran.get("login"))

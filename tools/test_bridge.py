@@ -308,6 +308,34 @@ added = ask("/api/games", "POST", None, {"title": "Pong"})
 check("a JSON body reaches request.get_json()", '"Pong"' in added["body"], added)
 gone = ask("/api/games/0", "DELETE")
 check("  and DELETE reaches its route", gone["status"] == 200 and "Tetris" not in gone["body"], gone)
+# A route that catches IntegrityError and doesn't roll back leaves data.db's
+# write lock with a connection nobody can reach; the next write waited 5 s
+# and failed "database is locked" until the collector closed it.
+import time as _t
+LOCKY = {"schema.sql": "CREATE TABLE t (name TEXT UNIQUE);\nINSERT INTO t VALUES ('a');",
+         "app.py": '''import sqlite3
+from flask import Flask, request
+app = Flask(__name__)
+
+@app.route("/add", methods=["POST"])
+def add():
+    db = sqlite3.connect("data.db")
+    try:
+        db.execute("INSERT INTO t VALUES (?)", (request.form["name"],))
+        db.commit()
+        return "added"
+    except sqlite3.IntegrityError:
+        return "taken"
+'''}
+_cwd = os.getcwd()
+load(json.dumps(LOCKY))
+first = ask("/add", "POST", {"name": "a"})
+_t0 = _t.monotonic()
+second = ask("/add", "POST", {"name": "b"})
+os.chdir(_cwd)
+check("a duplicate caught without rollback() doesn't lock the next write",
+      first["body"] == "taken" and second["body"] == "added" and _t.monotonic() - _t0 < 2,
+      (first.get("body"), second.get("body")[:200], round(_t.monotonic() - _t0, 1)))
 load(json.dumps(API))
 check("a new Run starts logged out", ask("/me")["body"] == "nobody", ask("/me"))
 

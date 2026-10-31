@@ -471,6 +471,17 @@ def _flaskide_load(files_json):
                        "tables": (built or {}).get("tables", [])})
 
 
+def _flaskide_tidy():
+    """After every request: a sqlite3 connection the route left open -- one
+    that crashed mid-write, or caught an IntegrityError without rollback() --
+    still holds data.db's write lock until the garbage collector closes it.
+    Until then the next write in the same Run waited 5 seconds and failed
+    with "database is locked", on a later page that was right. Collecting
+    here closes it, as a real server's request ending would."""
+    import gc
+    gc.collect()
+
+
 def _flaskide_request(req_json):
     """One request, through Flask's own test client."""
     req = json.loads(req_json)
@@ -491,6 +502,8 @@ def _flaskide_request(req_json):
     except Exception:
         return json.dumps({"status": 500, "headers": {},
                            "body": _flaskide_trace(), "isText": True})
+    finally:
+        _flaskide_tidy()
 
     kind = r.headers.get("Content-Type", "")
     text = kind.startswith("text/") or "json" in kind or "javascript" in kind
