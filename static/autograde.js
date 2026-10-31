@@ -275,7 +275,7 @@ window.PyIDETests = (function () {
     "    follow = t['status'] is None",
     "    def go():",
     "        if t['method'] == 'POST':",
-    "            return client.post(t['path'], data=dict(_ag_qsl(t['form'] or '')), follow_redirects=follow)",
+    "            return client.post(t['path'], data=dict(_ag_qsl(t['form'] or '', keep_blank_values=True)), follow_redirects=follow)",
     "        return client.get(t['path'] + (('?' + t['form']) if t['form'] else ''), follow_redirects=follow)",
     "    try:",
     "        r = _ag_limited(go, seconds)",

@@ -246,6 +246,12 @@ def secret():
         return "Please log in", 401
     return "Welcome, " + session["user"]
 """
+# A field sent empty (title=) reaches the route as "", as a browser sends a
+# blank box: parse_qsl dropped it, so "you left the title blank" was untestable.
+jobs["blank"] = [{"app.py": "from flask import Flask, request\napp = Flask(__name__)\n"
+                  "@app.route('/add', methods=['POST'])\ndef add():\n"
+                  "    return 'Please give a title' if request.form['title'] == '' else 'ok'\n"},
+                 autograde.parse("```tests\nPOST /add title= -> contains Please give a title\n```")[0]]
 jobs["login"] = [{"app.py": LOGIN}, autograde.parse(
     "```tests\nGET /secret -> 401\nPOST /login name=sam -> contains Welcome, sam\n"
     "GET /secret contains Welcome, sam\nPOST /login name=ana -> 302\n```")[0]]
@@ -261,6 +267,8 @@ try:
 except (ValueError, IndexError):
     ran = {}
 check("every app was checked", len(ran) == len(jobs), out.stderr[-500:])
+check("a field sent empty (title=) reaches the route as an empty string",
+      [x["ok"] for x in ran.get("blank", {}).get("results", [])] == [True], ran.get("blank"))
 lg = [x["ok"] for x in ran.get("login", {}).get("results", [])]
 check("a POST that redirects is followed for `contains`, as a browser follows it", lg[1:2] == [True], ran.get("login"))
 check("  a login in one test is still logged in for the next (one client per check)", lg[2:3] == [True], ran.get("login"))
