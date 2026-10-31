@@ -1,2 +1,2 @@
 Copied from ~/presMaker/web by tools/sync_presmaker.py. Edit PresMaker, then sync.
-9cc97af 2026-10-29 Save says it worked, on the button itself: ✓ Saved (and how many assignments were updated, served by an IDE)
+402590b 2026-10-31 Thanksgiving theme (from PyIDE 8937db2), and its heading font for exported pages

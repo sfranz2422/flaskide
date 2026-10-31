@@ -20,8 +20,8 @@ window.PMThemes = (function () {
   // notes.js's themeFonts() address, for an exported page that has no notes.js.
   var BUILTIN_FONTS = "https://fonts.googleapis.com/css2?family=Caveat:wght@600;700" +
     "&family=Patrick+Hand&family=Press+Start+2P&family=Creepster" +
-    "&family=Mountains+of+Christmas:wght@700&display=swap";
-  var FONT_THEMES = ["chalkboard", "arcade", "notebook", "halloween", "christmas"];
+    "&family=Mountains+of+Christmas:wght@700&family=Berkshire+Swash&display=swap";
+  var FONT_THEMES = ["chalkboard", "arcade", "notebook", "halloween", "thanksgiving", "christmas"];
 
   var made = [];
   var changed = [];
