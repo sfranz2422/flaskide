@@ -2333,6 +2333,30 @@ body.is-resizing-x iframe, body.is-resizing-y iframe { pointer-events: none; }
   --hover-bg: rgba(255, 255, 255, .6); color-scheme: light;
 }
 
+/* Thanksgiving: cranberry and pumpkin on a harvest-gold wash, with a turkey
+   in the bottom corner (an SVG drawn here, nobody's picture). It sits behind
+   the slide like halloween's moon, so a question's card, which is
+   see-through, gets an opaque cream under its tint where it reaches it. */
+.slide-theme-thanksgiving {
+  --theme-bg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 140 130'%3E %3Cg transform='translate(70 74)'%3E %3Cellipse rx='13' ry='46' fill='%23b91c1c' transform='rotate(-75) translate(0 -26)'/%3E %3Cellipse rx='13' ry='48' fill='%23ea580c' transform='rotate(-50) translate(0 -28)'/%3E %3Cellipse rx='13' ry='50' fill='%23f59e0b' transform='rotate(-25) translate(0 -29)'/%3E %3Cellipse rx='13' ry='51' fill='%23b45309' transform='rotate(0) translate(0 -30)'/%3E %3Cellipse rx='13' ry='50' fill='%23f59e0b' transform='rotate(25) translate(0 -29)'/%3E %3Cellipse rx='13' ry='48' fill='%23ea580c' transform='rotate(50) translate(0 -28)'/%3E %3Cellipse rx='13' ry='46' fill='%23b91c1c' transform='rotate(75) translate(0 -26)'/%3E %3C/g%3E %3Cpath d='M58 116 l-4 10 M58 116 l0 10 M58 116 l4 10 M82 116 l-4 10 M82 116 l0 10 M82 116 l4 10' stroke='%23d97706' stroke-width='3' stroke-linecap='round'/%3E %3Cellipse cx='70' cy='92' rx='27' ry='26' fill='%237c2d12'/%3E %3Cellipse cx='70' cy='98' rx='15' ry='14' fill='%239a3412'/%3E %3Ccircle cx='70' cy='58' r='15' fill='%2392400e'/%3E %3Ccircle cx='64' cy='54' r='4.2' fill='%23fff'/%3E%3Ccircle cx='76' cy='54' r='4.2' fill='%23fff'/%3E %3Ccircle cx='64.8' cy='54.6' r='2.2' fill='%231c1917'/%3E%3Ccircle cx='75.2' cy='54.6' r='2.2' fill='%231c1917'/%3E %3Cpath d='M65 61 L75 61 L70 69 Z' fill='%23facc15'/%3E %3Cpath d='M72 64 q6 4 3 12 q-5 -3 -3 -12 z' fill='%23dc2626'/%3E %3C/svg%3E") no-repeat right 14px bottom 10px / 118px auto,
+              radial-gradient(ellipse at 0% 0%, rgba(217, 119, 6, .22), transparent 45%),
+              radial-gradient(ellipse at 100% 100%, rgba(185, 28, 28, .14), transparent 50%),
+              linear-gradient(170deg, #fff8ec 0%, #fdecd2 55%, #f8d9ae 100%);
+  --nav-bg: #f7dfba;
+  --text: #3b2412; --muted: #7a5537; --heading: #9a3412; --heading-2: #a16207;
+  --accent: #b91c1c; --accent-hover: #7f1d1d; --strong: #7c2d12;
+  --line: rgba(124, 45, 18, .22); --bg: rgba(255, 255, 255, .62);
+  --bg-panel: rgba(255, 255, 255, .5); --bg-head: rgba(255, 255, 255, .75);
+  --hover-bg: rgba(255, 255, 255, .6); color-scheme: light;
+}
+.slide-theme-thanksgiving h1, .slide-theme-thanksgiving h2, .slide-theme-thanksgiving h3 {
+  font-family: "Berkshire Swash", var(--sans); font-weight: 400; letter-spacing: .01em;
+}
+.slide-theme-thanksgiving .quiz { background: linear-gradient(var(--bg-panel), var(--bg-panel)), #fff8ec; }
+.slide-theme-thanksgiving h1 { font-size: 2.2em; }
+.slide-theme-thanksgiving h2 { font-size: 1.75em; }
+.slide-theme-thanksgiving h3 { font-size: 1.4em; }
+
 /* Frost: pale ice blue, with snow falling (a tiled field, as space's stars). */
 .slide-theme-winter {
   --theme-bg: radial-gradient(4px 4px at 30px 40px, #ffffff 55%, transparent) 0 0 / 200px 180px,
