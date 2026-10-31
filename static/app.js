@@ -426,9 +426,14 @@
      flag, so that typing a character and deleting it again does not count --
      and so that a signed-in student whose draft has already autosaved is not
      asked about work that is safely saved. */
+  // What the page last had saved: the starter, or what Update assignment (or
+  // Publish) last saved. Without the second the teacher's own edit page,
+  // which has no draft, warned "isn't saved" right after a successful update.
+  var savedFiles = null;
+  document.addEventListener("flaskide:assignmentsaved", function () { savedFiles = readProject().files; });
   function changedFromStarter() {
     var now = readProject().files;
-    var was = cfg.files || {};
+    var was = savedFiles || cfg.files || {};
     var names = Object.keys(now).concat(Object.keys(was));
     for (var i = 0; i < names.length; i++) {
       if (now[names[i]] !== was[names[i]]) return true;
