@@ -108,7 +108,11 @@ shown, because the page sits in a sandboxed iframe with no address and a
 to the app's own routes is answered by the app through postMessage (the
 shim, which goes in just inside `<head>`, before the page's own scripts —
 at the end it came after them and their first fetch went nowhere), JSON,
-form data, PUT and DELETE included. A JSON reply shows as text. The checks
+form data, PUT and DELETE included. A JSON reply shows as text. Requests run one at a time (`request` in flask.js queues them): each is
+handed to Python through one global, so a page's fetch()es sent together
+overwrote each other's and all got the last one's answer. The shim's click
+and submit catching bubbles and leaves alone what the page's own script
+already prevented, or a JavaScript-handled form could never work. The checks
 work the same way: one client per Check, in the order the tests are
 written, and `-> contains` follows a redirect while a status test sees it.
 `test_preview.py` (node), `test_bridge.py`, `test_autograde.py`.

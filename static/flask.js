@@ -93,7 +93,19 @@
    * One request against the student's app.
    * Resolves to { status, headers, body, isText }.
    */
-  async function request(method, path, form, json) {
+  /* One request at a time. Each is handed to Python through one global,
+     _req_json, and runPythonAsync awaits -- so two requests made together
+     (a page's five fetch()es as it loads) overwrote each other's global,
+     and every one of them got the answer to the last. Queued, each runs
+     whole before the next starts, as a one-worker server would. */
+  let queue = Promise.resolve();
+  function request(method, path, form, json) {
+    const run = queue.then(() => requestNow(method, path, form, json));
+    queue = run.catch(() => {});
+    return run;
+  }
+
+  async function requestNow(method, path, form, json) {
     if (!pyodide) throw new Error("nothing is running yet");
     pyodide.globals.set("_req_json", JSON.stringify({
       method: method || "GET",

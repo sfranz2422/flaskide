@@ -77,5 +77,74 @@ check("a link that isn't a stylesheet, and an address on the internet, are left 
       and "/static/x.ico" not in o["asked"] and not any("example.com" in a for a in o["asked"]), o["asked"])
 check("a stylesheet that isn't there stays as it was (the page still shows)",
       'href="/static/missing.css"' in i, i)
+# Two requests at once (a page's fetch()es as it loads). flask.js hands each
+# to Python through one global and awaits; together they overwrote each
+# other's, and both got the last one's answer. A fake Pyodide that, like the
+# real one, reads the global only after a pause.
+RACE = r"""
+const fs = require("fs");
+global.window = {};
+global.loadPyodide = async () => {
+  const g = {};
+  return {
+    globals: { set: (k, v) => { g[k] = v; }, delete: (k) => { delete g[k]; } },
+    loadPackage: async () => {},
+    runPythonAsync: async (code) => {
+      if (!code.startsWith("_flaskide_request(")) return "{}";
+      await new Promise((r) => setTimeout(r, 5));
+      const req = JSON.parse(g._req_json);
+      return JSON.stringify({ status: 200, headers: {}, body: "answer for " + req.path, isText: true });
+    }
+  };
+};
+eval(fs.readFileSync(%(flask)s, "utf8"));
+(async () => {
+  await window.FlaskIDERuntime.boot();
+  const got = await Promise.all(["/a", "/b", "/c"].map((p) => window.FlaskIDERuntime.request("GET", p)));
+  process.stdout.write(JSON.stringify(got.map((r) => r.body)));
+})();
+"""
+race = subprocess.run(["node", "-e", RACE % {"flask": json.dumps(os.path.join(ROOT, "static", "flask.js"))}],
+                      capture_output=True, text=True)
+check("requests made together each get their own answer (one at a time)",
+      race.stdout.strip() == '["answer for /a","answer for /b","answer for /c"]', race.stdout + race.stderr[-400:])
+
+# A page that handles a submit or a click itself (preventDefault in its own
+# handler) is left to it: the shim used to catch both first and navigate.
+SHIMTEST = r"""
+const fs = require("fs");
+const src = fs.readFileSync(%(preview)s, "utf8");
+const shim = /const SHIM = `<script>([\s\S]*?)<\\\/script>`;/.exec(src)[1];
+const listeners = {}, sent = [];
+const document = { addEventListener: (t, f) => { listeners[t] = f; } };
+const parent = { postMessage: (m) => sent.push(m) };
+const location = { pathname: "/" };
+eval(shim);
+function ev(prevented, target) {
+  return { defaultPrevented: prevented, target: target, preventDefault() { this.defaultPrevented = true; } };
+}
+const form = { tagName: "FORM", getAttribute: (k) => (k === "method" ? "post" : "/add") };
+global.FormData = function () { return { forEach() {} }; };
+listeners.submit(ev(true, form));
+const afterHandled = sent.length;
+listeners.submit(ev(false, form));
+const link = { getAttribute: () => "/about", href: "/about" };
+const target = { closest: () => link };
+listeners.click(ev(true, target));
+const afterHandledClick = sent.length;
+listeners.click(ev(false, target));
+process.stdout.write(JSON.stringify({ afterHandled, afterHandledClick, total: sent.length }));
+"""
+sh = subprocess.run(["node", "-e", SHIMTEST % {"preview": json.dumps(os.path.join(ROOT, "static", "preview.js"))}],
+                    capture_output=True, text=True)
+try:
+    so = json.loads(sh.stdout)
+except ValueError:
+    so = {}
+check("a form the page's own script handled (preventDefault) is left to it",
+      so.get("afterHandled") == 0, sh.stdout + sh.stderr[-400:])
+check("  and so is a link it handled; an unhandled form and link still go to the app",
+      so.get("afterHandledClick") == 1 and so.get("total") == 2, so)
+
 print("\n%d checks, %s" % (count, "all ok" if not failures else "%d FAILED" % failures))
 sys.exit(1 if failures else 0)

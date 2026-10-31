@@ -60,7 +60,12 @@
 (function () {
   function send(msg) { parent.postMessage(Object.assign({ __flaskide: 1 }, msg), "*"); }
 
+  // Bubbling, not capturing, and only what the page's own script left
+  // alone: a page that handles a click or a submit itself (a JavaScript
+  // search box in a <form>, a link that opens a menu) calls preventDefault,
+  // and catching it first navigated anyway, so such a page could not work.
   document.addEventListener("click", function (e) {
+    if (e.defaultPrevented) return;
     var a = e.target.closest && e.target.closest("a");
     if (!a) return;
     var href = a.getAttribute("href");
@@ -80,9 +85,10 @@
     if (href.charAt(0) === "#") return;
     e.preventDefault();
     send({ kind: "navigate", path: href });
-  }, true);
+  });
 
   document.addEventListener("submit", function (e) {
+    if (e.defaultPrevented) return;
     var f = e.target;
     if (!f || f.tagName !== "FORM") return;
     e.preventDefault();
@@ -95,7 +101,7 @@
       method: (f.getAttribute("method") || "GET").toUpperCase(),
       form: data
     });
-  }, true);
+  });
 
   // fetch() to the app's own routes ("/api/games") is answered by the app,
   // through the editor, as a click is: there is no server for it to reach.
