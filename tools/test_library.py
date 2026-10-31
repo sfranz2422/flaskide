@@ -258,6 +258,12 @@ check("  every assignment that used it keeps its notes, its own now",
       notes("p2") == "# Loops\n\nFor every period.\n" and one(accounts.Assignment, slug="p2").tutorial_id == 0)
 
 print("whose library")
+# This route answered 500 for its own teacher for weeks unnoticed: jsonify
+# refuses a dict AND keywords together, and no page reads it, only this.
+first = library(teacher)["items"][0]["slug"]
+r = teacher.get("/api/library/" + first)
+check("its own teacher can read it, text and all",
+      r.status_code == 200 and r.get_json()["slug"] == first and "body" in r.get_json())
 check("another teacher can't see, save, link or delete it",
       other.get("/api/library/" + loops["slug"]).status_code == 404
       and other.post("/api/library/" + loops["slug"], json={"body": "x"}).status_code == 404

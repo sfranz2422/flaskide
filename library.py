@@ -476,7 +476,7 @@ def get_item(slug):
         item = _own_item(db, user, slug)
         if item is None:
             return jsonify(error="No such tutorial."), 404
-        return jsonify(_item_out(item, []), body=item.body)
+        return jsonify(dict(_item_out(item, []), body=item.body))
     finally:
         db.close()
 
