@@ -97,7 +97,9 @@ def title_of(text, fallback):
         if fence is None:
             m = re.match(r"#{1,3}\s+(.+?)\s*#*\s*$", ln)
             if m:
-                return re.sub(r"[*_`]", "", m.group(1)).strip()[:200] or fallback
+                # Emphasis marks only: an _ inside a word is part of it, so
+                # "url_for" stays url_for (taking every _ made it "urlfor").
+                return re.sub(r"[*`]|(?<!\w)_|_(?!\w)", "", m.group(1)).strip()[:200] or fallback
     return fallback
 
 

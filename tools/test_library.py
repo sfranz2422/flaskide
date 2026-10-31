@@ -293,6 +293,12 @@ if os.path.isdir(gb):
     for name in ("library.py", "accounts.py"):
         check("%s is the same as gameide's" % name, open(os.path.join(ROOT, name), "rb").read() == open(os.path.join(gb, name), "rb").read())
 
+import library as _lib                                        # noqa: E402
+check("a title keeps an _ inside a word (url_for), and drops emphasis marks",
+      _lib.title_of("# Day 14 — **Links**: `url_for` and _static_ files\n", "x")
+      == "Day 14 — Links: url_for and static files",
+      _lib.title_of("# Day 14 — **Links**: `url_for` and _static_ files\n", "x"))
+
 print()
 failed = results.count(False)
 print("%d checks, %s" % (len(results), "all ok" if not failed else "%d FAILED" % failed))
