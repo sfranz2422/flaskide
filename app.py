@@ -53,7 +53,11 @@ APP_NAME = "flaskide"       # this editor, in the shared account tables
 # Config
 # --------------------------------------------------------------------------
 
-MAX_FILES = 16
+# Files in one project. Web 2's Game Vault reaches 22 by the logins unit
+# (a template a page, a stylesheet, scripts, pictures, schema.sql), and at 16
+# a save was refused -- the teacher's starter and every student's draft --
+# halfway through the course. MAX_FILES_TOTAL is what bounds the size.
+MAX_FILES = 40
 MAX_FILE_BYTES = 200_000          # per file
 LIVE_OUTPUT_BYTES = 20_000        # the tail of a Run, sent to the class
 MAX_FILES_TOTAL = 600_000         # all files together

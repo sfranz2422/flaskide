@@ -133,6 +133,14 @@ files, err = A.validate_files({"templates/x.html": "<p>hi</p>"})
 check("a project with no %s is refused" % A.ENTRY, files is None and A.ENTRY in err,
       (err or "")[:60])
 
+# Web 2's Game Vault has 22 files by the logins unit; at a 16-file cap its
+# starter, and every student's draft, was refused halfway through the course.
+big = {"app.py": "x", "schema.sql": "y"}
+big.update({"templates/p%02d.html" % i: "<p>%d</p>" % i for i in range(23)})
+files, err = A.validate_files(big)
+check("a 25-file project (Game Vault by the logins unit) saves", err is None and len(files) == 25, err)
+files, err = A.validate_files({"templates/p%02d.html" % i: "x" for i in range(A.MAX_FILES + 1)})
+check("  and the cap still holds above MAX_FILES", err is not None and "at most" in err, err)
 files, err = A.validate_files({"app.py": "x", "templates\\y.html": "z"})
 check("a backslash gets a sentence about slashes", files is None and "slash" in err,
       (err or "")[:64])
