@@ -1719,7 +1719,7 @@ check("  and a SQL lesson sends its results grid instead",
       "a SQL lesson's answer never touches the console")
 _pv = code_only(open(os.path.join(HERE, "..", "static", "preview.js")).read())
 check("the preview remembers the page it painted, before the shim",
-      "this.shown = res.body;\n      await this._paint(res.body, true);" in _pv
+      "this.shown = await inlineResources(res.body);\n      await this._paint(this.shown, true);" in _pv
       and 'this.shown = "";\n        await this._show(' in _pv,
       "an image would leave the last page standing as 'the page'")
 

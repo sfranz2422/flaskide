@@ -84,6 +84,11 @@ def get(path, method="GET", form=None):
         {"method": method, "path": path, "form": form})))
 
 
+def ask(path, method="GET", form=None, json_body=None):
+    return json.loads(request(json.dumps(
+        {"method": method, "path": path, "form": form, "json": json_body})))
+
+
 # ------------------------------------------------------------- a project
 PROJECT = {
     "app.py": '''from flask import Flask, render_template, request, redirect, url_for
@@ -266,6 +271,45 @@ for name in ("static/proof.html",):
           all("allow-forms" in f for f in frames), str(frames))
     check("  and without allow-same-origin, which is the dangerous one",
           all("allow-same-origin" not in f for f in frames), str(frames))
+
+# One client for a Run, as one browser tab: a login (Flask's session cookie)
+# is remembered on the next page. A new client per request forgot it, so
+# Web 2's logins unit could not work in the preview. And a page's own
+# fetch() can send JSON, PUT and DELETE (preview.js's fetch bridge).
+API = {"app.py": '''from flask import Flask, session, request, jsonify
+app = Flask(__name__)
+app.secret_key = "dev"
+games = ["Tetris"]
+
+@app.route("/login", methods=["POST"])
+def login():
+    session["user"] = request.form["name"]
+    return "ok"
+
+@app.route("/me")
+def me():
+    return session.get("user", "nobody")
+
+@app.route("/api/games", methods=["GET", "POST"])
+def api_games():
+    if request.method == "POST":
+        games.append(request.get_json()["title"])
+    return jsonify(games)
+
+@app.route("/api/games/<int:i>", methods=["DELETE"])
+def api_delete(i):
+    games.pop(i)
+    return jsonify(games)
+'''}
+load(json.dumps(API))
+ask("/login", "POST", {"name": "sam"})
+check("a login is remembered on the next request of the same Run", ask("/me")["body"] == "sam", ask("/me"))
+added = ask("/api/games", "POST", None, {"title": "Pong"})
+check("a JSON body reaches request.get_json()", '"Pong"' in added["body"], added)
+gone = ask("/api/games/0", "DELETE")
+check("  and DELETE reaches its route", gone["status"] == 200 and "Tetris" not in gone["body"], gone)
+load(json.dumps(API))
+check("a new Run starts logged out", ask("/me")["body"] == "nobody", ask("/me"))
 
 # Flattened first: the comment is wrapped and prefixed with " * ", so a
 # search for a sentence in it otherwise fails on where the line happens to

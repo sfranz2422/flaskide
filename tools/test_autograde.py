@@ -228,6 +228,27 @@ jobs["sql"] = [SQL_FILES, autograde.parse(SQL_NOTES)[0]]
 jobs["sql_broken"] = [dict(SQL_FILES, **{"query.sql": "SELEC name FROM p;"}), autograde.parse(SQL_NOTES)[0]]
 # Operators: `uses +` once looked for a name called "+", and failed on code
 # that plainly used it (a student's print(3+4) in GameIDE found it).
+# A login (Flask's session) and a form that redirects, as Web 2's logins
+# unit has them: each test had its own client, so a login was forgotten by
+# the next test, and a POST that redirected answered 302 to `contains`.
+LOGIN = """from flask import Flask, session, request, redirect
+app = Flask(__name__)
+app.secret_key = "dev"
+
+@app.route("/login", methods=["POST"])
+def login():
+    session["user"] = request.form["name"]
+    return redirect("/secret")
+
+@app.route("/secret")
+def secret():
+    if "user" not in session:
+        return "Please log in", 401
+    return "Welcome, " + session["user"]
+"""
+jobs["login"] = [{"app.py": LOGIN}, autograde.parse(
+    "```tests\nGET /secret -> 401\nPOST /login name=sam -> contains Welcome, sam\n"
+    "GET /secret contains Welcome, sam\nPOST /login name=ana -> 302\n```")[0]]
 jobs["ops"] = [{"app.py": "x = 3+4\nif x == 7 and True:\n    y = 'a-b'\n"},
                autograde.parse("```tests\nuses +\nuses ==\nuses and\nuses -\navoids *\n```")[0]]
 with open(os.path.join(tmp, "jobs.json"), "w") as f:
@@ -240,6 +261,10 @@ try:
 except (ValueError, IndexError):
     ran = {}
 check("every app was checked", len(ran) == len(jobs), out.stderr[-500:])
+lg = [x["ok"] for x in ran.get("login", {}).get("results", [])]
+check("a POST that redirects is followed for `contains`, as a browser follows it", lg[1:2] == [True], ran.get("login"))
+check("  a login in one test is still logged in for the next (one client per check)", lg[2:3] == [True], ran.get("login"))
+check("  and a status test still sees the redirect itself", lg[3:4] == [True] and lg[:1] == [True], ran.get("login"))
 
 
 def lines(name):

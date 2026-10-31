@@ -96,8 +96,97 @@
       form: data
     });
   }, true);
+
+  // fetch() to the app's own routes ("/api/games") is answered by the app,
+  // through the editor, as a click is: there is no server for it to reach.
+  // Anything with a scheme goes to the real internet as before.
+  var pending = {}, seq = 0, realFetch = typeof window !== "undefined" && window ? window.fetch : null;
+  if (realFetch) window.fetch = function (input, init) {
+    var url = typeof input === "string" ? input : (input && input.url) || String(input);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.slice(0, 2) === "//") {
+      return realFetch.apply(window, arguments);
+    }
+    init = init || {};
+    var body = init.body, json = null, form = null;
+    if (typeof body === "string") {
+      try { json = JSON.parse(body); }
+      catch (err) { form = {}; new URLSearchParams(body).forEach(function (v, k) { form[k] = v; }); }
+    } else if (body && typeof body.forEach === "function") {
+      form = {};
+      body.forEach(function (v, k) { form[k] = typeof v === "string" ? v : ""; });
+    }
+    return new Promise(function (resolve, reject) {
+      var id = ++seq;
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ kind: "fetch", id: id, method: String(init.method || "GET").toUpperCase(),
+             path: url, json: json, form: form });
+    });
+  };
+  if (realFetch) window.addEventListener("message", function (e) {
+    var m = e.data;
+    if (!m || !m.__flaskideReply) return;
+    var p = pending[m.id];
+    if (!p) return;
+    delete pending[m.id];
+    if (m.error) { p.reject(new TypeError(m.error)); return; }
+    var body = m.status === 204 || m.status === 304 ? null : m.body;
+    if (body !== null && !m.isText) body = Uint8Array.from(atob(body), function (c) { return c.charCodeAt(0); });
+    p.resolve(new Response(body, { status: m.status || 200, headers: m.headers || {} }));
+  });
 })();
 <\/script>`;
+
+  /* A page's own files from static/ — its stylesheet, its script, its
+   * pictures — put into the page itself before it is shown. The page sits
+   * in a sandboxed iframe with no address, so a <link href="/static/…"> had
+   * nowhere to load from and the student's CSS silently did nothing.
+   * Each is asked of the app, as the browser would have asked a server. */
+  const LOCAL = (url) => url && !/^[a-z][a-z0-9+.-]*:/i.test(url) && url.slice(0, 2) !== "//" &&
+                         url.charAt(0) !== "#";
+  function attr(tag, name) {
+    const m = new RegExp("\\s" + name + "\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s>]+)", "i").exec(tag);
+    return m ? m[1].replace(/^["']|["']$/g, "") : null;
+  }
+  async function fetchOwn(url) {
+    try {
+      const res = await runtime.request("GET", url, null);
+      return res.status >= 200 && res.status < 300 ? res : null;
+    } catch (err) { return null; }
+  }
+  async function inlineResources(html) {
+    const jobs = [];
+    html.replace(/<link\b[^>]*>/gi, (tag) => {
+      if (/rel\s*=\s*["']?stylesheet/i.test(tag) && LOCAL(attr(tag, "href"))) jobs.push(tag);
+      return tag;
+    });
+    html.replace(/<script\b[^>]*\bsrc\s*=[^>]*>\s*<\/script>/gi, (tag) => {
+      if (LOCAL(attr(tag, "src"))) jobs.push(tag);
+      return tag;
+    });
+    html.replace(/<img\b[^>]*>/gi, (tag) => {
+      if (LOCAL(attr(tag, "src"))) jobs.push(tag);
+      return tag;
+    });
+    const done = {};
+    for (const tag of jobs) {
+      if (done[tag] !== undefined) continue;
+      if (/^<link/i.test(tag)) {
+        const res = await fetchOwn(attr(tag, "href"));
+        done[tag] = res && res.isText ? "<style>" + res.body + "</style>" : tag;
+      } else if (/^<script/i.test(tag)) {
+        const res = await fetchOwn(attr(tag, "src"));
+        done[tag] = res && res.isText ? "<script>" + res.body.replace(/<\/script/gi, "<\\/script") + "</script>" : tag;
+      } else {
+        const res = await fetchOwn(attr(tag, "src"));
+        const kind = res && (res.headers["Content-Type"] || res.headers["content-type"] || "image/png");
+        const data = res && (res.isText ? "data:" + kind + "," + encodeURIComponent(res.body)
+                                        : "data:" + kind + ";base64," + res.body);
+        done[tag] = data ? tag.replace(/(\ssrc\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)/i, "$1\"" + data + "\"") : tag;
+      }
+    }
+    return jobs.length ? html.replace(/<link\b[^>]*>|<script\b[^>]*\bsrc\s*=[^>]*>\s*<\/script>|<img\b[^>]*>/gi,
+                                      (tag) => (done[tag] !== undefined ? done[tag] : tag)) : html;
+  }
 
   /* TWO IFRAMES, NOT ONE
    *
@@ -196,7 +285,17 @@
         return;
       }
       this.shown = res.body;
-      await this._paint(res.body, true);
+      const kind = res.headers["Content-Type"] || res.headers["content-type"] || "";
+      if (/json/i.test(kind)) {
+        // An API route's reply, shown as the browser shows JSON: as text.
+        await this._paint("<pre style=\"white-space:pre-wrap;font:13px ui-monospace,monospace\">" +
+                          escapeHtml(res.body) + "</pre>", false);
+        return;
+      }
+      // What the class's live page is sent, too: with the CSS and pictures
+      // in it, since their screens can't ask this app for /static either.
+      this.shown = await inlineResources(res.body);
+      await this._paint(this.shown, true);
     }
 
     back() {
@@ -207,7 +306,7 @@
     _paint(html, injectShim) {
       return this._show((f) => {
         f.removeAttribute("src");
-        f.srcdoc = injectShim ? html + SHIM : html;
+        f.srcdoc = injectShim ? withShim(html) : html;
       });
     }
 
@@ -254,6 +353,19 @@
     _fromPage(e) {
       const msg = e.data;
       if (!msg || !msg.__flaskide) return;
+      // A fetch() is answered for either frame: a page's script fetches as
+      // it loads, which is while it is still the hidden frame being filled.
+      // It only asks the app; it can't steer the preview.
+      if (msg.kind === "fetch" && this.frames.some((f) => f.contentWindow === e.source)) {
+        const page = e.source;
+        runtime.request(msg.method, msg.path, msg.form, msg.json).then((res) => {
+          page.postMessage({ __flaskideReply: 1, id: msg.id, status: res.status, headers: res.headers,
+                             body: res.body, isText: res.isText }, "*");
+        }, (err) => {
+          page.postMessage({ __flaskideReply: 1, id: msg.id, error: String(err && err.message || err) }, "*");
+        });
+        return;
+      }
       // Only the page on screen may steer. The hidden frame still holds the
       // previous document, and a stray timer in a student's script must not
       // be able to navigate from a page nobody is looking at.
@@ -292,10 +404,26 @@
     }
   }
 
+  /* The shim goes in FIRST — just inside <head>, or <html>, or before
+   * everything — so a page script that calls fetch() as it loads gets the
+   * shim's fetch. At the end it came after the page's own scripts, whose
+   * first fetch went to nowhere ("Failed to fetch"). Never before the
+   * doctype, which would drop the page into quirks mode. */
+  function withShim(html) {
+    let m = /<head\b[^>]*>/i.exec(html) || /<html\b[^>]*>/i.exec(html);
+    if (m) return html.slice(0, m.index + m[0].length) + SHIM + html.slice(m.index + m[0].length);
+    m = /^\s*<!doctype[^>]*>/i.exec(html);
+    if (m) return m[0] + SHIM + html.slice(m[0].length);
+    return SHIM + html;
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>]/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   }
 
+  // For tests (tools/test_preview.py): the two page rewrites, on their own.
+  Preview.withShim = withShim;
+  Preview.inlineResources = inlineResources;
   window.FlaskIDEPreview = Preview;
 })();

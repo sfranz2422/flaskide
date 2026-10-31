@@ -93,12 +93,13 @@
    * One request against the student's app.
    * Resolves to { status, headers, body, isText }.
    */
-  async function request(method, path, form) {
+  async function request(method, path, form, json) {
     if (!pyodide) throw new Error("nothing is running yet");
     pyodide.globals.set("_req_json", JSON.stringify({
       method: method || "GET",
       path: path || "/",
       form: form || null,
+      json: json === undefined ? null : json,
     }));
     const raw = await pyodide.runPythonAsync("_flaskide_request(_req_json)");
     return JSON.parse(raw);
@@ -115,6 +116,10 @@ import base64, io, json, os, shutil, sys, traceback
 
 _FLASKIDE_PROJECT = "${PROJECT}"
 _flaskide_app = None
+# One client for the whole Run, as one browser tab is: the cookies a page
+# sets (Flask's session, a login) come back on the next request. A new client
+# per request forgot every login one page later.
+_flaskide_client = None
 
 
 def _flaskide_clear():
@@ -137,8 +142,9 @@ def _flaskide_clear():
     shape a bug can have in an editor — it looks like the student's edit
     broke it. Stepping out first costs one line.
     """
-    global _flaskide_app
+    global _flaskide_app, _flaskide_client
     _flaskide_app = None
+    _flaskide_client = None
     os.chdir("/")
     if os.path.isdir(_FLASKIDE_PROJECT):
         shutil.rmtree(_FLASKIDE_PROJECT)
@@ -393,7 +399,7 @@ def _flaskide_check(files_json):
 def _flaskide_load(files_json):
     """Write the files, import app.py, and find the Flask object in it."""
     from flask import Flask
-    global _flaskide_app
+    global _flaskide_app, _flaskide_client
 
     _flaskide_clear()
     files = json.loads(files_json)
@@ -436,6 +442,7 @@ def _flaskide_load(files_json):
         })
 
     _flaskide_app = found[0]
+    _flaskide_client = _flaskide_app.test_client()
 
     # Let the student's own mistakes out.
     #
@@ -471,12 +478,16 @@ def _flaskide_request(req_json):
         return json.dumps({"status": 0, "headers": {}, "body":
                            "Nothing is running.", "isText": True})
 
-    client = _flaskide_app.test_client()
+    client = _flaskide_client or _flaskide_app.test_client()
+    method = (req.get("method") or "GET").upper()
     try:
-        if req["method"].upper() == "POST":
-            r = client.post(req["path"], data=req.get("form") or {})
-        else:
+        # A page's own fetch() can send JSON, and PUT or DELETE (preview.js).
+        if req.get("json") is not None:
+            r = client.open(req["path"], method=method, json=req["json"])
+        elif method == "GET":
             r = client.get(req["path"])
+        else:
+            r = client.open(req["path"], method=method, data=req.get("form") or {})
     except Exception:
         return json.dumps({"status": 500, "headers": {},
                            "body": _flaskide_trace(), "isText": True})

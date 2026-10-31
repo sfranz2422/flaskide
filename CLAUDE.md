@@ -37,7 +37,7 @@ loop above keeps the last line of a passing run and shows the tail of a
 failing one, so a red suite cannot scroll past unnoticed — a bare
 `for ... do python3 "$t"; done` will let it.
 
-**`node` is required** by `test_calendar.py`, `test_complete.py`, `test_pack.py`, `test_quiz.py`,
+**`node` is required** by `test_preview.py`, `test_calendar.py`, `test_complete.py`, `test_pack.py`, `test_quiz.py`,
 `test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py`, `test_xp.py`, `test_keep_place.py` and `test_autograde.py`. `test_syntax.py`
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
@@ -96,6 +96,22 @@ connection with `PRAGMA foreign_keys = ON`. Splitting SQL is done with
 inside a string or a comment is not the end of a statement.
 
 ## Features worth knowing about
+
+**The preview behaves like one browser tab** (`static/preview.js`, the
+bridge's `_flaskide_request` in `static/flask.js`). One Flask test client
+for the whole Run, so cookies — Flask's `session`, a login — come back on
+the next page; a client per request forgot every login. A redirect is
+followed. A page's own files from `static/` (its stylesheet, its script,
+its pictures) are asked of the app and put into the page before it is
+shown, because the page sits in a sandboxed iframe with no address and a
+`<link href="/static/style.css">` there loads nothing. A page's `fetch()`
+to the app's own routes is answered by the app through postMessage (the
+shim, which goes in just inside `<head>`, before the page's own scripts —
+at the end it came after them and their first fetch went nowhere), JSON,
+form data, PUT and DELETE included. A JSON reply shows as text. The checks
+work the same way: one client per Check, in the order the tests are
+written, and `-> contains` follows a redirect while a status test sees it.
+`test_preview.py` (node), `test_bridge.py`, `test_autograde.py`.
 
 **Teaching live** (`/live`, `static/live.js`). The teacher's file mirrored
 above, the student's own editor below, and this app's preview on the right,
