@@ -7,3 +7,4 @@ venv/
 .DS_Store
 *.db-journal
 *.sqlite3
+node_modules/

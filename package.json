@@ -1,0 +1,9 @@
+{
+  "name": "flaskide-tests",
+  "private": true,
+  "description": "Only for tools/test_php.py: PHP in Node, the same build the page loads from the CDN. Nothing here is served.",
+  "devDependencies": {
+    "@php-wasm/node": "3.1.61",
+    "@php-wasm/universal": "3.1.61"
+  }
+}
