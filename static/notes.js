@@ -512,7 +512,9 @@ window.FlaskIDENotes = (function () {
        anything, a student skipped straight past them to the typing, and
        predicting was the point of the step. */
     var TESTS_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*tests[ \t]*$/im;
-    var PREDICT_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*py(thon)?[ \t]+predict[ \t]*$/im;
+    // An ```html predict holds only with choices (a pick), but taking any as holding errs safe.
+    var PREDICT_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*(py(thon)?|html)[ \t]+predict[ \t]*$/im;
+    var CARDS_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*cards[ \t]*$/im;
     var HOLDS = ".tests-card[data-checks]:not([data-passed])";
     var UNPREDICTED = ".snippet[data-predict]:not([data-predicted])";
     /* And a ```cards block, until every card has been turned over once
@@ -850,10 +852,10 @@ window.FlaskIDENotes = (function () {
       reach: function (i) {
         if (!cut.length || i < 0 || i >= cut.length || i === at) return false;
         if (i > at && mode && i > reached.slide) return false;
-        // Held only by a slide on the way that has checks or a prediction
+        // Held only by a slide on the way that has checks, a prediction or cards
         // and isn't passed: one with neither holds nothing, as its own arrow doesn't.
         for (var j = Math.max(at, unlocked); lockOn && j < i; j++)
-          if (TESTS_FENCE.test(cut[j]) || PREDICT_FENCE.test(cut[j])) return false;
+          if (TESTS_FENCE.test(cut[j]) || PREDICT_FENCE.test(cut[j]) || CARDS_FENCE.test(cut[j])) return false;
         go(i);
         if (moved) moved(at);
         return true;

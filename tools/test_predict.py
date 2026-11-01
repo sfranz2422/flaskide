@@ -198,6 +198,98 @@ except (ValueError, IndexError):
     got = {"error": res.stderr[-800:] or res.stdout[-800:]}
 check("node ran snippets.js", "error" not in got, got.get("error"))
 
+# ```html predict with # choice: lines — the student picks what the page
+# shows (Nov 2026, for WebIDE's lessons, where nothing is printed).
+PICK_HARNESS = DOM + SNIPPETS_JS + r"""
+var S = window.IDESnippets;
+var out = {};
+var tick = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
+function pickBlock(code) {
+  var root = new El("div"), pre = root.appendChild(new El("pre")), c = pre.appendChild(new El("code"));
+  c.className = "language-html-predict"; c.textContent = code + "\n";
+  S.renderBlocks(root);
+  var box = root.children[0], btns = box.querySelectorAll(".snippet-run");
+  return { root: root, box: box, area: box.querySelector(".snippet-code"), rows: box.querySelectorAll(".snippet-choice"),
+           radios: box.querySelectorAll("input"), check: btns[0], run: btns[1], show: box.querySelector(".snippet-show"),
+           frame: box.querySelector(".snippet-frame"), hints: box.querySelector(".snippet-hints"), status: box.querySelector(".snippet-status") };
+}
+function pick(b, i) { b.radios[i].checked = true; b.radios[i].fire("change"); }
+var claims = [];
+S.configure({ claim: function (code) { claims.push(code); } });
+(async function () {
+  var CODE = '<input type="checkbox"> Gravy\n# choice: a box you can tick\n# choice: a round button\n# hint: checkbox: a to-do list\n# answer: a box you can tick\n# choice: a text box';
+  var b = pickBlock(CODE);
+  var heard = 0; b.root.addEventListener("ide-checks", function () { heard++; });
+  out.fresh = { code: b.area.value, ro: b.area.readOnly, n: b.rows.length, texts: b.rows.map(function (r) { return r.textContent; }),
+                held: b.box.hasAttribute("data-predict") && !b.box.hasAttribute("data-predicted"),
+                checkOff: b.check.disabled, frame: b.frame.hidden, run: b.run.hidden, show: b.show.hidden };
+  pick(b, 1); out.picked = b.check.disabled;
+  b.check.click(); await tick();
+  out.wrong = { marked: b.rows[1].className, sign: b.rows[1].textContent, gone: b.radios[1].disabled, frame: b.frame.hidden,
+                hints: b.hints.children.length, held: !b.box.hasAttribute("data-predicted"), checkOff: b.check.disabled,
+                answerShown: /✓/.test(b.rows[0].textContent), ro: b.area.readOnly };
+  pick(b, 0); b.check.click(); await tick();
+  out.right = { predicted: b.box.hasAttribute("data-predicted"), frame: b.frame.hidden, page: b.frame.srcdoc, heard: heard,
+                marked: b.rows[0].className, claims: claims.length, ro: b.area.readOnly, run: b.run.hidden, check: b.check.hidden,
+                status: b.status.textContent, hints: b.hints.hidden };
+  b.area.value = "<p>mine</p>"; b.run.click(); out.after = b.frame.srcdoc;
+  var again = pickBlock(CODE);
+  out.redrawn = { predicted: again.box.hasAttribute("data-predicted"), frame: again.frame.hidden };
+  // First try right: claimed once, with the page as xp.py reads it.
+  var f = pickBlock("<b>Pie</b>\n# choice: bold Pie\n# choice: slanted Pie\n# answer: bold Pie");
+  pick(f, 0); f.check.click(); await tick();
+  out.first = { claims: claims.slice(), status: f.status.textContent };
+  // No choices: the plain html run box it always was, holding nothing.
+  var plain = pickBlock("<p>Hi</p>");
+  out.plain = { kind: plain.box.className, predict: plain.box.hasAttribute("data-predict"), run: !!plain.check };
+  // A teacher's page: Show the answer, without passing the box.
+  S.configure({ teacher: true });
+  var t = pickBlock("<i>x</i>\n# choice: slanted x\n# choice: bold x\n# answer: slanted x");
+  out.teacher = { show: t.show.hidden };
+  t.show.click();
+  out.teacherShown = { frame: t.frame.hidden, marked: t.rows[0].className, predicted: t.box.hasAttribute("data-predicted") };
+  S.configure({ teacher: false });
+  out.split = ["<p>a</p>\n# choice: x\n  #ANSWER: y\n# hint: h\n#menu { color: red }\n\n", "# choice:\n<b>"].map(function (x) {
+    var q = S._splitPick(x); return [q.code, q.choices, q.answer, q.hints]; });
+  console.log(JSON.stringify(out));
+})().catch(function (e) { console.log(JSON.stringify({ error: String(e && e.stack || e) })); });
+"""
+res = subprocess.run(["node", "-e", PICK_HARNESS], capture_output=True, text=True, timeout=60)
+try:
+    pk = json.loads(res.stdout.strip().splitlines()[-1])
+except (ValueError, IndexError):
+    pk = {"error": res.stderr[-800:] or res.stdout[-800:]}
+print("\nAn HTML pick (```html predict with # choice: lines)")
+check("node ran the pick", "error" not in pk, pk.get("error"))
+if "error" not in pk:
+    f = pk["fresh"]
+    check("the choice/answer/hint lines are out of the code; a choice each, the answer among them, in order",
+          f["code"] == '<input type="checkbox"> Gravy' and f["n"] == 3
+          and f["texts"] == ["a box you can tick", "a round button", "a text box"], f)
+    check("  read only, held, no page yet, Check waits for a pick; a student has no Show the answer",
+          f["ro"] and f["held"] and f["checkOff"] and f["frame"] and f["run"] and f["show"], f)
+    check("  picking opens Check", pk["picked"] is False)
+    w = pk["wrong"]
+    check("a wrong pick: marked ✗ and can't be picked again, the first hint, still held",
+          "is-wrong" in w["marked"] and "✗" in w["sign"] and w["gone"] and w["hints"] == 1 and w["held"] and w["ro"], w)
+    check("  and the page and the answer are NOT shown", w["frame"] and not w["answerShown"], w)
+    check("  Check waits for a new pick", w["checkOff"] is True, w)
+    r = pk["right"]
+    check("the right pick: ✓, the page itself shown, the box predicted, and the slide told",
+          r["predicted"] and not r["frame"] and r["page"] == '<input type="checkbox"> Gravy' and r["heard"] >= 1
+          and "is-right" in r["marked"], r)
+    check("  the code opens up with Run; Check and the hints go; not the first try, so no XP",
+          not r["ro"] and not r["run"] and r["check"] and r["hints"] and r["claims"] == 0 and "first" not in r["status"], r)
+    check("  their own changes then render", pk["after"] == "<p>mine</p>", pk["after"])
+    check("  drawn again: still predicted, the page shown", pk["redrawn"] == {"predicted": True, "frame": False}, pk["redrawn"])
+    check("right on the first try: claimed once, the page without its lines",
+          pk["first"]["claims"] == ["<b>Pie</b>"] and "first try" in pk["first"]["status"], pk["first"])
+    check("without choices it's the plain html run box, holding nothing",
+          "snippet-html" in pk["plain"]["kind"] and not pk["plain"]["predict"] and pk["plain"]["run"], pk["plain"])
+    check("a teacher's page has Show the answer: it marks the answer and shows the page, passing nothing",
+          pk["teacher"]["show"] is False and not pk["teacherShown"]["frame"] and "is-answer" in pk["teacherShown"]["marked"]
+          and not pk["teacherShown"]["predicted"], pk)
+
 if "error" not in got:
     print("\nThe box")
     f = got["fresh"]
@@ -244,6 +336,12 @@ if "error" not in got:
     check("snippets.js and xp.py take the same code out of a block",
           [s[0] for s in got["split"]] == [xp.predict_code(s) for s in samples],
           ([s[0] for s in got["split"]], [xp.predict_code(s) for s in samples]))
+    pick_samples = ["<p>a</p>\n# choice: x\n  #ANSWER: y\n# hint: h\n#menu { color: red }\n\n", "# choice:\n<b>"]
+    check("snippets.js and xp.py take the same page out of an HTML pick (a CSS #id line stays)",
+          "error" not in pk and [x[0] for x in pk["split"]] == [xp.pick_code(x) for x in pick_samples]
+          and pk["split"][0][0].endswith("#menu { color: red }"), (pk.get("split"), [xp.pick_code(x) for x in pick_samples]))
+    check("  an answer not among the choices is added; an empty line is nothing",
+          "error" not in pk and pk["split"][0][1] == ["x", "y"] and pk["split"][0][2] == "y" and pk["split"][1][1] == [], pk.get("split"))
     check("  hints in order; an empty one is no hint",
           got["split"][0][1] == ["one", "two"] and got["split"][1][1] == [], got["split"])
 
@@ -292,10 +390,20 @@ print(word[0])
 ~~~py predict
 print(len("PIE"))
 ~~~
+
+```html predict
+<b>Pie</b>
+# choice: bold Pie
+# answer: bold Pie
+```
+
+```html predict
+<p>no choices, a plain run box</p>
+```
 """
 teacher.post("/api/library", json={"body": NOTES, "linkTo": SLUG})
-check("both blocks in the notes are found, and nothing else",
-      len(xp.predict_keys({"notes.md": NOTES, "main.py": "```python predict\nx\n```"})) == 2)
+check("every predict block in the notes is found (an HTML one too), and nothing else",
+      len(xp.predict_keys({"notes.md": NOTES, "main.py": "```python predict\nx\n```"})) == 4)
 
 
 def claim(c, code):
@@ -307,13 +415,14 @@ A = 'word = "TURKEY"\nprint(word[0])'
 check("a first-try prediction pays PREDICT_XP", claim(amy, A) == (200, xp.PREDICT_XP), claim)
 check("  once: the same block again pays nothing", claim(amy, A) == (200, 0))
 check("  the other block pays too", claim(amy, 'print(len("PIE"))') == (200, xp.PREDICT_XP))
+check("  and an HTML pick, by its page", claim(amy, "<b>Pie</b>") == (200, xp.PREDICT_XP))
 check("  a block that isn't in the notes pays nothing", claim(amy, 'print("free xp")') == (200, 0))
 check("  nor does a teacher's", claim(teacher, A) == (200, 0))
 check("  and signed out, it's refused", claim(nobody, A)[0] == 401)
 _db = P.SessionLocal()
 paid = [a.source for a in _db.query(accounts.XpAward).filter_by(user_id=AMY).all()]
 _db.close()
-check("  paid as predict:<assignment>:<block>", len(paid) == 2 and all(s.startswith("predict:") for s in paid), paid)
+check("  paid as predict:<assignment>:<block>", len(paid) == 3 and all(s.startswith("predict:") for s in paid), paid)
 
 failed = results.count(False)
 print("\n" + ("ALL PASSED" if not failed else "SOME FAILED") + " (%d checks, %d failed)" % (len(results), failed))

@@ -506,8 +506,9 @@ def avatars_for_page():
 
 # ---------------------------------------------------------------- predictions
 
-_PREDICT_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*py(?:thon)?[ \t]+predict[ \t]*$", re.I)
+_PREDICT_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*(py(?:thon)?|html)[ \t]+predict[ \t]*$", re.I)
 _PREDICT_HINT = re.compile(r"^\s*#\s*hint\s*:", re.I)
+_PICK_LINE = re.compile(r"^\s*#\s*(choice|answer|hint)\s*:", re.I)
 
 
 def predict_code(text):
@@ -519,6 +520,14 @@ def predict_code(text):
     return "\n".join(keep).rstrip()
 
 
+def pick_code(text):
+    """An ```html predict block's page as the student's page renders it
+    (snippets.js splitPick): its `# choice:`, `# answer:` and `# hint:`
+    lines out, trailing space off. test_predict.py holds the two together."""
+    keep = [ln for ln in str(text).split("\n") if not _PICK_LINE.match(ln)]
+    return "\n".join(keep).rstrip()
+
+
 def predict_key(code):
     """The block a claim is about, for its award's source."""
     return hashlib.sha1(predict_code(code).encode("utf-8")).hexdigest()[:12]
@@ -526,21 +535,23 @@ def predict_key(code):
 
 def predict_keys(files):
     """Every ```python predict block in an assignment's notes (its .md
-    files), as predict_key()s. A claim for anything else pays nothing."""
+    files), as predict_key()s, and every ```html predict block (a pick),
+    read as pick_code reads it. A claim for anything else pays nothing."""
     keys = set()
     for name, text in (files or {}).items():
         if not str(name).lower().endswith(".md"):
             continue
-        fence, body = None, []
+        fence, body, html = None, [], False
         for ln in str(text or "").replace("\r\n", "\n").split("\n"):
             if fence is None:
                 m = _PREDICT_OPEN.match(ln)
                 if m:
-                    fence, body = m.group(1), []
+                    fence, body, html = m.group(1), [], m.group(2).lower() == "html"
                 continue
             s = ln.strip()
             if s and s[0] == fence[0] and set(s) == {fence[0]} and len(s) >= len(fence):
-                keys.add(predict_key("\n".join(body)))
+                text = "\n".join(body)
+                keys.add(predict_key(pick_code(text) if html else text))
                 fence = None
             else:
                 body.append(ln)

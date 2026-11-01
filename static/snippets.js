@@ -6,6 +6,10 @@
  *     ```python predict        the student says what it will print, and
  *                              must get it RIGHT (buildPredict, below)
  *     ```html run              a page (WebIDE): Run shows it in a frame
+ *     ```html predict          with `# choice:` lines: the student picks
+ *                              what the page will show, and must pick
+ *                              RIGHT (buildPick, below); without them,
+ *                              the same as ```html run
  *
  * notes.js joins the second word onto the language (language-python-run),
  * and calls renderBlocks on everything it draws, where this file is loaded.
@@ -438,6 +442,163 @@ window.IDESnippets = (function () {
     return box;
   }
 
+  // ------------------------------------------------ an HTML prediction
+  /* ```html predict with `# choice:` lines (Nov 2026): a page can't be
+     predicted by typing what it prints, so the student PICKS what it will
+     show from the teacher's choices, and must pick right to go on — the
+     same rules as buildPredict: a wrong pick is marked ✗ and the next
+     `# hint:` comes out, the answer is never shown, the code is read only
+     until it's right, then the page itself appears (that's the reveal) and
+     the box is data-predicted for `locked: yes`. First try right claims XP.
+
+         ```html predict
+         <input type="checkbox"> Gravy
+         # choice: a box you can tick, next to Gravy
+         # choice: a round button next to Gravy
+         # answer: a box you can tick, next to Gravy
+         # hint: checkbox: think of a to-do list
+         ```
+
+     `# answer:` names one of the choices (added to them if it isn't). The
+     lines are taken out of the code shown and rendered, as hints are, and
+     xp.py pick_code reads a block alike (or no claim would ever match).
+     A ```html predict block with no choices is the plain ```html run box
+     it always was, so older notes don't change. */
+  var PICK_LINE = /^\s*#\s*(choice|answer|hint)\s*:\s*(.*)$/i;
+  function splitPick(text) {
+    var code = [], choices = [], hints = [], answer = "";
+    String(text).split("\n").forEach(function (ln) {
+      var m = ln.match(PICK_LINE);
+      if (!m) { code.push(ln); return; }
+      var k = m[1].toLowerCase(), v = m[2].trim();
+      if (!v) return;
+      if (k === "choice") choices.push(v);
+      else if (k === "hint") hints.push(v);
+      else answer = v;
+    });
+    if (answer && choices.indexOf(answer) < 0) choices.push(answer);
+    return { code: code.join("\n").replace(/\s+$/, ""), choices: choices, answer: answer, hints: hints };
+  }
+
+  var pickCount = 0;
+  function buildPick(parts) {
+    var original = parts.code, hints = parts.hints, choices = parts.choices;
+    var st = loadState(original);
+    if (!st.no) st.no = [];               // the wrong picks so far, by their words
+    var box = el("div", "snippet snippet-html snippet-predict snippet-pick");
+    box.setAttribute("data-predict", "");
+
+    var area = el("textarea", "snippet-code");
+    area.spellcheck = false;
+    area.value = original;
+    area.rows = Math.max(2, Math.min(24, original.split("\n").length));
+    box.appendChild(area);
+
+    box.appendChild(el("div", "snippet-ask small", "🤔 What will this page show? Pick one."));
+    var list = el("div", "snippet-choices");
+    var name = "pick" + (++pickCount), picked = -1, rows = [];
+    choices.forEach(function (text, i) {
+      var row = el("label", "snippet-choice");
+      var radio = el("input");
+      radio.type = "radio";
+      radio.name = name;
+      radio.value = String(i);
+      var sign = el("span", "snippet-choice-sign");
+      row.appendChild(radio);
+      row.appendChild(el("span", "snippet-choice-text", text));
+      row.appendChild(sign);
+      radio.addEventListener("change", function () { picked = i; paint(); });
+      list.appendChild(row);
+      rows.push({ row: row, radio: radio, sign: sign, text: text });
+    });
+    box.appendChild(list);
+
+    var bar = el("div", "snippet-bar");
+    var check = el("button", "btn btn-primary snippet-run", "✔ Check my prediction");
+    check.type = "button";
+    var run = el("button", "btn btn-primary snippet-run", "▶ Run");
+    run.type = "button";
+    var reset = el("button", "linkbtn snippet-reset", "Reset");
+    reset.type = "button";
+    var show = el("button", "linkbtn snippet-show", "Show the answer");
+    show.type = "button";
+    show.title = "Teachers only: the right choice and the page, without predicting";
+    var status = el("span", "snippet-status small");
+    [check, run, reset, show, status].forEach(function (b) { bar.appendChild(b); });
+    box.appendChild(bar);
+
+    var hintList = el("ul", "snippet-hints");
+    hintList.hidden = true;
+    box.appendChild(hintList);
+    var frame = el("iframe", "snippet-frame");
+    frame.setAttribute("sandbox", "allow-scripts");
+    frame.setAttribute("title", "What this page looks like");
+    frame.hidden = true;
+    box.appendChild(frame);
+
+    function showPage(code) { frame.hidden = false; frame.srcdoc = code; }
+    function paint() {
+      rows.forEach(function (r) {
+        var wrong = st.no.indexOf(r.text) >= 0, right = st.right && r.text === parts.answer;
+        r.row.className = "snippet-choice" + (wrong ? " is-wrong" : "") + (right ? " is-right" : "");
+        r.sign.textContent = wrong ? "✗" : right ? "✓" : "";
+        r.radio.disabled = st.right || wrong;
+        if (right) r.radio.checked = true;
+      });
+      area.readOnly = !st.right;
+      area.title = st.right ? "Change it and run it again" : "Predict it first; then you can change it";
+      check.hidden = st.right;
+      check.disabled = picked < 0 || st.no.indexOf(choices[picked]) >= 0;
+      run.hidden = reset.hidden = !st.right;
+      show.hidden = !teacher() || st.right;
+      if (st.right) box.setAttribute("data-predicted", "");
+      else box.removeAttribute("data-predicted");
+      hintList.textContent = "";
+      var n = st.right ? 0 : Math.min(st.tries, hints.length);
+      for (var i = 0; i < n; i++) hintList.appendChild(el("li", "", "💡 " + hints[i]));
+      hintList.hidden = n === 0;
+    }
+
+    check.addEventListener("click", function () {
+      if (check.disabled || st.right || picked < 0) return;
+      var first = st.tries === 0;
+      st.tries += 1;
+      if (choices[picked] === parts.answer) {
+        st.right = true;
+        saveState(original, st);
+        status.className = "snippet-status small is-right";
+        status.textContent = first ? "✓ Right on the first try!" : "✓ Right!";
+        paint();
+        showPage(original);
+        tellLock(box);
+        if (first && page.claim) { try { page.claim(original); } catch (e) { /* XP is a bonus */ } }
+        return;
+      }
+      st.no.push(choices[picked]);
+      saveState(original, st);
+      picked = -1;
+      status.className = "snippet-status small is-wrong";
+      status.textContent = hints.length ? "Not that one. Read the hint, then pick again." : "Not that one. Pick again.";
+      paint();
+    });
+    run.addEventListener("click", function () { if (st.right) showPage(area.value); });
+    reset.addEventListener("click", function () { area.value = original; });
+    show.addEventListener("click", function () {
+      rows.forEach(function (r) {
+        if (r.text === parts.answer) { r.row.className += " is-answer"; r.sign.textContent = "← the answer"; }
+      });
+      showPage(original);
+    });
+
+    if (st.right) {
+      status.className = "snippet-status small is-right";
+      status.textContent = "✓ You predicted this one.";
+      showPage(original);
+    }
+    paint();
+    return box;
+  }
+
   var KINDS = [
     ["code.language-python-run, code.language-py-run", "python"],
     ["code.language-python-predict, code.language-py-predict", "predict"],
@@ -449,7 +610,14 @@ window.IDESnippets = (function () {
       Array.prototype.forEach.call(root.querySelectorAll(k[0]), function (code) {
         var pre = code.parentNode;
         if (!pre || pre.tagName !== "PRE") return;
-        pre.parentNode.replaceChild(k[1] === "predict" ? buildPredict(code) : build(code, k[1]), pre);
+        var made;
+        if (k[1] === "predict") made = buildPredict(code);
+        else if (k[1] === "html" && /(^|\s)language-html-predict(\s|$)/.test(code.className)) {
+          // With choices, a pick; without, the Run box it always was.
+          var parts = splitPick(code.textContent.replace(/\n$/, ""));
+          made = parts.choices.length && parts.answer ? buildPick(parts) : build(code, "html");
+        } else made = build(code, k[1]);
+        pre.parentNode.replaceChild(made, pre);
       });
     });
   }
@@ -531,6 +699,6 @@ window.IDESnippets = (function () {
       .catch(function () {});
   }
 
-  return { renderBlocks: renderBlocks, run: run, runJs: runJs, configure: configure,
+  return { renderBlocks: renderBlocks, run: run, runJs: runJs, configure: configure, _splitPick: splitPick,
            TIME_LIMIT: TIME_LIMIT, _same: same, _splitHints: splitHints, _outLines: outLines };
 })();

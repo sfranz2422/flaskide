@@ -131,8 +131,9 @@ check("a predict question's JavaScript runs in a frame with scripts but no same 
       and "var timer = setTimeout(function () {\n        finish(" in src)
 # What a predict box does — right or no output, hints, XP — is run in
 # test_predict.py; here only that a predict block is drawn as one.
-check("a predict block is drawn as a prediction, not a plain Run box",
-      'k[1] === "predict" ? buildPredict(code)' in src)
+check("a predict block is drawn as a prediction, not a plain Run box; an html predict with choices as a pick",
+      'if (k[1] === "predict") made = buildPredict(code);' in src
+      and 'made = parts.choices.length && parts.answer ? buildPick(parts) : build(code, "html");' in src)
 
 failed = results.count(False)
 print("\n" + ("ALL PASSED" if not failed else "SOME FAILED") + " (%d checks, %d failed)" % (len(results), failed))

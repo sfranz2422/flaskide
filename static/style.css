@@ -1161,6 +1161,15 @@ body:not(.is-authoring) .notes-body .snippet-guess,
 .snippet-mark code { white-space: pre-wrap; }
 .snippet-hints { margin: 0; padding: 6px 10px 8px; border-top: 1px solid var(--line); list-style: none; }
 .snippet-hints li { margin: 2px 0; }
+/* ```html predict with choices (snippets.js buildPick): pick what the page shows. */
+.snippet-choices { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
+.snippet-choice { display: flex; gap: 8px; align-items: baseline; padding: 6px 10px; cursor: pointer;
+                  border: 1px solid var(--line); border-radius: 8px; background: var(--bg-panel); }
+.snippet-choice-sign { margin-left: auto; font-weight: 700; }
+.snippet-choice.is-wrong { opacity: .7; cursor: default; }
+.snippet-choice.is-wrong .snippet-choice-sign { color: var(--red); }
+.snippet-choice.is-right { border-color: var(--green); }
+.snippet-choice.is-right .snippet-choice-sign, .snippet-choice.is-answer .snippet-choice-sign { color: var(--green); }
 .snippet-out { margin: 0; border-top: 1px solid var(--line); background: var(--bg); padding: 8px 10px;
                max-height: 260px; overflow: auto; white-space: pre-wrap; font-size: 13px; }
 .snippet-err { color: var(--red); }
