@@ -304,6 +304,10 @@ check("a title keeps an _ inside a word (url_for), and drops emphasis marks",
       _lib.title_of("# Day 14 — **Links**: `url_for` and _static_ files\n", "x")
       == "Day 14 — Links: url_for and static files",
       _lib.title_of("# Day 14 — **Links**: `url_for` and _static_ files\n", "x"))
+check("  and a PHP variable's _ ($_GET, $_SESSION): a PHP lesson's title read $GET",
+      _lib.title_of("# PHP Day 7 — The Address Bar: $_GET and $_SESSION\n", "x")
+      == "PHP Day 7 — The Address Bar: $_GET and $_SESSION",
+      _lib.title_of("# PHP Day 7 — The Address Bar: $_GET and $_SESSION\n", "x"))
 
 print()
 failed = results.count(False)
