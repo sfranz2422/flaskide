@@ -1,15 +1,16 @@
 # FlaskIDE
 
-A browser-based editor for teaching Flask — and SQL. A real Flask app runs in
+A browser-based editor for teaching Flask — and SQL, and PHP. A real Flask app runs in
 Pyodide and answers requests through its test client, so the preview is a
 route's actual reply and has an address bar to prove it. Nothing a student
 writes runs on the server.
 
-**Two kinds of project, and the files decide which.** `app.py` present means
+**Three kinds of project, and the files decide which.** `app.py` present means
 Flask; `query.sql` present means SQL, which builds `data.db` from `schema.sql`
-and runs the query statement by statement. `kind_of(files)` in `app.py` is the
-rule, and `app.js` reads the same thing off the same files. There is no mode
-setting to get out of step.
+and runs the query statement by statement; `index.php` with no `app.py` means
+a PHP site (below). `kind_of(files)` in `app.py` is the rule, and `app.js`
+reads the same thing off the same files. There is no mode setting to get out
+of step.
 
 ## Running it
 
@@ -42,6 +43,10 @@ failing one, so a red suite cannot scroll past unnoticed — a bare
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
 `brew install node` if it is missing.
+
+**`test_php.py` needs `npm install`** in this repo, once: `package.json` is
+test-only (`@php-wasm/node`, the same PHP build the page loads from the CDN),
+and `node_modules/` is not committed. It fails, saying so, without it.
 
 `test_sql.py` executes the SQL bridge exactly
 as the browser receives it, which matters: the bridge is built inside a
@@ -80,9 +85,10 @@ table for this reason.
 
 **A project lives in `files`, and `code` is always `""`.**
 
-**The entry file is not fixed.** `ENTRY` is `app.py` and `SQL_ENTRY` is
-`query.sql`, and anything that writes into "the project's main file" has to
-pick between them by looking at what is there. A live save into a SQL
+**The entry file is not fixed.** `ENTRY` is `app.py`, `SQL_ENTRY` is
+`query.sql` and `PHP_ENTRY` is `index.php`, and anything that writes into "the
+project's main file" has to pick between them by looking at what is there
+(`entry_of(files)`). A live save into a SQL
 assignment that lands in `app.py` creates a project that is neither kind, and
 the student watches their work disappear from the editor they typed it in.
 
@@ -96,6 +102,27 @@ connection with `PRAGMA foreign_keys = ON`. Splitting SQL is done with
 inside a string or a comment is not the end of a statement.
 
 ## Features worth knowing about
+
+**PHP sites** (`static/php.js`, `php_worker.js`, `php_core.js`; `examples/php/`;
+`/php`, Add to class → PHP site; `/help/php`). Plain PHP pages — `index.php`,
+`add.php?id=3`, `include 'includes/header.php'` — run in the student's browser
+by WebAssembly PHP 8.4 (WordPress Playground's `@php-wasm`, GPL, loaded from
+jsDelivr like Pyodide and never copied into this repo). `php_core.js` is the
+PHP side, shared by the page's Web Worker and `test_php.py` in Node, so the
+tests run the code the browser runs; `php.js` is `window.PhpRuntime`, the same
+shape as `FlaskIDERuntime`, and `preview.js` / the checks / the live page take
+whichever runtime the files call for (`Preview.useRuntime`). A worker because
+WebAssembly can't be interrupted: a page that runs past 10 s has its worker
+ended, and the site starts again. Every Run is a fresh visitor and a fresh
+`data.db` from `schema.sql`; pages use PDO with **SQLite** (a MySQL server
+can't run in a browser — the teacher chose this). The preview resolves
+relative addresses from the page they're on (`resolve`), because PHP sites
+link with `href="pet.php"` and redirect to `index.php`. Checks: the same
+`tests` lines, run by `PhpRuntime.autograde` (one visitor per check, a time
+limit per test); `uses`/`avoids`/`defines` read PHP's own tokens, so a word in
+a comment, a string or the HTML never counts. The syntax card has PHP's own
+table (`PHP_RULES` in `syntax.js`), each rule's message made in real PHP by
+`test_php.py`, so a PHP upgrade that rewords one fails there.
 
 **The preview behaves like one browser tab** (`static/preview.js`, the
 bridge's `_flaskide_request` in `static/flask.js`). One Flask test client
