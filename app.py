@@ -2472,6 +2472,35 @@ def _self_tests_xp(db, item, student_id, row):
     return got
 
 
+@app.post("/api/predict/xp")
+def predict_xp():
+    """A ```python predict block in the notes, predicted right on the first
+    try (snippets.js): xp.PREDICT_XP, once per block per student, ever, and
+    only for a block that is really in this assignment's notes. The server
+    never sees the guess, so this is believed like Check my work's own XP:
+    a faked claim takes the small amount once per block there is."""
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        if user is None:
+            return jsonify(error="Sign in to earn XP."), 401
+        data = request.get_json(silent=True) or {}
+        item = _quiz_assignment(db, data.get("assignment"))
+        if item is None:
+            return jsonify(error="No such assignment."), 404
+        if user.id == item.teacher_id or accounts.is_teacher(user.email) or not _earns_xp(user):
+            return jsonify(ok=True, xp=0)
+        code = str(data.get("code") or "")[:20000]
+        key = xp.predict_key(code)
+        if key not in xp.predict_keys(item.file_map()):
+            return jsonify(ok=True, xp=0)
+        gained = xp.award(db, user.id, "predict:%d:%s" % (item.id, key), xp.PREDICT_XP,
+                          ("Predicted the output first try in %s" % item.title)[:200], APP_NAME)
+        return jsonify(ok=True, xp=gained)
+    finally:
+        db.close()
+
+
 @app.post("/api/tests/self")
 def tests_self():
     """A student's own Check my work, kept for the teacher to see. It counts
@@ -5736,7 +5765,7 @@ def xp_news():
     /api/, so polling it is never activity and can't keep them signed in.
 
     Leaves out what the page they were on already said, as it happened: a
-    run that paid, a test their own check passed, and a question's XP (an answer's reply carries it, quest
+    run that paid, a test their own check passed, a first-try prediction, and a question's XP (an answer's reply carries it, quest
     reward included — xp.js holds its own popup for a "bonus:" just after).
     What is left is what reached them from elsewhere: the teacher's rewards
     and penalties, random events, tests their Check all passed, a quest
@@ -5770,7 +5799,7 @@ def xp_news():
         awards = []
         for a in mine.filter(accounts.XpAward.id > after).order_by(accounts.XpAward.id).limit(10):
             kind = a.source.split(":", 1)[0]
-            if kind in ("run", "quiz", "all", "selftest") or (kind == "event" and events_after is not None):
+            if kind in ("run", "quiz", "all", "selftest", "predict") or (kind == "event" and events_after is not None):
                 continue
             awards.append({"xp": a.xp, "reason": a.reason, "kind": kind})
         return jsonify(user=user.id, latest=latest, awards=awards, events=events, events_latest=events_latest)

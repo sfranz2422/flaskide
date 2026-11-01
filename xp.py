@@ -30,6 +30,7 @@ Nothing here touches a grade. Tokens are redeemed by the teacher, by hand,
 outside the app; the Use button only lowers the count.
 """
 
+import hashlib
 import re
 import secrets
 
@@ -44,6 +45,10 @@ RUN_EVERY_SECONDS = 30 * 60
 #: be faked, so the most a fake can take is this times the tests there are.
 #: The teacher's Check all still pays XP_PER_POINT a point on top.
 SELF_TEST_XP = 2
+#: A ```python predict block in the notes predicted right on the FIRST try,
+#: once per block, ever (snippets.js says it was the first; the server can't
+#: see the guess, so a fake takes at most this once per block in the notes).
+PREDICT_XP = 2
 #: The XP a token costs. Was 500; raised to 1000 on 2026-10-21 by the
 #: teacher. Tokens are worked out from XP, never stored (summary), so the
 #: new price applies to everyone at once — a student who had earned tokens
@@ -497,3 +502,46 @@ def clean_avatar(raw, level):
 
 def avatars_for_page():
     return [{"id": i, "label": label, "level": lv} for i, label, lv in AVATARS]
+
+
+# ---------------------------------------------------------------- predictions
+
+_PREDICT_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*py(?:thon)?[ \t]+predict[ \t]*$", re.I)
+_PREDICT_HINT = re.compile(r"^\s*#\s*hint\s*:", re.I)
+
+
+def predict_code(text):
+    """A predict block's code as the student's page runs it (snippets.js
+    splitHints): the `# hint:` lines out, trailing space off. The two must
+    read a block alike or no claim would ever match — test_xp.py holds them
+    together."""
+    keep = [ln for ln in str(text).split("\n") if not _PREDICT_HINT.match(ln)]
+    return "\n".join(keep).rstrip()
+
+
+def predict_key(code):
+    """The block a claim is about, for its award's source."""
+    return hashlib.sha1(predict_code(code).encode("utf-8")).hexdigest()[:12]
+
+
+def predict_keys(files):
+    """Every ```python predict block in an assignment's notes (its .md
+    files), as predict_key()s. A claim for anything else pays nothing."""
+    keys = set()
+    for name, text in (files or {}).items():
+        if not str(name).lower().endswith(".md"):
+            continue
+        fence, body = None, []
+        for ln in str(text or "").replace("\r\n", "\n").split("\n"):
+            if fence is None:
+                m = _PREDICT_OPEN.match(ln)
+                if m:
+                    fence, body = m.group(1), []
+                continue
+            s = ln.strip()
+            if s and s[0] == fence[0] and set(s) == {fence[0]} and len(s) >= len(fence):
+                keys.add(predict_key("\n".join(body)))
+                fence = None
+            else:
+                body.append(ln)
+    return keys

@@ -506,12 +506,11 @@ window.FlaskIDENotes = (function () {
        first slide not yet passed) is kept in this browser, per page. */
     var lockOpt = opts && opts.locked !== undefined ? opts : null;
     /* What the lock holds a slide for: a ```tests block, until every check
-       passes, and a ```python predict block, until it has been RUN — which
-       its Run button allows only once a prediction is typed (snippets.js
-       marks the box data-predicted). Before predict boxes held anything, a
-       student could skip straight past them to the typing, and predicting
-       was the point of the step. A wrong guess still opens the way: the
-       prediction is for thinking, not for marks. */
+       passes, and a ```python predict block, until the prediction is RIGHT
+       (snippets.js marks the box data-predicted; a wrong one never shows
+       the output, so there's nothing to copy). Before predict boxes held
+       anything, a student skipped straight past them to the typing, and
+       predicting was the point of the step. */
     var TESTS_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*tests[ \t]*$/im;
     var PREDICT_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*py(thon)?[ \t]+predict[ \t]*$/im;
     var HOLDS = ".tests-card[data-checks]:not([data-passed])";
@@ -539,15 +538,17 @@ window.FlaskIDENotes = (function () {
       if (!cut.length) return;
       next.disabled = at >= cut.length - 1 || unfinished() || busy || hold;
       next.title = unfinished() ? "Play the rest of this slide first"
-        : hold ? (body.querySelector(UNPREDICTED) ? "Predict and run this slide's example first" : "Pass this slide's checks first")
+        : hold ? (body.querySelector(UNPREDICTED) ? "Get this slide's prediction right first" : "Pass this slide's checks first")
         : "Next slide";
     }
     body.addEventListener("ide-checks", function () {
-      if (lockOn && cut.length && at >= unlocked && !waiting()) {
+      // Passed only once the slide has played through: a card passed
+      // halfway (animate:) mustn't open the cards still to come.
+      if (lockOn && cut.length && at >= unlocked && !waiting() && !unfinished()) {
         unlocked = at + 1;
         saveUnlocked();
       }
-      arrows();
+      if (playBar) paintPlayer(); else arrows();
     });
 
     if (player) {
@@ -597,12 +598,21 @@ window.FlaskIDENotes = (function () {
       playBar.hidden = !mode;
       setTheme(playBar, theme);
       var more = mode && at === reached.slide && shown < total;
+      /* TYPED BEFORE MORE PLAYS (`locked: yes` with `animate:`): a part
+         with a tests card or a prediction holds ▶ Play until it passes, as
+         a slide's holds its arrow. Students were pressing Play and Next
+         past every "Type this" without typing it; a small tests block
+         right after the code now makes them do the step before the next. */
+      var held = more && checksHold();
       play.hidden = !more;
-      play.disabled = busy;
+      play.disabled = busy || held;
+      play.title = held ? (body.querySelector(UNPREDICTED) ? "Get the prediction above right first" : "Pass the check above first") : "";
       skip.hidden = !skippable() || !(busy || more);
       replay.hidden = !skippable() || !mode || busy || !shown;
       play.textContent = shown ? "▶ Play more" : "▶ Play";
-      hint.textContent = busy ? "" : more
+      hint.textContent = busy ? "" : held
+        ? (body.querySelector(UNPREDICTED) ? "Get the prediction above right to go on" : "Pass the check above to go on")
+        : more
         ? (total > 1 ? "Part " + (shown + 1) + " of " + total : "")
         : at < reached.slide || shown >= total ? (cut.length && at < cut.length - 1 ? "Done — on to the next slide ▶" : "Done") : "";
       if (cut.length) prev.disabled = at <= 0 || busy;
@@ -633,7 +643,7 @@ window.FlaskIDENotes = (function () {
 
     function playNext() {
       var secs = sectionsHere();
-      if (busy || !mode || at !== reached.slide || reached.played >= secs.length) return;
+      if (busy || !mode || at !== reached.slide || reached.played >= secs.length || checksHold()) return;
       busy = true;
       var sec = secs[reached.played];
       reached.played += 1;

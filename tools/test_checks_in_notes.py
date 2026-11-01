@@ -215,8 +215,12 @@ var tick = function () { return new Promise(function (r) { setTimeout(r, 0); });
   var box = predictBox(p1); await refresh(p1, pdeck);
   var run = box.querySelector(".snippet-run"), guess = box.querySelector(".snippet-guess");
   out.pHeld = { next: p1.next.disabled, title: p1.next.title, run: run.disabled };
-  guess.value = "1"; guess.handlers.input.forEach(function (f) { f({}); });
+  // A wrong prediction (the stand-in worker always prints 1) keeps it held.
+  guess.value = "2"; guess.handlers.input.forEach(function (f) { f({}); });
   out.pTyped = { next: p1.next.disabled, run: run.disabled };
+  run.click(); await tick(); await tick(); await tick();
+  out.pWrong = p1.next.disabled;
+  guess.value = "1"; guess.handlers.input.forEach(function (f) { f({}); });
   run.click(); await tick(); await tick(); await tick();
   out.pRan = { next: p1.next.disabled, kept: store["pyide-unlocked:p"], said: box.querySelector(".snippet-status").textContent };
   p1.pane.remove();
@@ -239,6 +243,30 @@ var tick = function () { return new Promise(function (r) { setTimeout(r, 0); });
   out.pFreeBox = !!b4;
   out.pFree = p4.next.disabled;
   p4.pane.remove();
+
+  // ---------------------------------------------------- held mid-slide
+  // `animate:` with `locked: yes`: a part with a card holds ▶ Play until it
+  // passes — students pressed Play past every "Type this" without typing.
+  var still = window.matchMedia;
+  window.matchMedia = function () { return { matches: true }; };   // no animation to wait for
+  C.forget();
+  answer = { results: [{ label: "Step test", ok: false, detail: "not yet" }] };
+  var adeck = "animate: words\nlocked: yes\n# One\n...\nType this\n...\nNow your own line\n---\n# Two";
+  var a = await viewer(adeck, { locked: true, animate: true, key: "anim" });
+  var play = a.pane.querySelector(".reveal-play");
+  play.click(); await tick(); await tick();
+  a.put();                                    // the part just played had a tests block
+  await C.check();
+  out.midHeld = { play: play.disabled, hint: a.pane.querySelector(".reveal-hint").textContent };
+  play.click(); await tick(); await tick();
+  out.midStillAt = a.pane.querySelectorAll(".reveal-part").length;
+  answer = { results: [{ label: "Step test", ok: true }] };
+  await C.check();
+  out.midOpen = { play: play.disabled, next: a.next.disabled, kept: store["pyide-unlocked:anim"] || null };
+  play.click(); await tick(); await tick();
+  out.midPlayed = a.pane.querySelectorAll(".reveal-part").length;
+  a.pane.remove();
+  window.matchMedia = still;
 
   console.log(JSON.stringify(out));
 })().catch(function (e) { console.log(JSON.stringify({ error: String(e && e.stack || e) })); });
@@ -290,14 +318,23 @@ if "error" not in got:
     check("a slide passed once stays open after a reload, before any check", got["reload"] is False)
     check("never held without the line, where the page doesn't ask, or on a slide with no tests",
           got["free"] == [False, False, False, False], got["free"])
+    mh = got["midHeld"]
+    check("animate: a part with a check holds ▶ Play until it passes, saying why",
+          mh["play"] is True and "check above" in mh["hint"], mh)
+    check("  pressing it anyway plays nothing", got["midStillAt"] == 1, got["midStillAt"])
+    mo = got["midOpen"]
+    check("  passed: Play opens — but not the slide, with parts still to play",
+          mo["play"] is False and mo["next"] is True and mo["kept"] is None, mo)
+    check("  and the next part plays", got["midPlayed"] == 2, got["midPlayed"])
     ph = got["pHeld"]
     check("a slide with a python predict block holds the next one, saying why",
-          ph["next"] is True and ph["title"] == "Predict and run this slide's example first" and ph["run"] is True, ph)
-    check("  typing a guess isn't enough: it opens Run, not the slide",
+          ph["next"] is True and ph["title"] == "Get this slide's prediction right first" and ph["run"] is True, ph)
+    check("  typing a guess isn't enough: it opens Check, not the slide",
           got["pTyped"] == {"next": True, "run": False}, got["pTyped"])
+    check("  a wrong prediction keeps it held", got["pWrong"] is True)
     pr = got["pRan"]
-    check("  running it opens the slide, right or wrong, and how far they got is kept",
-          pr["next"] is False and pr["kept"] == "1" and "prediction" in pr["said"].lower(), pr)
+    check("  a right one opens the slide, and how far they got is kept",
+          pr["next"] is False and pr["kept"] == "1" and "✓" in pr["said"], pr)
     check("  passing the slide's checks doesn't open it while the prediction waits", got["pChecksOnly"] is True)
     check("  a box drawn again after it ran isn't asked for twice", got["pRedrawn"] is False)
     check("  and a prediction holds nothing where the page doesn't lock", got["pFree"] is False and got["pFreeBox"])

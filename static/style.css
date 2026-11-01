@@ -1149,6 +1149,18 @@ body:not(.is-authoring) .notes-body .snippet-guess,
 .snippet-run { padding: 3px 12px; }
 .snippet-status.is-right { color: var(--green); font-weight: 600; }
 .snippet-status.is-wrong { color: var(--amber); font-weight: 600; }
+/* A prediction (snippets.js buildPredict): its question, each line of a
+   wrong guess marked, and the hints given so far. */
+.snippet-ask { display: block; margin: 8px 10px 0; font-weight: 600; }
+.snippet-guess { font-family: var(--mono, monospace); resize: vertical; }
+.snippet-predict .snippet-code[readonly] { opacity: .85; cursor: default; }
+.snippet-marks { border-top: 1px solid var(--line); padding: 6px 10px; }
+.snippet-mark { display: flex; gap: 8px; align-items: baseline; }
+.snippet-mark.is-right .snippet-mark-sign { color: var(--green); font-weight: 700; }
+.snippet-mark.is-wrong .snippet-mark-sign { color: var(--red); font-weight: 700; }
+.snippet-mark code { white-space: pre-wrap; }
+.snippet-hints { margin: 0; padding: 6px 10px 8px; border-top: 1px solid var(--line); list-style: none; }
+.snippet-hints li { margin: 2px 0; }
 .snippet-out { margin: 0; border-top: 1px solid var(--line); background: var(--bg); padding: 8px 10px;
                max-height: 260px; overflow: auto; white-space: pre-wrap; font-size: 13px; }
 .snippet-err { color: var(--red); }

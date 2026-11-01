@@ -31,6 +31,10 @@
   window.FlaskIDENotes.setQuizContext({ assignment: cfg.assignmentSlug,
                                         signedIn: cfg.signedIn,
                                         viewOnly: cfg.viewOnly });
+  // Predictions in the notes: XP for a first-try one, and the teacher
+  // writing them is never held by one (snippets.js).
+  if (window.IDESnippets) window.IDESnippets.configure({ assignment: cfg.assignmentSlug,
+    signedIn: cfg.signedIn, viewOnly: cfg.viewOnly, teacher: !!cfg.authoring });
   var $ = function (id) { return document.getElementById(id); };
 
   var files = Object.assign({}, cfg.files || {});

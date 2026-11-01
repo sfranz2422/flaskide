@@ -129,8 +129,10 @@ check("an html block runs in a frame with scripts but no same origin, like WebID
 check("a predict question's JavaScript runs in a frame with scripts but no same origin, and is given up on in time",
       'frame.setAttribute("sandbox", "allow-scripts");' in src and "function runJs(code)" in src
       and "var timer = setTimeout(function () {\n        finish(" in src)
-check("predict waits for a prediction before Run works",
-      "run.disabled = !!(guess && !guess.value.trim())" in src)
+# What a predict box does — right or no output, hints, XP — is run in
+# test_predict.py; here only that a predict block is drawn as one.
+check("a predict block is drawn as a prediction, not a plain Run box",
+      'k[1] === "predict" ? buildPredict(code)' in src)
 
 failed = results.count(False)
 print("\n" + ("ALL PASSED" if not failed else "SOME FAILED") + " (%d checks, %d failed)" % (len(results), failed))

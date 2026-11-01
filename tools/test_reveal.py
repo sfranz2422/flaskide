@@ -169,7 +169,7 @@ check("live and the projector never ask for it",
 check("the next slide waits until this one has been played, and Play while a section plays",
       "if (by > 0 && (unfinished() || checksHold())) return;" in NOTES_JS
       and "next.disabled = at >= cut.length - 1 || unfinished() || busy || hold;" in NOTES_JS
-      and "play.disabled = busy;" in NOTES_JS)
+      and "play.disabled = busy || held;" in NOTES_JS)   # held: a check above it (test_checks_in_notes.py)
 check("someone who asks for reduced motion gets each section at once",
       'matchMedia("(prefers-reduced-motion: reduce)")' in NOTES_JS)
 check("Skip shows the part playing at once, or between parts the whole slide — and only where it's offered",

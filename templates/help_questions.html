@@ -163,7 +163,12 @@ Press ✔ Check my work on the card below.
     slide waits until every test on it passes. Students press <strong>Check my work</strong> on the
     card and see which tests still fail; once they all pass, the arrow opens. A slide passed once
     stays open, even after a reload. A slide with a <code>python predict</code> example waits
-    too, until the student has typed a prediction and run it (right or wrong). Without the line, the tests still show and check in the notes,
+    too, until the student's prediction is <strong>right</strong>. With <code>animate:</code>,
+    a part holds <strong>▶ Play</strong> the same way: put a small <code>tests</code> block right
+    after a "Type this", and the next part waits until it's typed and passes.
+    A wrong prediction never shows the output: each line is marked ✓ or ✗, and the next
+    hint comes out. Hints are comment lines in the block, <code># hint: [0] is the first letter</code>,
+    hidden from the code. Right on the first try earns a little XP. Without the line, the tests still show and check in the notes,
     and students move through the slides freely. Your own previews and a live lesson are never held.</p>
   <pre class="help-src">locked: yes
 
@@ -199,6 +204,7 @@ GET / contains Hello
 
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script src="{{ url_for('static', filename='snippets.js') }}"></script>
+<script>IDESnippets.configure({ teacher: true });  /* a teacher's page: never held by a prediction */</script>
 <script>
   document.querySelectorAll(".help-look[data-md]").forEach(function (el) {
     window.FlaskIDENotes.render(el, el.dataset.md);

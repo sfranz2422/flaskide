@@ -446,11 +446,13 @@ test runs
 each time, never one card's, so the result kept for the teacher stays the
 whole check. With **`locked: yes`** as a header line of the notes (beside
 `theme:`/`animate:`, notes.js `takeHeader`), a slide with a card holds the
-next slide until every check on it passes, and a slide with a ```` ```python predict ```` example holds it until that has been predicted and run, right or wrong (`data-predicted`, set by snippets.js; predicting was skipped otherwise, straight to the typing) — in the student's own editor
+next slide until every check on it passes, and a slide with a ```` ```python predict ```` example holds it until the prediction is RIGHT (`data-predicted`, set by snippets.js; predicting was skipped otherwise, straight to the typing). With `animate:`, a played part holding a card or prediction holds ▶ Play the same way (students pressed Play past every "Type this"), and a card passed halfway doesn't open the slide while parts are still to play — in the student's own editor
 only (slideView's `locked` option), never the teacher's preview or live. A
 slide once passed stays open in that browser (`pyide-unlocked:<key>`).
 `test_checks_in_notes.py` (the same in all three) runs the card and the
 lock in node on a small fake DOM.
+
+**Predictions** (```` ```python predict ````, `buildPredict` in `snippets.js`, the same file in all three). The student types every line the code will print and must get it right (Nov 2026: any guess used to run it, and Enter ran a two-line guess after one line). A wrong guess never shows the output, which would be copied: each line is marked ✓/✗ and the next `# hint:` comment comes out (hints are taken out of the code shown and run). The code is read only until it's right, or a student edits it to `print("x")` and predicts `x`. Capitals count; extra spaces and blank lines don't. An example that stops with an error holds nobody. Teacher pages (`configure({teacher: true})`, or PresMaker's `window.PM`) get Show the output. Right on the first try posts `/api/predict/xp`: `xp.PREDICT_XP` once per block per student, only for a block in that assignment's notes (`xp.predict_keys`; `xp.predict_code` must read a block as `splitHints` does). Tries are kept in localStorage so a reload doesn't make a later try the first; a faked claim takes the small XP once per block. `test_predict.py`.
 
 **The token shop** ("The token shop" in `app.py`; `accounts.ShopItem`,
 `ShopRequest`; `/teacher/shop`). What tokens buy: one shop per teacher,

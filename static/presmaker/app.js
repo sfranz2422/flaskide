@@ -522,7 +522,9 @@
     cards: "```cards\nloop -> code that runs more than once\nvariable -> a name for a value\n```",
     checklist: "- [ ] Read the notes\n- [ ] Try the example\n- [ ] Turn it in",
     "run-code": "```python run\nfor i in range(3):\n    print(\"Hello\", i)\n```",
-    "predict-code": "```python predict\nfor i in range(3):\n    print(i * 2)\n```"
+    // Students must predict it RIGHT; a hint comes out after each wrong
+    // guess (snippets.js), so the snippet shows how to write them.
+    "predict-code": "```python predict\nfor i in range(3):\n    print(i * 2)\n# hint: range(3) gives 0, 1 and 2\n# hint: each one is doubled, on its own line\n```"
   };
 
   // ------------------------------------------------------- the format
