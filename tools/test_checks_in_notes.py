@@ -32,6 +32,7 @@ ROOT = os.path.dirname(HERE)
 STATIC = os.path.join(ROOT, "static")
 CHECKS_JS = open(os.path.join(STATIC, "checks_in_notes.js")).read()
 NOTES_JS = open(os.path.join(STATIC, "notes.js")).read()
+SNIPPETS_JS = open(os.path.join(STATIC, "snippets.js")).read()
 GLOBAL = re.search(r"window\.(\w+) = \(function", NOTES_JS).group(1)
 
 results = []
@@ -70,6 +71,7 @@ Object.defineProperty(El.prototype, "innerHTML", {
 Object.defineProperty(El.prototype, "offsetParent", { get: function () { return this.parentNode ? {} : null; } });
 El.prototype.appendChild = function (c) { this.children.push(c); c.parentNode = this; return c; };
 El.prototype.insertBefore = function (c) { return this.appendChild(c); };
+El.prototype.replaceChild = function (c, old) { var i = this.children.indexOf(old); this.children[i] = c; c.parentNode = this; old.parentNode = null; return old; };
 El.prototype.remove = function () { if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1); this.parentNode = null; };
 El.prototype.setAttribute = function (k, v) { this.attrs[k] = String(v); };
 El.prototype.getAttribute = function (k) { return k in this.attrs ? this.attrs[k] : null; };
@@ -81,8 +83,12 @@ El.prototype.dispatchEvent = function (e) {
   return true;
 };
 El.prototype.click = function () { this.dispatchEvent({ type: "click" }); };
-// Selectors: .class, [attr], :not([attr]), one compound part — all the card and viewer use.
+// Selectors: tag, .class, [attr], :not([attr]), one compound part, or a
+// comma list of those — all the card, the viewer and snippets.js use.
 function matches(el, sel) {
+  if (sel.indexOf(",") >= 0) return sel.split(",").some(function (s) { return matches(el, s.trim()); });
+  var tag = /^[a-z]+/i.exec(sel);
+  if (tag && el.tagName !== tag[0].toUpperCase()) return false;
   var not = /:not\(\[([\w-]+)\]\)/.exec(sel), base = sel.replace(/:not\(\[[\w-]+\]\)/, "");
   if (not && el.hasAttribute(not[1])) return false;
   var ok = true;
@@ -104,9 +110,17 @@ function CustomEvent(type) { this.type = type; }
 var window = { marked: { parse: function (s) { return s; } },
                DOMPurify: { sanitize: function (s) { return s; } },
                matchMedia: function () { return { matches: false }; } };
+// snippets.js's Python worker, stood in for: ready at once, and every run
+// prints "1" and finishes.
+function Worker() { var w = this; setTimeout(function () { w.onmessage({ data: { type: "ready" } }); }, 0); }
+Worker.prototype.postMessage = function (m) {
+  var w = this;
+  setTimeout(function () { w.onmessage({ data: { type: "out", id: m.id, text: "1\n" } });
+                           w.onmessage({ data: { type: "done", id: m.id } }); }, 0);
+};
 """
 
-harness = DOM + CHECKS_JS + "\nvar C = window.IDENotesChecks;\n" + NOTES_JS + r"""
+harness = DOM + CHECKS_JS + "\nvar C = window.IDENotesChecks;\n" + NOTES_JS + "\n" + SNIPPETS_JS + r"""
 var N = window.%s;
 var out = {};
 var tick = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
@@ -186,6 +200,46 @@ var tick = function () { return new Promise(function (r) { setTimeout(r, 0); });
   out.free = [w3.next.disabled, w4.next.disabled, w5.next.disabled, w6.next.disabled];
   [w3, w4, w5, w6].forEach(function (x) { x.pane.remove(); });
 
+  // ---------------------------------------------------- a prediction holds too
+  // A ```python predict block, drawn by the real snippets.js: the slide
+  // waits until it has been run, which needs a guess typed first.
+  var pdeck = "locked: yes\n# One\n```python predict\nprint(1)\n```\n---\n# Two";
+  // Each viewer its own code: a box once run is remembered by its code.
+  function predictBox(w, src) {
+    var pre = w.body.appendChild(new El("pre")), code = pre.appendChild(new El("code"));
+    code.className = "language-python-predict"; code.textContent = (src || "print(1)") + "\n";
+    window.IDESnippets.renderBlocks(w.body);
+    return w.body.querySelector(".snippet");
+  }
+  var p1 = await viewer(pdeck, { locked: true, key: "p" });
+  var box = predictBox(p1); await refresh(p1, pdeck);
+  var run = box.querySelector(".snippet-run"), guess = box.querySelector(".snippet-guess");
+  out.pHeld = { next: p1.next.disabled, title: p1.next.title, run: run.disabled };
+  guess.value = "1"; guess.handlers.input.forEach(function (f) { f({}); });
+  out.pTyped = { next: p1.next.disabled, run: run.disabled };
+  run.click(); await tick(); await tick(); await tick();
+  out.pRan = { next: p1.next.disabled, kept: store["pyide-unlocked:p"], said: box.querySelector(".snippet-status").textContent };
+  p1.pane.remove();
+  // Passing the slide's checks isn't enough while its prediction waits.
+  C.forget();
+  answer = { results: [{ label: "Step test", ok: true }] };
+  var p2 = await viewer(pdeck, { locked: true, key: "p2" });
+  predictBox(p2, "print(3)"); p2.put(); await refresh(p2, pdeck); await C.check();
+  out.pChecksOnly = p2.next.disabled;
+  p2.pane.remove();
+  // Drawn again after it ran (the slide shown again): not asked twice.
+  var p3 = await viewer(pdeck, { locked: true, key: "p3" });
+  predictBox(p3); await refresh(p3, pdeck);
+  out.pRedrawn = p3.next.disabled;
+  p3.pane.remove();
+  // And never held where the page doesn't lock.
+  // (Shown again with the same text: a changed slide is redrawn, box and all.)
+  var p4 = await viewer(pdeck, { locked: false, key: "p4" });
+  var b4 = predictBox(p4, "print(2)"); await refresh(p4, pdeck);
+  out.pFreeBox = !!b4;
+  out.pFree = p4.next.disabled;
+  p4.pane.remove();
+
   console.log(JSON.stringify(out));
 })().catch(function (e) { console.log(JSON.stringify({ error: String(e && e.stack || e) })); });
 """ % GLOBAL
@@ -236,6 +290,17 @@ if "error" not in got:
     check("a slide passed once stays open after a reload, before any check", got["reload"] is False)
     check("never held without the line, where the page doesn't ask, or on a slide with no tests",
           got["free"] == [False, False, False, False], got["free"])
+    ph = got["pHeld"]
+    check("a slide with a python predict block holds the next one, saying why",
+          ph["next"] is True and ph["title"] == "Predict and run this slide's example first" and ph["run"] is True, ph)
+    check("  typing a guess isn't enough: it opens Run, not the slide",
+          got["pTyped"] == {"next": True, "run": False}, got["pTyped"])
+    pr = got["pRan"]
+    check("  running it opens the slide, right or wrong, and how far they got is kept",
+          pr["next"] is False and pr["kept"] == "1" and "prediction" in pr["said"].lower(), pr)
+    check("  passing the slide's checks doesn't open it while the prediction waits", got["pChecksOnly"] is True)
+    check("  a box drawn again after it ran isn't asked for twice", got["pRedrawn"] is False)
+    check("  and a prediction holds nothing where the page doesn't lock", got["pFree"] is False and got["pFreeBox"])
 
 print("\nWhere it's on")
 pages = {}

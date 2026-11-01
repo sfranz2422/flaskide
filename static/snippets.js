@@ -37,6 +37,7 @@ window.IDESnippets = (function () {
 
   var edited = {};               // original code -> what the student has made of it
   var predicted = {};            // original code -> their prediction
+  var ran = {};                  // original code -> a prediction was run (the lock)
   var worker = null, ready = null, nextId = 1, waiting = {};
 
   function el(tag, cls, text) {
@@ -136,6 +137,10 @@ window.IDESnippets = (function () {
       guess.setAttribute("aria-label", "Your prediction");
       guess.value = predicted[original] || "";
       box.appendChild(guess);
+      /* For `locked: yes` (notes.js): the slide waits until this box has
+         been run, and a slide drawn again must not ask twice. */
+      box.setAttribute("data-predict", "");
+      if (ran[original]) box.setAttribute("data-predicted", "");
     }
 
     var bar = el("div", "snippet-bar");
@@ -203,6 +208,17 @@ window.IDESnippets = (function () {
         if (!text && !error) out.appendChild(el("span", "dim", "(It ran, and printed nothing.)"));
         if (text.length >= OUTPUT_MAX) out.appendChild(el("span", "dim", "\n… (more output than fits here)"));
         status.textContent = "";
+        if (guess) {
+          // Run with a guess in: what the lock waits for, right or wrong,
+          // and even if the example raised (some are meant to). The event
+          // is the one a tests card sends; notes.js re-reads the lock on it.
+          ran[original] = true;
+          box.setAttribute("data-predicted", "");
+          var ev;
+          try { ev = new CustomEvent("ide-checks", { bubbles: true }); }
+          catch (e) { ev = document.createEvent("Event"); ev.initEvent("ide-checks", true, false); }
+          box.dispatchEvent(ev);
+        }
         if (guess && !error) {
           status.textContent = same(text, guess.value)
             ? "✓ Your prediction was right!"

@@ -505,8 +505,18 @@ window.FlaskIDENotes = (function () {
        and neither does a reload: how far they've got (`unlocked`, the
        first slide not yet passed) is kept in this browser, per page. */
     var lockOpt = opts && opts.locked !== undefined ? opts : null;
-    // A slide with a ```tests block: the only kind the lock holds.
+    /* What the lock holds a slide for: a ```tests block, until every check
+       passes, and a ```python predict block, until it has been RUN — which
+       its Run button allows only once a prediction is typed (snippets.js
+       marks the box data-predicted). Before predict boxes held anything, a
+       student could skip straight past them to the typing, and predicting
+       was the point of the step. A wrong guess still opens the way: the
+       prediction is for thinking, not for marks. */
     var TESTS_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*tests[ \t]*$/im;
+    var PREDICT_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*py(thon)?[ \t]+predict[ \t]*$/im;
+    var HOLDS = ".tests-card[data-checks]:not([data-passed])";
+    var UNPREDICTED = ".snippet[data-predict]:not([data-predicted])";
+    function waiting() { return !!(body.querySelector(HOLDS) || body.querySelector(UNPREDICTED)); }
     function lockWanted() { return !!lockOpt && (typeof lockOpt.locked === "function" ? lockOpt.locked() : !!lockOpt.locked); }
     var lockOn = false;
     var unlocked = 0;
@@ -519,8 +529,7 @@ window.FlaskIDENotes = (function () {
     }
     // This slide has checks not yet passed, and it's where they have to be passed.
     function checksHold() {
-      return lockOn && cut.length > 0 && at >= unlocked &&
-        !!body.querySelector(".tests-card[data-checks]:not([data-passed])");
+      return lockOn && cut.length > 0 && at >= unlocked && waiting();
     }
     /* The arrows, from everything that can hold the way on: a slide still
        playing (animate:), and checks not yet passed (locked:). */
@@ -529,10 +538,12 @@ window.FlaskIDENotes = (function () {
       body.classList.toggle("tests-locking", hold);
       if (!cut.length) return;
       next.disabled = at >= cut.length - 1 || unfinished() || busy || hold;
-      next.title = unfinished() ? "Play the rest of this slide first" : hold ? "Pass this slide's checks first" : "Next slide";
+      next.title = unfinished() ? "Play the rest of this slide first"
+        : hold ? (body.querySelector(UNPREDICTED) ? "Predict and run this slide's example first" : "Pass this slide's checks first")
+        : "Next slide";
     }
     body.addEventListener("ide-checks", function () {
-      if (lockOn && cut.length && at >= unlocked && !body.querySelector(".tests-card[data-checks]:not([data-passed])")) {
+      if (lockOn && cut.length && at >= unlocked && !waiting()) {
         unlocked = at + 1;
         saveUnlocked();
       }
@@ -780,9 +791,10 @@ window.FlaskIDENotes = (function () {
       reach: function (i) {
         if (!cut.length || i < 0 || i >= cut.length || i === at) return false;
         if (i > at && mode && i > reached.slide) return false;
-        // Held only by a slide on the way that has checks and isn't passed:
-        // one with none holds nothing, as its own arrow doesn't.
-        for (var j = Math.max(at, unlocked); lockOn && j < i; j++) if (TESTS_FENCE.test(cut[j])) return false;
+        // Held only by a slide on the way that has checks or a prediction
+        // and isn't passed: one with neither holds nothing, as its own arrow doesn't.
+        for (var j = Math.max(at, unlocked); lockOn && j < i; j++)
+          if (TESTS_FENCE.test(cut[j]) || PREDICT_FENCE.test(cut[j])) return false;
         go(i);
         if (moved) moved(at);
         return true;

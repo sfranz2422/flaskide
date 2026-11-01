@@ -446,7 +446,7 @@ test runs
 each time, never one card's, so the result kept for the teacher stays the
 whole check. With **`locked: yes`** as a header line of the notes (beside
 `theme:`/`animate:`, notes.js `takeHeader`), a slide with a card holds the
-next slide until every check on it passes — in the student's own editor
+next slide until every check on it passes, and a slide with a ```` ```python predict ```` example holds it until that has been predicted and run, right or wrong (`data-predicted`, set by snippets.js; predicting was skipped otherwise, straight to the typing) — in the student's own editor
 only (slideView's `locked` option), never the teacher's preview or live. A
 slide once passed stays open in that browser (`pyide-unlocked:<key>`).
 `test_checks_in_notes.py` (the same in all three) runs the card and the
