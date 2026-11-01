@@ -7815,5 +7815,11 @@ def help_questions():
         {"kind": k, "title": t, "about": a, "block": b} for k, t, a, b in NOTES_EXTRAS])
 
 
+@app.get("/help/php")
+def help_php():
+    """What a PHP site can do here. Open to anyone, like /help/questions."""
+    return render_template("help_php.html")
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

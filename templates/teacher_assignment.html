@@ -1074,6 +1074,22 @@
     pyodide = window.FlaskIDERuntime;
     return pyodide;
   }
+  /* A PHP site (index.php and no app.py: kind_of's rule) is checked in PHP
+     (php.js), the way the student's own Check my work checked it. Decided
+     per project, from its own files. */
+  function isPhp(files) {
+    return "index.php" in files && !("app.py" in files) && !("query.sql" in files);
+  }
+  var php = null;
+  async function phpRuntime() {
+    if (php) return php;
+    state.textContent = "Loading PHP…";
+    if (!window.PhpRuntime) await load({{ url_for('static', filename='php.js')|tojson }});
+    if (!window.PyIDETests) await load({{ url_for('static', filename='autograde.js')|tojson }});
+    await window.PhpRuntime.boot(function (note) { if (note) state.textContent = note; });
+    php = window.PhpRuntime;
+    return php;
+  }
   function paintRow(student, out, lines) {
     var row = document.querySelector('.fb-row[data-student="' + student + '"]');
     if (!row) return;
@@ -1101,14 +1117,15 @@
   btn.addEventListener("click", async function () {
     btn.disabled = true;
     try {
-      var py = await python();
       state.textContent = "Fetching what was turned in…";
       var res = await fetch("/api/assignment/" + encodeURIComponent(slug) + "/tests/work");
       if (!res.ok) throw new Error("couldn't fetch the work");
       var work = (await res.json()).work;
       for (var i = 0; i < work.length; i++) {
         state.textContent = "Checking " + work[i].name + " (" + (i + 1) + " of " + work.length + ")…";
-        var got = await window.PyIDETests.run(py, work[i].files, tests);
+        var rt = isPhp(work[i].files) ? await phpRuntime() : await python();
+        state.textContent = "Checking " + work[i].name + " (" + (i + 1) + " of " + work.length + ")…";
+        var got = await window.PyIDETests.run(rt, work[i].files, tests);
         var saved = await post(base + "/tests/verify", { student: work[i].student, results: got.results });
         if (!saved.ok) throw new Error(saved.d.error || "a result wasn't saved");
         paintRow(work[i].student, saved.d, got.results);

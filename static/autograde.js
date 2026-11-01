@@ -384,6 +384,9 @@ window.PyIDETests = (function () {
      window.FlaskIDERuntime (or anything with boot() resolving to a Pyodide
      that has flask.js's bridge). Resolves {results, earned, possible}. */
   async function run(runtime, files, tests) {
+    // A PHP site's runtime (php.js) runs its own checks, in PHP: the same
+    // tests, the same answer. Everything below is Python's.
+    if (runtime && typeof runtime.autograde === "function") return runtime.autograde(files, tests);
     var py = await runtime.boot();
     if (!ready || !ready.has(py)) {
       py.runPython(HARNESS);

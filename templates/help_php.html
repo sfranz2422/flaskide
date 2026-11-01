@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PHP sites — FlaskIDE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+  (function () {
+    try {
+      var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem("flaskide-theme");
+      if (saved) {
+        document.documentElement.setAttribute("data-theme", saved);
+      }
+    } catch (e) { /* storage blocked; the CSS default still applies */ }
+  })();
+</script>
+<script src="{{ url_for('static', filename='pack.js') }}"></script>
+</head>
+<body>
+
+{#  What a PHP site can do here (static/php.js, php_core.js), for a teacher
+    planning lessons. Linked from Questions' tests section and the PHP
+    starter. Keep it to what tools/test_php.py checks. #}
+
+<header class="bar">
+  <div class="brand"><a class="brandlink" href="{{ url_for('home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
+  <div class="meta"><span class="pagetitle">PHP sites</span></div>
+  <div class="actions"></div>
+</header>
+
+<main class="sheet prose help-questions">
+  <h1>PHP sites</h1>
+  <p>A project with an <code>index.php</code> (and no <code>app.py</code>) is a PHP site. It runs
+    in the student's own browser — PHP 8.4, compiled to WebAssembly — so there is no server to set
+    up and nothing to install. Start one with <strong>Add to class → PHP site</strong>, or
+    <strong>+ PHP site</strong> in the editor.</p>
+
+  <h2>Files</h2>
+  <ul>
+    <li><code>index.php</code> is the page at <code>/</code>. Every other <code>.php</code> file at
+      the top level is a page at its own address: <code>about.php</code> is <code>/about.php</code>.</li>
+    <li><code>includes/</code> holds the pieces pages share: <code>include 'includes/header.php';</code></li>
+    <li><code>static/</code> holds stylesheets, scripts and pictures: <code>&lt;link rel="stylesheet" href="static/style.css"&gt;</code></li>
+    <li><code>schema.sql</code>, if there is one, builds the database (below).</li>
+  </ul>
+
+  <h2>What works</h2>
+  <ul>
+    <li><code>echo</code>, <code>&lt;?= ... ?&gt;</code>, variables, arrays, <code>if</code>,
+      <code>foreach</code>, functions — all of PHP itself.</li>
+    <li><code>$_GET</code> from the address (<code>game.php?id=2</code>) and <code>$_POST</code> from a form.</li>
+    <li><code>session_start()</code> and <code>$_SESSION</code>: it lasts from page to page until the next ▶ Run.</li>
+    <li><code>header('Location: index.php'); exit;</code> after a form. The preview follows it.</li>
+    <li><code>include</code> and <code>require</code>.</li>
+    <li><code>password_hash</code> and <code>password_verify</code>, <code>htmlspecialchars</code>,
+      <code>json_encode</code>, and a page that answers JSON to the page's own <code>fetch()</code>.</li>
+    <li>Warnings and errors show in the page, as on XAMPP, and in the console with the file and line.
+      A page PHP can't read gets a card saying what is wrong, in plain words.</li>
+  </ul>
+
+  <h2>The database</h2>
+  <p>Put <code>CREATE TABLE</code> and <code>INSERT</code> statements in <code>schema.sql</code>. Every
+    ▶ Run builds <code>data.db</code> from it, from nothing — so anything a page adds is gone at the
+    next Run. Pages open it with PDO:</p>
+  <pre class="help-src">$db = new PDO('sqlite:data.db');
+$db-&gt;exec('PRAGMA foreign_keys = ON');
+$stmt = $db-&gt;prepare('SELECT * FROM games WHERE id = ?');
+$stmt-&gt;execute([$_GET['id']]);
+$game = $stmt-&gt;fetch();</pre>
+  <p>It is <strong>SQLite</strong>, not MySQL: a MySQL server can't run inside a browser. PDO code is
+    the same for both except the connect line, so a lesson written for MySQL changes
+    <code>new PDO('mysql:host=…')</code> to <code>new PDO('sqlite:data.db')</code>, and in
+    <code>schema.sql</code> <code>AUTO_INCREMENT</code> becomes
+    <code>INTEGER PRIMARY KEY AUTOINCREMENT</code>.</p>
+
+  <h2>What doesn't</h2>
+  <ul>
+    <li>MySQL and <code>mysqli_*</code> — use PDO with SQLite.</li>
+    <li>File uploads (<code>$_FILES</code>), sending email, and reaching other websites from PHP.</li>
+    <li>A page that runs longer than 10 seconds is stopped, and the site starts again.</li>
+  </ul>
+
+  <h2>Tests</h2>
+  <p>Check my work and Check all work on PHP sites with the same <code>tests</code> lines as Flask apps.
+    See <a href="{{ url_for('help_questions') }}#tests-php">Tests on a PHP site</a>.</p>
+</main>
+</body>
+</html>

@@ -248,7 +248,9 @@ globalThis.Worker = class {
       load: () => loadNodeRuntime("8.4", { emscriptenOptions: { processId: made } }) });
   }
   async postMessage({ id, op, args }) {
-    if (op === "request" && args.path === "/loop.php") return;      // stuck forever
+    // stuck forever: what a real worker does, which here would hang Node
+    if (op === "request" && args.path === "/loop.php") return;
+    if (op === "checkRequest" && args.test.path === "/loop.php") return;
     try { const result = await this.core[op](args); this.onmessage({ data: { id, ok: true, result } }); }
     catch (e) { this.onmessage({ data: { id, ok: false, error: String(e) } }); }
   }
@@ -266,15 +268,57 @@ out.loop = await R.request("GET", "/loop.php");
 out.loopMs = Date.now() - t0;
 out.after = await R.request("GET", "/");
 out.made = made; out.ended = ended; out.ready = R.isReady();
+
+// Check my work on a PHP site: the notes' tests, read by autograde.js and
+// handed by PyIDETests.run to PhpRuntime.autograde, run in real PHP.
+(0, eval)(fs.readFileSync(ROOT + "/static/autograde.js", "utf8"));
+const T = window.PyIDETests.parse(%(tests_md)s).tests;
+out.labels = T.map((t) => t.label);
+out.grade = await window.PyIDETests.run(R, %(graded)s, T);
+out.unreadable = await window.PyIDETests.run(R, Object.assign({}, %(graded)s, { "lib.php": "<?php\nfunction f( {\n" }), T.slice(0, 3));
 console.log(JSON.stringify(out));
 process.exit(0);
 """
 site = dict(SITE, **{"loop.php": "<?php while (true) {}"})
+GRADED = dict(site, **{
+    "login.php": "<?php session_start();\n$_SESSION['user'] = $_POST['user'];\nheader('Location: members.php');\n",
+    "members.php": "<?php session_start();\necho 'Hello ' . htmlspecialchars($_SESSION['user'] ?? 'nobody');\n",
+    # Words that must NOT count: in a comment, in a string, in the HTML --
+    # the string's and the HTML's tokens are EXACTLY the word ("{$title}switch"
+    # splits into $title and "switch"; the page ends in the bare word eval),
+    # so only the tokenizer's types keep them out, not a text match.
+    "lib.php": "<?php\n// mysqli_connect is not used here\nfunction add_game($db, $title) {\n"
+               "  $s = $db->PREPARE('INSERT INTO games (title) VALUES (?)');\n  echo \"{$title}switch\";\n}\n?>\neval",
+})
+TESTS_MD = """```tests
+GET / -> 200
+GET / contains Game Vault
+GET /nope.php -> 404
+GET /missing.php -> 200
+POST /add.php title=Mario -> 302                 (2 points)
+POST /add.php title=Luigi -> contains Luigi
+GET /games.php contains Mario
+POST /login.php user=sam -> contains Hello sam
+GET /members.php contains sam
+GET /search.php q=<b> contains q=<b>
+GET /loop.php contains x
+GET / -> 200
+uses foreach
+uses $_SESSION
+uses $_session
+uses HTMLSPECIALCHARS
+avoids eval
+uses mysqli_connect
+uses switch
+defines add_game
+defines remove_game
+returns 2 rows
+```"""
 work = tempfile.mkdtemp()
 try:
     path = os.path.join(work, "page.mjs")
     src = PAGE % {"root": json.dumps(ROOT), "universal": json.dumps(UNIVERSAL), "nodephp": json.dumps(NODE_PHP),
-                  "site": json.dumps(site)}
+                  "site": json.dumps(site), "graded": json.dumps(GRADED), "tests_md": json.dumps(TESTS_MD)}
     # The time limit, shortened for the test: 10 s of waiting proves nothing 1 s doesn't.
     with open(os.path.join(ROOT, "static", "php.js")) as fh:
         assert "const LIMIT_MS = 10000;" in fh.read()
@@ -303,6 +347,43 @@ check("  its worker is ended and a new one started", g["ended"] == 1 and g["made
 check("  which runs the site again from the start, and says so",
       g["after"]["status"] == 200 and "visits=1" in g["after"]["body"]
       and any("started again from the beginning" in s for s in g["said"]), (g["after"]["body"][-40:], g["said"]))
+
+print("Check my work on a PHP site")
+G = g["grade"]["results"]
+def res(n):
+    return G[n] if n < len(G) else {}
+check("every test is checked, in the notes' own words", len(G) == 22 and G[0]["label"] == g["labels"][0], g["labels"])
+check("a page that answers 200 passes, and its words are found", res(0)["ok"] and res(1)["ok"], (res(0), res(1)))
+check("a missing page is a 404, and a test wanting 200 says which page to make",
+      res(2)["ok"] and not res(3)["ok"] and res(3)["detail"] == "It answered 404. Is there a page called /missing.php?", res(3))
+check("a POST's redirect is seen by a status test", res(4)["ok"], res(4))
+check("  and followed by a test of what it shows", res(5)["ok"], res(5))
+check("what one test saved is there for the next (one site per check)", res(6)["ok"], res(6))
+check("a log-in in one test is still logged in for the next (one browser per check)",
+      res(7)["ok"] and res(8)["ok"], (res(7), res(8)))
+check("a page's text is read as a visitor reads it (&lt; undone)", res(9)["ok"], res(9))
+check("a page that never finishes fails its own test, saying why",
+      not res(10)["ok"] and "Still running after 1 seconds" in res(10)["detail"], res(10))
+check("  and the tests after it still run, on the site started again", res(11)["ok"], res(11))
+check("uses: a keyword, a $variable, a function name in any case",
+      res(12)["ok"] and res(13)["ok"] and res(15)["ok"], (res(12), res(13), res(15)))
+check("  a $variable only as spelled ($_session is not $_SESSION)", not res(14)["ok"], res(14))
+check("words in a comment, a string or the HTML don't count",
+      res(16)["ok"] and not res(17)["ok"] and not res(18)["ok"], (res(16), res(17), res(18)))
+check("defines: a function by that name", res(19)["ok"] and not res(20)["ok"]
+      and "no function remove_game" in res(20)["detail"], (res(19), res(20)))
+check("a SQL project's test says a PHP site has no query.sql", not res(21)["ok"] and "query.sql" in res(21)["detail"], res(21))
+check("points add up from the tests that passed (Mario's POST is 2)",
+      g["grade"]["possible"] == 23 and g["grade"]["earned"] == sum(r["points"] for r in G if r["ok"])
+      and res(4)["points"] == 2, g["grade"])
+_ta = open(os.path.join(ROOT, "templates", "teacher_assignment.html")).read()
+check("the teacher's Check all checks each PHP site in PHP, decided by its own files",
+      'var rt = isPhp(work[i].files) ? await phpRuntime() : await python();' in _ta
+      and 'return "index.php" in files && !("app.py" in files) && !("query.sql" in files);' in _ta
+      and "window.PyIDETests.run(rt, work[i].files, tests)" in _ta)
+U = g["unreadable"]["results"]
+check("PHP that can't be read fails every test, saying where",
+      len(U) == 3 and not any(r["ok"] for r in U) and all("lib.php can't be read: line 2" in r["detail"] for r in U), U)
 
 print()
 print("%d checks, %s" % (count, "all ok" if not failures else "%d FAILED" % failures))

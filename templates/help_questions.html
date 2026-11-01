@@ -95,6 +95,26 @@ result contains Alice                      …and a value in them
     HTML and as a reader sees it. A route that crashes, or takes longer than 5 seconds, fails
     that test and says why.</p>
 
+  <h3 id="tests-php">On a PHP site</h3>
+  <p>The same lines, with the pages' own addresses. Each check is one visitor: a log-in in one
+    test is still logged in for the next, and a row one test adds is there for the next.
+    <code>uses</code>, <code>avoids</code> and <code>defines</code> read the <code>.php</code>
+    files the way PHP does, so a word in a comment, a string or the HTML never counts.
+    A page that takes longer than 10 seconds fails its test. What PHP sites can do:
+    <a href="{{ url_for('help_php') }}">PHP sites</a>.</p>
+  <pre class="help-src" id="tests-php-example">```tests
+GET / -&gt; 200                              index.php answers
+GET /about.php contains Our club           a page shows the words
+GET /game.php?id=2 contains Zelda          ?id=2 is $_GET['id']
+POST /add.php title=Pong -&gt; 302           a form that redirects…
+POST /add.php title=Tetris -&gt; contains Tetris    …and where it lands
+uses foreach                               a keyword
+uses $_SESSION                             a variable, spelled exactly
+uses prepare                               a function or method, any case
+avoids mysqli_query
+defines add_game    (2 points)             there is a function add_game(...)
+```</pre>
+
   <h2>Slides</h2>
   <p>A line with only <code>---</code> on it starts a new slide. A question can go on any slide.</p>
 

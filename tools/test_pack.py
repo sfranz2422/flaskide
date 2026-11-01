@@ -252,7 +252,9 @@ for name in sorted(os.listdir(TEMPLATES)):
         continue
     text = open(os.path.join(TEMPLATES, name)).read()
     included = "".join(open(os.path.join(TEMPLATES, inc)).read()
-                       for inc in re.findall(r"include ['\"]([^'\"]+)['\"]", text))
+                       # {% include "…" %} only: a page that SHOWS PHP's
+                       # include 'includes/header.php' (help_php.html) is not one.
+                       for inc in re.findall(r"\{%-?\s*include ['\"]([^'\"]+)['\"]", text))
     if "fetch(" not in text + included and "<script src" not in text:
         continue
     if "filename='pack.js'" not in text:

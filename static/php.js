@@ -155,6 +155,68 @@
     }
   }
 
+  /* Check my work and Check all on a PHP site (autograde.js hands a PHP
+     site's tests here): { results, earned, possible }, as the Flask
+     harness answers. Each request test is its own question to the worker,
+     with its own time limit, so one page that never finishes fails that
+     test -- and the site is started again for the tests after it -- rather
+     than the whole check. PHP that can't be read fails every test with the
+     reason, as Python that can't be read does. */
+  async function autograde(files, tests) {
+    await boot();
+    const found = {};
+    const say = (ok, detail) => ({ ok, detail: detail || "" });
+    let unreadable = "";
+    try {
+      const bad = await ask("check", { files }, LIMIT_MS);
+      if (bad) unreadable = bad.file + " can't be read: line " + bad.line + ": " + bad.msg;
+    } catch (e) {
+      unreadable = e.timeout ? "Reading the code took too long." : String(e.message || e);
+    }
+    const asks = tests.map((t, i) => i).filter((i) => tests[i].kind === "request");
+    if (asks.length && !unreadable) {
+      let loaded;
+      const load = async () => {
+        try { loaded = await ask("run", { files }, LIMIT_MS); }
+        catch (e) { loaded = { ok: false, error: e.timeout ? "Setting up the site was still running after " + LIMIT_MS / 1000 + " seconds." : String(e.message || e) }; }
+        lastFiles = files;
+        fresh = false;
+      };
+      await load();
+      for (const i of asks) {
+        if (fresh) await load();          // the last test's page never finished
+        if (!loaded.ok) { found[i] = say(false, "The site didn't load: " + lastLine(loaded.error)); continue; }
+        try {
+          found[i] = await ask("checkRequest", { test: tests[i] }, LIMIT_MS);
+        } catch (e) {
+          found[i] = say(false, e.timeout ? "Still running after " + LIMIT_MS / 1000 + " seconds. Is there a loop that never ends?"
+                                          : String(e.message || e));
+        }
+      }
+    }
+    if (!unreadable && tests.some((t) => t.kind === "uses" || t.kind === "avoids" || t.kind === "defines")) {
+      try {
+        (await ask("codeChecks", { files, tests }, LIMIT_MS)).forEach((r, i) => { if (r) found[i] = r; });
+      } catch (e) {
+        tests.forEach((t, i) => { if (!found[i] && /^(uses|avoids|defines)$/.test(t.kind)) found[i] = say(false, String(e.message || e)); });
+      }
+    }
+    const results = tests.map((t, i) => {
+      const r = found[i] || say(false, unreadable ||
+        (t.kind === "rows" || t.kind === "result" ? "That test is for a SQL project's query.sql, and a PHP site has none." : "Not checked."));
+      return { label: t.label, ok: !!r.ok, detail: r.detail, points: t.points };
+    });
+    const round = (x) => Math.round(x * 100) / 100;
+    return { results,
+             earned: round(results.reduce((a, r) => a + (r.ok ? r.points : 0), 0)),
+             possible: round(results.reduce((a, r) => a + r.points, 0)) };
+  }
+
+  function lastLine(text) {
+    const lines = String(text || "").trim().split("\n").filter((l) => l.trim());
+    return lines.length ? lines[lines.length - 1].trim() : String(text || "");
+  }
+
   /* Stop: whatever page is running is abandoned with its worker. */
   function stop() {
     if (worker && waiting.size) restart();
@@ -163,5 +225,5 @@
   function setOutput(fn) { onOutput = fn || (() => {}); }
   function isReady() { return ready; }
 
-  window.PhpRuntime = { boot, run, request, check, stop, setOutput, isReady, PROJECT: "/www", LIMIT_MS };
+  window.PhpRuntime = { boot, run, request, check, autograde, stop, setOutput, isReady, PROJECT: "/www", LIMIT_MS };
 })();

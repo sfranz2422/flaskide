@@ -197,7 +197,115 @@ export function makeCore({ PHP, PHPRequestHandler, setPhpIniEntries, load }) {
     return text ? JSON.parse(text) : null;
   }
 
-  return { boot, run, request, check };
+  /* ONE request test from an assignment's ```tests (autograde.js's
+     shape: method, path, form, status, expect), against the site run()
+     put in place -- the same handler as the tests before it, so a log-in
+     in one test is still logged in for the next, as in a browser. php.js
+     asks for them one at a time, so each has its own time limit.
+
+     The words are the Flask checks' (autograde.js's _ag_request), with
+     "page" where Flask says "route". */
+  async function checkRequest({ test }) {
+    const t = test;
+    const path = t.path + (t.method === "GET" && t.form ? "?" + t.form : "");
+    let form = null;
+    if (t.method === "POST") {
+      form = {};
+      new URLSearchParams(t.form || "").forEach((v, k) => { form[k] = v; });
+    }
+    let r = await request({ method: t.method, path, form: form || undefined });
+    let at = path;
+    // A test of what a page shows follows a redirect, as a browser does
+    // after a form; a test of a status sees the status itself.
+    for (let hops = 0; t.status === null && r.status >= 300 && r.status < 400 && r.headers.Location && hops < 10; hops++) {
+      const to = new URL(r.headers.Location, "http://page" + at.split("?")[0]);
+      at = to.pathname + to.search;
+      r = await request({ method: "GET", path: at });
+    }
+    const body = r.isText ? r.body : "";
+    if (t.status !== null) {
+      if (r.status === t.status) return { ok: true, detail: "" };
+      const hint = r.status === 404 ? " Is there a page called " + t.path.split("?")[0] + "?" : "";
+      return { ok: false, detail: "It answered " + r.status + "." + hint };
+    }
+    const want = norm(t.expect);
+    if (norm(body).includes(want) || norm(readable(body)).includes(want)) return { ok: true, detail: "" };
+    if (r.status !== 200) return { ok: false, detail: "It answered " + r.status + ": " + (short(readable(body)) || "(empty)") };
+    return { ok: false, detail: "It showed: " + (short(readable(body)) || "(an empty page)") };
+  }
+
+  /* uses / avoids / defines, on the .php files, read by PHP's own
+     tokenizer -- so a word in a string, a comment or the HTML around the
+     <?php never counts, which a plain text search could not promise.
+       uses foreach, uses prepare, uses $_SESSION, uses ==   any code token,
+         spelled that way (a $variable exactly; anything else in any case,
+         as PHP itself treats keywords and function names);
+       defines add_game   a function add_game(...).
+     Answers one result per test, null for tests that are not these. */
+  async function codeChecks({ files, tests }) {
+    await boot();
+    const php_files = Object.keys(files || {}).filter((n) => n.endsWith(".php") && typeof files[n] === "string").sort();
+    php.writeFile("/tmp/tokens.json", JSON.stringify(php_files.map((n) => files[n])));
+    const r = await php.run({
+      code: `<?php
+        $skip = [T_COMMENT, T_DOC_COMMENT, T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE,
+                 T_INLINE_HTML, T_WHITESPACE, T_OPEN_TAG, T_OPEN_TAG_WITH_ECHO, T_CLOSE_TAG];
+        $words = []; $functions = [];
+        foreach (json_decode(file_get_contents('/tmp/tokens.json')) as $code) {
+          $tokens = token_get_all($code);
+          foreach ($tokens as $i => $tok) {
+            if (is_array($tok)) {
+              if (in_array($tok[0], $skip, true)) continue;
+              $words[] = $tok[1];
+              if ($tok[0] === T_FUNCTION) {
+                for ($j = $i + 1; $j < count($tokens); $j++) {
+                  if (is_array($tokens[$j]) && $tokens[$j][0] === T_WHITESPACE) continue;
+                  if (is_array($tokens[$j]) && $tokens[$j][0] === T_STRING) $functions[] = strtolower($tokens[$j][1]);
+                  break;
+                }
+              }
+            } else {
+              $words[] = $tok;
+            }
+          }
+        }
+        echo json_encode(["words" => array_values(array_unique($words)), "functions" => $functions]);`,
+    });
+    const got = JSON.parse(r.text || '{"words":[],"functions":[]}');
+    const exact = new Set(got.words);
+    const lower = new Set(got.words.map((w) => w.toLowerCase()));
+    return (tests || []).map((t) => {
+      if (t.kind === "defines") {
+        const name = t.name.replace(/\(\)$/, "").toLowerCase();
+        return got.functions.includes(name) ? { ok: true, detail: "" }
+          : { ok: false, detail: "There's no function " + t.name + "(...) in the code." };
+      }
+      if (t.kind !== "uses" && t.kind !== "avoids") return null;
+      const w = t.name.trim();
+      const used = w.charAt(0) === "$" ? exact.has(w) : lower.has(w.toLowerCase());
+      const ok = t.kind === "uses" ? used : !used;
+      return { ok, detail: ok ? "" : t.kind === "uses" ? "It isn't in the code yet." : "The code uses it." };
+    });
+  }
+
+  return { boot, run, request, check, checkRequest, codeChecks };
+}
+
+function norm(text) { return String(text).split(/\s+/).filter(Boolean).join(" ").toLowerCase(); }
+
+/* A page as a reader sees it: tags out, &amp; and the like undone. */
+function readable(html) {
+  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+  return String(html).replace(/<[^>]+>/g, " ").replace(/&(#\d+|#x[0-9a-f]+|[a-z0-9]+);/gi, (m, e) => {
+    if (named[e.toLowerCase()] !== undefined) return named[e.toLowerCase()];
+    if (e[0] === "#") return String.fromCodePoint(e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10));
+    return m;
+  });
+}
+
+function short(text, n = 160) {
+  text = String(text).split(/\s+/).filter(Boolean).join(" ");
+  return text.length <= n ? text : text.slice(0, n) + "…";
 }
 
 /* "PHP Warning:  Undefined variable $x in /www/add.php on line 4" with the

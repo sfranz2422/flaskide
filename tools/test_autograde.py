@@ -522,6 +522,14 @@ example = _html.unescape(re.search(r'id="tests-example">(.*?)</pre>', helppage, 
 bare = "\n".join(re.split(r"\s{3,}", ln)[0] for ln in example.split("\n"))
 got, bad = autograde.parse(bare)
 check("the help page's example is all tests", len(got) == 9 and not bad, (len(got), bad))
+example = _html.unescape(re.search(r'id="tests-php-example">(.*?)</pre>', helppage, re.S).group(1))
+bare = "\n".join(re.split(r"\s{3,}", ln)[0] for ln in example.split("\n"))
+got, bad = autograde.parse(bare)
+check("  and its PHP site's example too", len(got) == 10 and not bad, (len(got), bad))
+php_help = client().get("/help/php")
+check("/help/php says what a PHP site can do, SQLite and all",
+      php_help.status_code == 200 and "PDO" in php_help.get_data(as_text=True)
+      and "not MySQL" in php_help.get_data(as_text=True), php_help.status_code)
 
 edit = teacher.get("/teacher/%s/edit" % SLUG).get_data(as_text=True)
 # Writing tests is the tutorial editor's now (the library's, PresMaker, + Tests):
