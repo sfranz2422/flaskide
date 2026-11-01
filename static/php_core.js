@@ -310,9 +310,18 @@ function norm(text) { return String(text).split(/\s+/).filter(Boolean).join(" ")
 
 /* A page as a reader sees it: tags out, &amp; and the like undone. */
 function readable(html) {
-  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+  // The entities a page actually uses, as Python's html.unescape reads them
+  // for a Flask app's checks: a test of "© Level Up Games" must find
+  // &copy; Level Up Games. (A Worker has no DOM to decode with.)
+  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0",
+                  copy: "©", reg: "®", trade: "™", middot: "·", times: "×", divide: "÷",
+                  bull: "•", hellip: "…", mdash: "—", ndash: "–", lsquo: "‘", rsquo: "’",
+                  ldquo: "“", rdquo: "”", laquo: "«", raquo: "»", deg: "°", plusmn: "±",
+                  euro: "€", pound: "£", yen: "¥", cent: "¢", sect: "§", para: "¶",
+                  larr: "←", rarr: "→", uarr: "↑", darr: "↓", hearts: "♥", star: "☆",
+                  check: "✓", frac12: "½", frac14: "¼", frac34: "¾", eacute: "é", ntilde: "ñ" };
   return String(html).replace(/<[^>]+>/g, " ").replace(/&(#\d+|#x[0-9a-f]+|[a-z0-9]+);/gi, (m, e) => {
-    if (named[e.toLowerCase()] !== undefined) return named[e.toLowerCase()];
+    if (named[e] !== undefined) return named[e];
     if (e[0] === "#") return String.fromCodePoint(e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10));
     return m;
   });

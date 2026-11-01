@@ -285,7 +285,8 @@ process.exit(0);
 site = dict(SITE, **{"loop.php": "<?php while (true) {}"})
 GRADED = dict(site, **{
     "login.php": "<?php session_start();\n$_SESSION['user'] = $_POST['user'];\nheader('Location: members.php');\n",
-    "members.php": "<?php session_start();\necho 'Hello ' . htmlspecialchars($_SESSION['user'] ?? 'nobody');\n",
+    "members.php": "<?php session_start();\necho 'Hello ' . htmlspecialchars($_SESSION['user'] ?? 'nobody');\n"
+                   "echo '<footer>&copy; Level Up &middot; 2 &times; fun&nbsp;&amp; more</footer>';\n",
     # Words that must NOT count: in a comment, in a string, in the HTML --
     # the string's and the HTML's tokens are EXACTLY the word ("{$title}switch"
     # splits into $title and "switch"; the page ends in the bare word eval),
@@ -304,6 +305,7 @@ GET /games.php contains Mario
 POST /login.php user=sam -> contains Hello sam
 GET /members.php contains sam
 GET /search.php q=<b> contains q=<b>
+GET /members.php contains © Level Up · 2 × fun & more
 GET /loop.php contains x
 GET / -> 200
 uses foreach
@@ -355,7 +357,7 @@ print("Check my work on a PHP site")
 G = g["grade"]["results"]
 def res(n):
     return G[n] if n < len(G) else {}
-check("every test is checked, in the notes' own words", len(G) == 22 and G[0]["label"] == g["labels"][0], g["labels"])
+check("every test is checked, in the notes' own words", len(G) == 23 and G[0]["label"] == g["labels"][0], g["labels"])
 check("a page that answers 200 passes, and its words are found", res(0)["ok"] and res(1)["ok"], (res(0), res(1)))
 check("a missing page is a 404, and a test wanting 200 says which page to make",
       res(2)["ok"] and not res(3)["ok"] and res(3)["detail"] == "It answered 404. Is there a page called /missing.php?", res(3))
@@ -365,19 +367,20 @@ check("what one test saved is there for the next (one site per check)", res(6)["
 check("a log-in in one test is still logged in for the next (one browser per check)",
       res(7)["ok"] and res(8)["ok"], (res(7), res(8)))
 check("a page's text is read as a visitor reads it (&lt; undone)", res(9)["ok"], res(9))
+check("  &copy; &middot; &times; &nbsp; too, as a Flask app's checks read them", res(10)["ok"], res(10))
 check("a page that never finishes fails its own test, saying why",
-      not res(10)["ok"] and "Still running after 1 seconds" in res(10)["detail"], res(10))
-check("  and the tests after it still run, on the site started again", res(11)["ok"], res(11))
+      not res(11)["ok"] and "Still running after 1 seconds" in res(11)["detail"], res(11))
+check("  and the tests after it still run, on the site started again", res(12)["ok"], res(12))
 check("uses: a keyword, a $variable, a function name in any case",
-      res(12)["ok"] and res(13)["ok"] and res(15)["ok"], (res(12), res(13), res(15)))
-check("  a $variable only as spelled ($_session is not $_SESSION)", not res(14)["ok"], res(14))
+      res(13)["ok"] and res(14)["ok"] and res(16)["ok"], (res(13), res(14), res(16)))
+check("  a $variable only as spelled ($_session is not $_SESSION)", not res(15)["ok"], res(15))
 check("words in a comment, a string or the HTML don't count",
-      res(16)["ok"] and not res(17)["ok"] and not res(18)["ok"], (res(16), res(17), res(18)))
-check("defines: a function by that name", res(19)["ok"] and not res(20)["ok"]
-      and "no function remove_game" in res(20)["detail"], (res(19), res(20)))
-check("a SQL project's test says a PHP site has no query.sql", not res(21)["ok"] and "query.sql" in res(21)["detail"], res(21))
+      res(17)["ok"] and not res(18)["ok"] and not res(19)["ok"], (res(17), res(18), res(19)))
+check("defines: a function by that name", res(20)["ok"] and not res(21)["ok"]
+      and "no function remove_game" in res(21)["detail"], (res(20), res(21)))
+check("a SQL project's test says a PHP site has no query.sql", not res(22)["ok"] and "query.sql" in res(22)["detail"], res(22))
 check("points add up from the tests that passed (Mario's POST is 2)",
-      g["grade"]["possible"] == 23 and g["grade"]["earned"] == sum(r["points"] for r in G if r["ok"])
+      g["grade"]["possible"] == 24 and g["grade"]["earned"] == sum(r["points"] for r in G if r["ok"])
       and res(4)["points"] == 2, g["grade"])
 print("predict questions in PHP")
 check("a ~~~php predict question's Run it runs PHP, not Python", g["snip"][0]["text"] == "5", g["snip"][0])
