@@ -31,11 +31,16 @@
   window.FlaskIDENotes.setQuizContext({ assignment: cfg.assignmentSlug,
                                         signedIn: cfg.signedIn,
                                         viewOnly: cfg.viewOnly });
-  var runtime = window.FlaskIDERuntime;
   var $ = function (id) { return document.getElementById(id); };
 
   var files = Object.assign({}, cfg.files || {});
-  var current = cfg.entry || "app.py";
+  var current = (function () {
+    // Before isSql()/isPhp() exist: the same rule, on the files as sent.
+    var f = cfg.files || {};
+    if ((cfg.sqlEntry || "query.sql") in f) return cfg.sqlEntry || "query.sql";
+    if ((cfg.phpEntry || "index.php") in f && !((cfg.entry || "app.py") in f)) return cfg.phpEntry || "index.php";
+    return cfg.entry || "app.py";
+  })();
   var editor = null;
   var account = null;
   var rescue = null;
@@ -75,11 +80,26 @@
    * a SQL project -- so adding that file is how you become one, and the chip
    * follows the files rather than the files following the chip. */
   var SQL_ENTRY = cfg.sqlEntry || "query.sql";
+  var PHP_ENTRY = cfg.phpEntry || "index.php";
+  var FLASK_ENTRY = cfg.entry || "app.py";
   var SCHEMA = cfg.schema || "schema.sql";
 
   function isSql() { return SQL_ENTRY in files; }
+  /* A PHP site: an index.php and no app.py (kind_of in app.py, the same
+     rule). app.py wins, so a Flask app holding an index.php stays Flask. */
+  function isPhp() { return !isSql() && PHP_ENTRY in files && !(FLASK_ENTRY in files); }
+
+  /* The file that runs, whichever kind this is. */
+  function entryName() { return isSql() ? SQL_ENTRY : isPhp() ? PHP_ENTRY : FLASK_ENTRY; }
+
+  /* What runs the project: Pyodide's Flask, or PHP in its worker. They
+     answer the same calls (flask.js, php.js), so this is the one place
+     that has to know which. Asked each time, because adding or deleting
+     index.php or app.py changes the answer. */
+  function runtime() { return isPhp() ? window.PhpRuntime : window.FlaskIDERuntime; }
 
   function modeFor(name) {
+    if (/\.php$/.test(name)) return "application/x-httpd-php";
     if (/\.sql$/.test(name)) return "text/x-sql";
     if (/\.py$/.test(name)) return "python";
     if (/\.css$/.test(name)) return "css";
@@ -260,13 +280,14 @@
    * app.py after a template called about.html, which is the wrong first
    * thing for a student to see. */
   function tabOrder() {
-    var entry = cfg.entry || "app.py";
+    var entry = entryName();
     var rest = Object.keys(files).filter(function (n) { return n !== entry; });
-    rest.sort(function (a, b) {
-      var fa = a.indexOf("/") < 0 ? 0 : (a.indexOf("templates/") === 0 ? 1 : 2);
-      var fb = b.indexOf("/") < 0 ? 0 : (b.indexOf("templates/") === 0 ? 1 : 2);
-      return fa - fb || a.localeCompare(b);
-    });
+    // Top level, then templates/ or includes/ (the pieces pages are made
+    // of), then static/.
+    var rank = function (n) {
+      return n.indexOf("/") < 0 ? 0 : (/^(templates|includes)\//.test(n) ? 1 : 2);
+    };
+    rest.sort(function (a, b) { return rank(a) - rank(b) || a.localeCompare(b); });
     return (entry in files ? [entry] : []).concat(rest);
   }
 
@@ -340,7 +361,7 @@
 
       tab.addEventListener("click", function () { openFile(name); });
 
-      if (!cfg.readonly && name !== (cfg.entry || "app.py")) {
+      if (!cfg.readonly && name !== entryName()) {
         var x = document.createElement("span");
         x.className = "tab-x";
         x.textContent = "×";
@@ -379,11 +400,17 @@
 
   function newFile() {
     var folders = (cfg.folders || ["templates", "static"]).join(" or ");
-    var name = window.prompt(
-      "New file.\n\n" +
-      "A template goes in templates/ and a stylesheet in static/ — that is " +
-      "where Flask looks for them.\n\n" +
-      "For example: templates/about.html", "templates/");
+    var name = isPhp()
+      ? window.prompt(
+          "New file.\n\n" +
+          "A page goes at the top level (about.php opens at /about.php), a " +
+          "piece every page includes in includes/, and a stylesheet in static/.\n\n" +
+          "For example: about.php", ".php")
+      : window.prompt(
+          "New file.\n\n" +
+          "A template goes in templates/ and a stylesheet in static/ — that is " +
+          "where Flask looks for them.\n\n" +
+          "For example: templates/about.html", "templates/");
     if (name === null) return;
     name = name.trim();
     if (!name) return;
@@ -391,7 +418,7 @@
 
     // The same rule the server enforces, said before the work is done
     // rather than when they press Share and lose the file.
-    if (!/^(?:(?:templates|static)\/)?[A-Za-z0-9][A-Za-z0-9 _-]{0,50}\.[A-Za-z0-9]{1,8}$/.test(name)) {
+    if (!/^(?:(?:templates|static|includes)\/)?[A-Za-z0-9][A-Za-z0-9 _-]{0,50}\.[A-Za-z0-9]{1,8}$/.test(name)) {
       window.alert(
         "'" + name + "' will not work.\n\n" +
         "Use letters, digits, dashes and underscores, end with an extension " +
@@ -399,7 +426,10 @@
         folders + "/.");
       return;
     }
-    files[name] = /\.html?$/.test(name)
+    files[name] = /\.php$/.test(name) && isPhp() && name.indexOf("/") < 0
+      // A new page, already wearing the site's header and footer.
+      ? "<?php\n$title = '" + name.replace(/\.php$/, "") + "';\ninclude 'includes/header.php';\n?>\n\n\n\n<?php include 'includes/footer.php'; ?>\n"
+      : /\.html?$/.test(name) && !isPhp()
       ? "{% extends \"base.html\" %}\n\n{% block body %}\n\n{% endblock %}\n"
       : "";
     openFile(name);
@@ -455,7 +485,7 @@
   /* XP for a run that worked (xp.js): the app imported without an error —
      or a SQL project's queries all ran. Only a signed-in student's own
      work; the server decides whether it pays. */
-  var XP_CODE = /\.(py|html?|css|js|sql)$/i;
+  var XP_CODE = /\.(py|php|html?|css|js|sql)$/i;
   function reportRun(files) {
     if (!window.FLASKIDE.signedIn || window.FLASKIDE.viewOnly || window.FLASKIDE.readonly ||
         window.FLASKIDE.isTeacher || !window.PyIDEXP) return;
@@ -485,8 +515,8 @@
     var btns = [$("run")];
     btns.forEach(function (b) { if (b) b.disabled = true; });
     try {
-      await runtime.boot(function (n) { if (n && note) note(n + "\n", "dim"); });
-      var got = await window.PyIDETests.run(runtime, project.files, tests);
+      await runtime().boot(function (n) { if (n && note) note(n + "\n", "dim"); });
+      var got = await window.PyIDETests.run(runtime(), project.files, tests);
       if (cfg.signedIn && cfg.assignmentSlug && !cfg.viewOnly) {
         fetch("/api/tests/self", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -521,9 +551,9 @@
     clearOutput();
 
     var project = readProject();
-    if (isSql()) {
+    if (isSql() || isPhp()) {
       try {
-        await runSqlProject(project);
+        await (isSql() ? runSqlProject(project) : runPhpProject(project));
       } finally {
         running = false;
         if (btn) btn.disabled = false;
@@ -536,7 +566,7 @@
          instead of a traceback from inside Flask. Python's own message
          still goes in the console. */
       syntaxCard.clear();
-      var bad = await runtime.check(project.files, function (note) {
+      var bad = await runtime().check(project.files, function (note) {
         if (note) say(note + "\n", "dim");
       });
       if (bad) {
@@ -545,7 +575,7 @@
         syntaxCard.show(bad);
         return;
       }
-      var res = await runtime.run(project.files, function (note) {
+      var res = await runtime().run(project.files, function (note) {
         if (note) say(note + "\n", "dim");
       });
 
@@ -576,12 +606,55 @@
     }
   }
 
+  /* ----------------------------------------------------------------- PHP */
+
+  /* A PHP site: the same steps as a Flask app's Run, with PHP's words. Can
+     PHP read every .php file (the syntax card if not), put the files in
+     place and build data.db, list the pages, and show /. */
+  async function runPhpProject(project) {
+    var php = window.PhpRuntime;
+    try {
+      syntaxCard.clear();
+      var bad = await php.check(project.files, function (note) {
+        if (note) say(note + "\n", "dim");
+      });
+      if (bad) {
+        say("PHP can't read " + bad.file + ", line " + bad.line + ": " + bad.msg + "\n"
+            + (bad.text.trim() ? "    " + bad.text.trim() + "\n" : ""), "err");
+        syntaxCard.show(bad);
+        return;
+      }
+      var res = await php.run(project.files, function (note) {
+        if (note) say(note + "\n", "dim");
+      });
+      if (!res.ok) {
+        say("\n" + res.error + "\n", "err");
+        if (res.statement) {
+          say("\nin this statement:\n", "dim");
+          say(res.statement + "\n");
+        }
+        return;
+      }
+      reportRun(project.files);
+      say("Running. Pages:\n", "dim");
+      res.pages.forEach(function (p) { say("  " + p + "\n"); });
+      if (res.tables && res.tables.length) {
+        say("Database (data.db, from schema.sql): " + res.tables.map(function (t) {
+          return t.name + " (" + t.rows + (t.rows === 1 ? " row)" : " rows)");
+        }).join(", ") + "\n", "dim");
+      }
+      await preview.go("/");
+    } catch (err) {
+      say("\n" + (err && err.message ? err.message : String(err)) + "\n", "err");
+    }
+  }
+
   /* ----------------------------------------------------------------- SQL */
 
   async function runSqlProject(project) {
     var pane = $("sql-results");
     try {
-      var res = await runtime.runSql(project.files, function (note) {
+      var res = await window.FlaskIDERuntime.runSql(project.files, function (note) {
         if (note) say(note + "\n", "dim");
       });
 
@@ -751,14 +824,16 @@
   }
 
   function applyKind() {
-    var sql = isSql();
+    var sql = isSql(), php = isPhp();
     document.body.classList.toggle("is-sql", sql);
+    if (window.FlaskIDEPreview) window.FlaskIDEPreview.useRuntime(runtime());
 
     var chip = $("mode-chip");
     if (chip) {
-      chip.textContent = sql ? "SQL" : "Flask";
+      chip.textContent = sql ? "SQL" : php ? "PHP" : "Flask";
       chip.title = sql
         ? "A SQL project: query.sql runs against the database schema.sql builds."
+        : php ? "A PHP site: index.php opens at / and the preview shows its pages."
         : "A Flask app: app.py runs and the preview shows its pages.";
     }
 
@@ -775,14 +850,18 @@
 
     var swap = $("switch-kind");
     if (swap) {
-      swap.textContent = sql ? "+ Flask app" : "+ SQL";
+      var flaskish = sql || php;
+      swap.textContent = flaskish ? "+ Flask app" : "+ SQL";
       /* /new, not "/": "/" became the front door, which sends a signed-in
          teacher to the dashboard -- so "+ Flask app" quietly left the
          editor altogether instead of opening a Flask project. */
-      swap.href = sql ? "/new" : "/sql";
-      swap.title = "Start a new " + (sql ? "Flask app" : "SQL project") +
+      swap.href = flaskish ? "/new" : "/sql";
+      swap.title = "Start a new " + (flaskish ? "Flask app" : "SQL project") +
         ". This one stays where it is.";
     }
+    // + PHP site, beside it, except in a PHP site.
+    var swapPhp = $("switch-php");
+    if (swapPhp) swapPhp.hidden = php;
   }
 
   /* --------------------------------------------------------------- share */
@@ -956,13 +1035,14 @@
     });
 
     applyKind();
-    runtime.setOutput(function (text) { say(text); });
+    window.FlaskIDERuntime.setOutput(function (text) { say(text); });
+    if (window.PhpRuntime) window.PhpRuntime.setOutput(function (text) { say(text); });
 
     /* Leaving for the other kind throws away anything unsaved, so it asks --
        but only when there IS something to lose. A confirm on every press is
        a confirm people learn to click through. */
-    var switcher = $("switch-kind");
-    if (switcher) {
+    [$("switch-kind"), $("switch-php")].forEach(function (switcher) {
+      if (!switcher) return;
       switcher.addEventListener("click", function (e) {
         if (!changedFromStarter()) return;
         if (!window.confirm(
@@ -971,7 +1051,7 @@
           e.preventDefault();
         }
       });
-    }
+    });
 
     /* The handles between the panes (split.js), the same ones the class's
        live page has. The editor is told, because CodeMirror measures itself
@@ -1066,13 +1146,11 @@
           /* Which kind of project this is comes from the files themselves,
              and the entry names come from the server rather than being
              typed again here. */
-          var flaskEntry = cfg.entry || "app.py";
-          var entry = files[SQL_ENTRY] !== undefined ? SQL_ENTRY : flaskEntry;
+          var entry = entryName();
           if (files[entry] === undefined) files[entry] = "";
           current = entry;
           editor.setValue(files[current]);
-          editor.setOption("mode",
-                           /\.py$/i.test(current) ? "python" : "text/plain");
+          editor.setOption("mode", modeFor(current));
           refreshNotes();
           applyKind();
         },
@@ -1743,12 +1821,11 @@
          the app decides what its entry files are called, and a second copy
          of those strings in the editor is a second thing to keep in step.
          test_app.py checks for exactly that. */
-      var flaskEntry = cfg.entry || "app.py";
-      var entry = files[SQL_ENTRY] !== undefined ? SQL_ENTRY : flaskEntry;
+      var entry = entryName();
       if (files[entry] === undefined) files[entry] = "";
       current = entry;
       editor.setValue(files[current]);
-      editor.setOption("mode", /\.py$/i.test(current) ? "python" : "text/plain");
+      editor.setOption("mode", modeFor(current));
       refreshNotes();
       applyKind();
       touched();

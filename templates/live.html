@@ -350,7 +350,8 @@
     starter: {{ (starter or '') | tojson }},
     starterFiles: {{ (starter_files or {}) | tojson }},
     entry: {{ (entry or 'app.py') | tojson }},
-    sqlEntry: {{ (sql_entry or 'query.sql') | tojson }}
+    sqlEntry: {{ (sql_entry or 'query.sql') | tojson }},
+    phpEntry: {{ (php_entry or 'index.php') | tojson }}
   };
 </script>
 {#  Only a student following the lesson needs an editor and Python. The join
@@ -365,12 +366,15 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/php/php.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js"></script>
 <script src="{{ url_for('static', filename='flask.js') }}"></script>
+<script src="{{ url_for('static', filename='php.js') }}"></script>
 <script src="{{ url_for('static', filename='preview.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script src="{{ url_for('static', filename='snippets.js') }}"></script>

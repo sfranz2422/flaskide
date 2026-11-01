@@ -50,6 +50,20 @@ const P = window.FlaskIDEPreview;
     '<script src="/static/app.js"></script><img src="/static/logo.png" alt="l"><img src="https://example.com/a.png">' +
     '<link rel="stylesheet" href="/static/missing.css">');
   out.asked = asked;
+  // Relative addresses, as a PHP site writes them, from the page they're on.
+  out.resolve = [["pet.php?name=cat", "/index.php"], ["index.php", "/pets/pet.php"], ["", "/add.php?x=1"],
+                 ["?q=dog", "/search.php"], ["/about.php", "/x/y.php"], ["../a.php", "/x/y.php"],
+                 ["https://example.com/", "/"]].map(([p, b]) => P.resolve(p, b));
+  asked.length = 0;
+  out.relCss = await P.inlineResources('<link rel="stylesheet" href="static/style.css">', "/pets/index.php");
+  out.relAsked = asked.slice();
+  // A different runtime, swapped in: requests go to it from then on.
+  const other = [];
+  P.useRuntime({ request: async (m, path) => { other.push(path); return { status: 200, headers: {}, body: "", isText: true }; } });
+  await P.inlineResources('<link rel="stylesheet" href="/static/style.css">', "/");
+  out.other = other;
+  // The shim's submit: a form with no action posts to "" (its own page).
+  out.shimSubmit = /path: f\.getAttribute\("action"\) \|\| "",/.test(P.withShim(""));
   process.stdout.write(JSON.stringify(out));
 })();
 """
@@ -77,6 +91,13 @@ check("a link that isn't a stylesheet, and an address on the internet, are left 
       and "/static/x.ico" not in o["asked"] and not any("example.com" in a for a in o["asked"]), o["asked"])
 check("a stylesheet that isn't there stays as it was (the page still shows)",
       'href="/static/missing.css"' in i, i)
+check("relative addresses resolve from the page they're on, as a browser's do",
+      o["resolve"] == ["/pet.php?name=cat", "/pets/index.php", "/add.php?x=1", "/search.php?q=dog",
+                       "/about.php", "/a.php", "https://example.com/"], o["resolve"])
+check("  a page's relative stylesheet is fetched from beside the page",
+      o["relAsked"] == ["/pets/static/style.css"], o["relAsked"])
+check("useRuntime swaps who answers (a PHP site's PHP, not Flask)", o["other"] == ["/static/style.css"], o["other"])
+check("a form with no action posts to its own page, not to 'srcdoc'", o["shimSubmit"])
 # Two requests at once (a page's fetch()es as it loads). flask.js hands each
 # to Python through one global and awaits; together they overwrote each
 # other's, and both got the last one's answer. A fake Pyodide that, like the

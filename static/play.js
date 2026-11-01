@@ -15,6 +15,10 @@
 
   var PLAY_KEY = "flaskide-play";
   var runtime = window.FlaskIDERuntime;
+
+  /* A PHP site runs on PHP instead: index.php and no app.py, the rule
+     app.js and app.py's kind_of use. */
+  function isPhp(files) { return "index.php" in files && !("app.py" in files) && !("query.sql" in files); }
   var $ = function (id) { return document.getElementById(id); };
   var outputEl = $("output");
   var reloadBtn = $("reload");
@@ -53,6 +57,7 @@
   });
   $("preview-back").addEventListener("click", function () { preview.back(); });
   runtime.setOutput(function (text) { say(text); });
+  if (window.PhpRuntime) window.PhpRuntime.setOutput(function (text) { if (text) say(text); });
 
   var running = false;
 
@@ -71,12 +76,16 @@
     running = true;
     reloadBtn.disabled = true;
     clearOutput();
+    if (isPhp(project.files)) {
+      runtime = window.PhpRuntime;
+      window.FlaskIDEPreview.useRuntime(runtime);
+    }
     try {
       var res = await runtime.run(project.files, function (note) {
         if (note) say(note + "\n", "dim");
       });
       if (!res.ok) { say("\n" + res.error + "\n", "err"); return; }
-      if (!res.routes.length) {
+      if (res.routes && !res.routes.length) {
         say("Your app has no routes yet, so there is no page to show.\n", "dim");
         return;
       }

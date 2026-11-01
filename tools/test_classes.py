@@ -172,6 +172,14 @@ check("  and is still kind code, so everything else treats it as one",
       sql_a.kind == "code", sql_a.kind)
 check("  and the class page offers it",
       '<option value="sql">' in teacher.get("/teacher/class/%d" % C4).get_data(as_text=True))
+# A PHP site, the same way (Add to class -> PHP site): also kind code.
+PHPHW = teacher.post("/api/class/%d/new" % CX,
+                     json={"title": "My PHP site", "kind": "php"}).get_json()
+php_a = q(accounts.Assignment, slug=PHPHW["slug"])[0]
+check("New PHP assignment starts as the PHP starter, opened in the editor",
+      php_a.file_map() == P.PHP_STARTER and P.kind_of(php_a.file_map()) == "php"
+      and php_a.kind == "code" and PHPHW["url"] == "/teacher/%s/edit" % PHPHW["slug"],
+      list(php_a.file_map()))
 LISTS = teacher.post(NEW, json={"title": "Lists"}).get_json()["slug"]
 QUIZ = teacher.post(NEW, json={"title": "Lists quiz", "kind": "lesson"}).get_json()
 check("New lesson makes a lesson, opened in the lesson editor",
@@ -262,8 +270,9 @@ check("  with Describe on an assignment's row and a heading's",
       and 'js-describe">Describe' in _row_html(group_row))
 
 # What each is, and whether it is in Google Classroom.
-check("the Add form's kinds are Code, SQL, Lesson and Material",
-      re.search(r'<option value="code">Code</option>\s*<option value="sql">SQL</option>'
+check("the Add form's kinds are Code, PHP site, SQL, Lesson and Material",
+      re.search(r'<option value="code">Code</option>\s*<option value="php">PHP site</option>'
+                r'\s*<option value="sql">SQL</option>'
                 r'\s*<option value="lesson">Lesson</option>'
                 r'\s*<option value="material">Material</option>', page) is not None)
 _quiz_row = [int(i) for i, s_, _ in order() if s_ == QUIZ][0]

@@ -914,6 +914,44 @@ check("  and saving it keeps query.sql, not an app.py full of SQL",
       r.get_json())
 
 
+# A PHP site's lesson: index.php is the entry, decided by the files as
+# query.sql is above, and Save lands there -- not in an app.py that would
+# turn the student's site into a Flask project.
+print("\nA PHP lesson")
+teacher.post("/api/live/%s/stop" % bare_sql)
+php_hw = teacher.post("/api/assignment",
+                      json={"files": {"index.php": "<?php echo 1;", "includes/header.php": "<h1>x</h1>"},
+                            "title": "PHP homework"}).get_json()["slug"]
+php_lesson = teacher.post("/api/live/start",
+                          json={"body": "<?php echo 2;", "filename": "index.php",
+                                "assignment": php_hw}).get_json()["code"]
+_pp = stranger.get("/live/%s" % php_lesson).get_data(as_text=True)
+check("a PHP lesson starts the student on the assignment's index.php",
+      page_value(_pp, "entry") == "index.php" and starter_of(_pp) == "<?php echo 1;",
+      (page_value(_pp, "entry"), starter_of(_pp)))
+check("  with its includes/ beside it, and the page knows the PHP entry's name",
+      (page_value(_pp, "starterFiles") or {}).get("includes/header.php") == "<h1>x</h1>"
+      and page_value(_pp, "phpEntry") == "index.php")
+r = student.post("/api/live/%s/keep" % php_lesson, json={"code": "<?php echo 3;", "entry": "app.py"})
+kept_php = r.get_json()["files"]
+check("  and a save lands in index.php, even from a page naming app.py",
+      kept_php.get("index.php") == "<?php echo 3;" and "app.py" not in kept_php
+      and "includes/header.php" in kept_php, sorted(kept_php))
+teacher.post("/api/live/%s/stop" % php_lesson)
+bare_php = teacher.post("/api/live/start",
+                        json={"body": "<?php echo 4;", "filename": "index.php",
+                              "assignment": ""}).get_json()["code"]
+check("a PHP lesson with no assignment starts the pane on index.php",
+      page_value(stranger.get("/live/%s" % bare_php).get_data(as_text=True), "entry") == "index.php")
+r = student.post("/api/live/%s/keep" % bare_php, json={"code": "<?php echo 5;", "entry": "index.php"})
+check("  and saving it keeps index.php", r.status_code == 200
+      and r.get_json()["files"] == {"index.php": "<?php echo 5;"}, r.get_json())
+teacher.post("/api/live/%s/stop" % bare_php)
+_lj = open(os.path.join(HERE, "..", "static", "live.js")).read()
+check("the live page runs a PHP site on PHP",
+      "function runtime() { return isPhp() ? window.PhpRuntime : window.FlaskIDERuntime; }" in _lj
+      and "function isPhp() { return MAIN === L.phpEntry; }" in _lj)
+
 # ------------------------------------------------------------------ ending
 print("\nEnding it")
 
@@ -1504,7 +1542,7 @@ check("the poll answers 304 when nothing changed",
 # removing the element — a page stuck in `while (true)` wedges that frame's
 # process, and a wedged frame cannot navigate itself away.
 check("running goes through FlaskIDE's own runtime",
-      "FlaskIDERuntime" in live_code and "runtime.run(" in live_code,
+      "FlaskIDERuntime" in live_code and "runtime().run(" in live_code,
       "so the live app and the editor's app cannot drift apart")
 check("  and the preview is the editor's, address bar and all",
       "new window.FlaskIDEPreview(" in live_code,
@@ -1514,7 +1552,7 @@ check("  and the preview is the editor's, address bar and all",
 # THE BRANCH, not the two names. Checking that runSql and isSql both appear
 # somewhere passed happily with the `if (isSql())` replaced by `if (false)`,
 # because neither name moved — the call was simply unreachable.
-sql_branch = re.search(r"if \(isSql\(\)\)\s*\{[\s\S]{0,400}?runtime\.runSql\(",
+sql_branch = re.search(r"if \(isSql\(\)\)\s*\{[\s\S]{0,400}?FlaskIDERuntime\.runSql\(",
                        live_code)
 check("  and a SQL lesson runs as SQL, decided by the file being taught",
       sql_branch is not None,
@@ -1719,7 +1757,7 @@ check("  and a SQL lesson sends its results grid instead",
       "a SQL lesson's answer never touches the console")
 _pv = code_only(open(os.path.join(HERE, "..", "static", "preview.js")).read())
 check("the preview remembers the page it painted, before the shim",
-      "this.shown = await inlineResources(res.body);\n      await this._paint(this.shown, true);" in _pv
+      "this.shown = await inlineResources(res.body, path);\n      await this._paint(this.shown, true);" in _pv
       and 'this.shown = "";\n        await this._show(' in _pv,
       "an image would leave the last page standing as 'the page'")
 

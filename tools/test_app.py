@@ -409,9 +409,48 @@ check("  the mode chip is a span, not a button",
 check("  there is a button to the other kind", 'id="switch-kind"' in template)
 # "/" is the front door now, and sends a signed-in teacher to the dashboard.
 check("    and + Flask app goes to the editor, not the front door",
-      'sql ? "/new" : "/sql"' in js, "switch-kind's href is not /new")
+      'flaskish ? "/new" : "/sql"' in js, "switch-kind's href is not /new")
 check("    and it asks before throwing unsaved work away",
       "changedFromStarter" in js and "preventDefault" in js)
+
+# ---------------------------------------------------------------- PHP sites
+#
+# The third kind: index.php and no app.py. Read off the files like the other
+# two, and the editor and the server must agree on it.
+for files, want in [({"index.php": "x"}, "php"),
+                    ({"index.php": "x", "schema.sql": "y"}, "php"),
+                    ({"index.php": "x", "app.py": "y"}, "flask"),     # app.py wins
+                    ({"index.php": "x", "query.sql": "y"}, "sql")]:
+    check("kind_of(%s) is %s" % (sorted(files), want), A.kind_of(files) == want, A.kind_of(files))
+check("  and the entry it runs is index.php", A.entry_of({"index.php": "x"}) == "index.php"
+      and A.entry_of({"app.py": "x"}) == "app.py" and A.entry_of({"query.sql": "x"}) == "query.sql")
+check("  app.js has the same rule, app.py winning",
+      'function isPhp() { return !isSql() && PHP_ENTRY in files && !(FLASK_ENTRY in files); }' in js
+      and 'cfg.phpEntry' in js)
+got, err = A.validate_files({"index.php": "<?php", "includes/header.php": "x", "static/style.css": "y"})
+check("a PHP site saves, includes/ and all", err is None, err)
+got, err = A.validate_files({"includes/header.php": "x"})
+check("  but not without an index.php: nothing would run", err is not None and "index.php" in err, err)
+r = client.get("/php")
+php_page = r.data.decode()
+check("/php opens the editor on the PHP starter", r.status_code == 200 and "My Pet List" in php_page
+      and "includes/header.php" in php_page, r.status_code)
+check("  and tells app.js the PHP entry's name", '"phpEntry": "index.php"' in php_page
+      or 'phpEntry: "index.php"' in php_page)
+check("the starter is a PHP site: index.php, pages, includes/, a stylesheet",
+      A.kind_of(A.PHP_STARTER) == "php" and {"index.php", "pet.php", "add.php", "includes/header.php",
+                                             "includes/footer.php", "static/style.css"} <= set(A.PHP_STARTER),
+      sorted(A.PHP_STARTER))
+check("  and it passes validate_files", A.validate_files(A.PHP_STARTER)[1] is None)
+check("the editor loads php.js, and CodeMirror's PHP mode after the two it needs",
+      "filename='php.js'" in template
+      and template.find("mode/htmlmixed/htmlmixed.min.js") < template.find("mode/clike/clike.min.js")
+      < template.find("mode/php/php.min.js") < template.find("filename='app.js'"))
+check("  and app.js asks for it on a .php file", '"application/x-httpd-php"' in js)
+check("+ PHP site starts one", 'id="switch-php"' in template and 'href="/php"' in template)
+check("Run sends a PHP site to PHP, not to Flask",
+      re.search(r"if \(isSql\(\) \|\| isPhp\(\)\)[\s\S]{0,200}runPhpProject\(project\)", js) is not None
+      and 'function runtime() { return isPhp() ? window.PhpRuntime : window.FlaskIDERuntime; }' in js)
 
 # The panes. A missed toggle leaves an address bar floating over a grid of
 # query results, which is why this is one body class and not four toggles.

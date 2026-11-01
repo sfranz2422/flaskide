@@ -202,22 +202,87 @@ window.FlaskIDESyntax = (function () {
     }]
   ];
 
-  /* What to say about one error: the friendly sentence, and Python's own. */
+  /* A PHP site's pages (php_core.js's check, PHP's own parser). The same
+     shape as RULES, keyed on PHP 8's messages: tools/test_php.py makes each
+     mistake in real PHP and fails if its message stops matching. PHP says
+     where it NOTICED the problem, which for a missing ; is the line after
+     it -- so `info.prev` is the line before, to point at. */
+  var PHP_RULES = [
+    [/^Unclosed '([(\[{])' on line (\d+)/, function (m, L, t, info) {
+      return "You're missing a closing `" + CLOSER[m[1]] + "`. The `" + m[1] + "` on line "
+        + m[2] + (info.file ? " of " + info.file : "") + " is opened but never closed.";
+    }],
+    [/^Unmatched '([)\]}])'/, function (m, L) {
+      return "There's an extra `" + m[1] + "` on " + L + ". It has no `" + OPENER[m[1]]
+        + "` before it to close.";
+    }],
+    [/unexpected token "="/, function (m, L, t) {
+      var v = /^\s*([A-Za-z_]\w*)\s*=/.exec(t);
+      return v ? "On " + L + ", a variable needs a `$` in front: `$" + v[1] + "`, not `" + v[1] + "`."
+               : "";
+    }],
+    [/unexpected identifier "in"/, function (m, L, t) {
+      return /\bforeach\b/.test(t)
+        ? "On " + L + ", PHP's foreach is written with `as`: `foreach ($pets as $pet)`." : "";
+    }],
+    [/unexpected token "(\w+)", expecting "\("/, function (m, L, t) {
+      return new RegExp("\\bfunction\\s+" + m[1] + "\\b").test(t)
+        ? "`" + m[1] + "` on " + L + " is a word PHP keeps for itself, so it can't be a "
+          + "function's name. Pick another name." : "";
+    }],
+    [/unexpected (?:variable|single-quoted string|double-quoted string|string content|integer|identifier) .*expecting "," or ";"/,
+     function (m, L) {
+      return "On " + L + ", two things sit side by side with nothing joining them. To join "
+        + "text in PHP, put a `.` between them: `'Hello ' . $name`.";
+    }],
+    [/unexpected string content/, function (m, L) {
+      return "On " + L + ", a quote is opened and never closed. Every `'` or `\"` needs "
+        + "a partner at the end of the text.";
+    }],
+    [/unexpected token "\{"/, function (m, L, t) {
+      var open = (t.match(/\(/g) || []).length, shut = (t.match(/\)/g) || []).length;
+      return open > shut ? "On " + L + ", a `(` is never closed before the `{`. Add the `)`." : "";
+    }],
+    [/expecting "\]"/, function (m, L) {
+      return "On " + L + ", something is missing in the array: a `,` between two items, or "
+        + "`=>` between a key and its value.";
+    }],
+    [/unexpected end of file/, function (m, L, t, info) {
+      return "PHP reached the end of " + (info.file || "the file") + " with something still "
+        + "open: a `{` or `(` without its partner, a quote never closed, or a "
+        + "`foreach (...):` without its `endforeach;`.";
+    }],
+    [/^syntax error, unexpected/, function (m, L, t, info) {
+      var p = (info.prev || "").trim();
+      if (p && !/[;{}:,(\[]$|\?>$|^<\?php$|^\/\/|^#|\*\/$/.test(p)) {
+        return "The line before " + L + " needs a `;` at its end: `" + p + ";`. PHP reads "
+          + "until it finds a `;`, so it took the two lines as one.";
+      }
+      return "";
+    }]
+  ];
+
+  /* What to say about one error: the friendly sentence, and Python's own
+     (or PHP's: a ParseError comes from a PHP site's page). */
   function explain(info) {
+    var php = info.kind === "ParseError";
+    var lang = php ? "PHP" : "Python";
     // A Flask project is several .py files, so the file is always named.
     var place = "line " + info.line + (info.file ? " of " + info.file : "");
     var friendly = "";
-    for (var i = 0; i < RULES.length && !friendly; i++) {
-      var m = RULES[i][0].exec(info.msg || "");
-      if (m) friendly = RULES[i][1](m, place, info.text || "", info);
+    var rules = php ? PHP_RULES : RULES;
+    for (var i = 0; i < rules.length && !friendly; i++) {
+      var m = rules[i][0].exec(info.msg || "");
+      if (m) friendly = rules[i][1](m, place, info.text || "", info);
     }
     if (!friendly) {
-      friendly = "Python can't read " + place + ". Its message is below.";
+      friendly = lang + " can't read " + place + ". Its message is below.";
     }
     return {
       friendly: friendly,
       python: (info.kind || "SyntaxError") + ": " + info.msg
-        + " (" + (info.file || "app.py") + ", line " + info.line + ")",
+        + " (" + (info.file || (php ? "index.php" : "app.py")) + ", line " + info.line + ")",
+      lang: lang,
       known: friendly.indexOf("Its message is below") === -1
     };
   }
@@ -306,7 +371,7 @@ window.FlaskIDESyntax = (function () {
       var head = document.createElement("div");
       head.className = "syntax-head";
       var title = document.createElement("strong");
-      title.textContent = "Python can't read this yet";
+      title.textContent = said.lang + " can't read this yet";
       head.appendChild(title);
       var x = document.createElement("button");
       x.type = "button";
@@ -324,7 +389,7 @@ window.FlaskIDESyntax = (function () {
 
       var raw = document.createElement("div");
       raw.className = "syntax-python";
-      raw.textContent = "Python says: " + said.python;
+      raw.textContent = said.lang + " says: " + said.python;
       card.appendChild(raw);
 
       opts.host.classList.add("syntax-host");    // the card is placed inside it
@@ -346,5 +411,5 @@ window.FlaskIDESyntax = (function () {
     return { show: show, clear: clear };
   }
 
-  return { explain: explain, check: check, attach: attach, RULES: RULES };
+  return { explain: explain, check: check, attach: attach, RULES: RULES, PHP_RULES: PHP_RULES };
 })();

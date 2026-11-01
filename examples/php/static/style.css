@@ -1,0 +1,13 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 40px;
+  color: #1b2130;
+}
+
+h1 { color: #7c3aed; }
+
+li { margin: 4px 0; }
+
+form { margin-top: 24px; }
+
+input, button { font-size: 16px; padding: 6px 10px; }

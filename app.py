@@ -81,6 +81,14 @@ ENTRY = "app.py"
 # stored kind says Flask while its files say SQL, which nothing can resolve.
 SQL_ENTRY = "query.sql"
 
+# THE THIRD KIND: A PHP SITE. A project with an index.php and no app.py is
+# plain PHP pages (index.php, add.php?id=3, include 'includes/header.php'),
+# run in the browser by WebAssembly PHP (static/php.js) the way a Flask app
+# runs in Pyodide. Read off the files like the other two, for the same
+# reasons -- and app.py wins over index.php, so a Flask project that happens
+# to hold an index.php stays a Flask project.
+PHP_ENTRY = "index.php"
+
 # Present in either kind: it is what a database gets built from. A Flask app
 # with a schema.sql gets a data.db it can open with plain sqlite3, which is the
 # whole point of putting SQL in this editor rather than in a separate one.
@@ -96,11 +104,12 @@ SCHEMA = "schema.sql"
 # Nothing matching this can escape the project directory, contain a slash in
 # a surprising place, or name a hidden file.
 BARE = r"[A-Za-z0-9][A-Za-z0-9 _-]{0,50}\.[A-Za-z0-9]{1,8}"
-FILE_NAME = re.compile(r"^(?:(?:templates|static)/)?%s$" % BARE)
+FILE_NAME = re.compile(r"^(?:(?:templates|static|includes)/)?%s$" % BARE)
 
 #: The only folders a name may sit in, named here so the error message can
-#: say what is allowed rather than only what is not.
-FOLDERS = ("templates", "static")
+#: say what is allowed rather than only what is not. includes/ is a PHP
+#: site's: the header and footer every page include()s.
+FOLDERS = ("templates", "static", "includes")
 
 # Every project starts as these three, already wired together, so nobody
 # spends week one wondering why their stylesheet isn't loading.
@@ -260,6 +269,21 @@ SQL_STARTER = {
 }
 
 
+def _php_starter():
+    """examples/php/, every file in it, as a project. Real .php files there
+    for the same reason the SQL starter's are real .sql files: they can be
+    opened, run and checked (tools/test_php.py runs this one)."""
+    root = EXAMPLES / "php"
+    found = {p.relative_to(root).as_posix(): p.read_text()
+             for p in sorted(root.rglob("*")) if p.is_file()}
+    if PHP_ENTRY not in found:
+        raise RuntimeError("examples/php/%s is missing; the PHP starter needs it" % PHP_ENTRY)
+    return found
+
+
+PHP_STARTER = _php_starter()
+
+
 def _database_url() -> str:
     """Render supplies DATABASE_URL; fall back to a local SQLite file."""
     url = os.environ.get("DATABASE_URL", "")
@@ -397,7 +421,16 @@ def kind_of(files):
     a disagreement here means the editor runs a project one way and the server
     saves it as the other.
     """
-    return "sql" if SQL_ENTRY in files else "flask"
+    if SQL_ENTRY in files:
+        return "sql"
+    if PHP_ENTRY in files and ENTRY not in files:
+        return "php"
+    return "flask"
+
+
+def entry_of(files):
+    """The file a project of this kind runs: query.sql, index.php or app.py."""
+    return {"sql": SQL_ENTRY, "php": PHP_ENTRY}.get(kind_of(files), ENTRY)
 
 
 def validate_files(raw):
@@ -434,10 +467,10 @@ def validate_files(raw):
 
     # Either entry will do. Which one decides the kind; having neither means
     # there is nothing to run, whichever kind was intended.
-    if ENTRY not in files and SQL_ENTRY not in files:
-        return None, ("A project needs an %s (a Flask app) or a %s (a SQL "
-                      "project) — that is the file that runs."
-                      % (ENTRY, SQL_ENTRY))
+    if ENTRY not in files and SQL_ENTRY not in files and PHP_ENTRY not in files:
+        return None, ("A project needs an %s (a Flask app), a %s (a SQL "
+                      "project) or an %s (a PHP site) — that is the file "
+                      "that runs." % (ENTRY, SQL_ENTRY, PHP_ENTRY))
 
     # schema.sql is NOT required for a SQL project here, though the editor
     # cannot run one without it. Saving is not running: a student halfway
@@ -526,8 +559,8 @@ def project_shape():
     `helpers/thing.py` and then refuse to save it, which is a rule you learn
     by losing work.
     """
-    return {"entry": ENTRY, "sqlEntry": SQL_ENTRY, "schema": SCHEMA,
-            "folders": list(FOLDERS)}
+    return {"entry": ENTRY, "sqlEntry": SQL_ENTRY, "phpEntry": PHP_ENTRY,
+            "schema": SCHEMA, "folders": list(FOLDERS)}
 
 
 @app.get("/sql")
@@ -545,6 +578,22 @@ def new_sql():
         "index.html",
         files=SQL_STARTER,
         title="Untitled query",
+        author="",
+        readonly=False,
+        authoring=True,
+        slug=None,
+        shared_at=None,
+    )
+
+
+@app.get("/php")
+def new_php():
+    """A new PHP site: the same editor, the PHP starter. A separate address
+    for the reason /sql is one (see new_sql)."""
+    return render_template(
+        "index.html",
+        files=PHP_STARTER,
+        title="Untitled site",
         author="",
         readonly=False,
         authoring=True,
@@ -678,7 +727,7 @@ def raw_shared(slug, name=None):
     try:
         proj = load_visible(db, slug)
         files = proj.file_map()
-        wanted = name or ENTRY
+        wanted = name or entry_of(files)
         if wanted not in files:
             abort(404)
         return files[wanted], 200, {"Content-Type": "text/plain; charset=utf-8"}
@@ -1531,6 +1580,7 @@ def my_work():
                 # in, so nothing handed in is lost by listing it this way.)
                 projects.append({"slug": d.slug, "title": d.title or "Untitled",
                                  "sql": _is_sql(d.file_map()),
+                                 "php": _is_php(d.file_map()),
                                  "updated": when(d.updated_at),
                                  "url": url_for("open_draft", slug=d.slug)})
                 continue
@@ -1566,11 +1616,16 @@ def _is_sql(files):
     return SQL_ENTRY in files
 
 
+def _is_php(files):
+    return kind_of(files) == "php"
+
+
 def _my_assignment(item, draft, sub, when, earned=None):
     return {
         "title": item.title,
         "closed": bool(item.closed),
         "sql": _is_sql(item.file_map()),
+        "php": _is_php(item.file_map()),
         "draft_slug": draft.slug if draft else "",
         # Their copy if they still have one, else the handout link, which
         # makes a fresh copy from the starter.
@@ -4675,11 +4730,11 @@ def class_new_assignment(class_id):
     assignment link and its live link made now, then opened to write.
 
     An assignment starts as the editor's own starter project (STARTER, or
-    SQL_STARTER for kind "sql") — the editor is where the teacher makes it
-    theirs, the same as editing any assignment. "sql" is not stored: the
-    files decide the kind (kind_of), so it only picks the starter. It is the
-    one way to make a SQL assignment, because the editor's + SQL button is
-    kept off assignments."""
+    SQL_STARTER for kind "sql", PHP_STARTER for "php") — the editor is where
+    the teacher makes it theirs, the same as editing any assignment. Neither
+    is stored: the files decide the kind (kind_of), so it only picks the
+    starter. It is the one way to make a SQL or PHP assignment, because the
+    editor's kind buttons are kept off assignments."""
     db = SessionLocal()
     try:
         user, course, bounce = _own_class(db, class_id)
@@ -4698,8 +4753,8 @@ def class_new_assignment(class_id):
             item = accounts.Assignment(
                 slug=accounts.new_id(db, accounts.Assignment), app=APP_NAME,
                 teacher_id=user.id, title=title, code="",
-                files=json.dumps(SQL_STARTER if data.get("kind") == "sql"
-                                 else STARTER))
+                files=json.dumps({"sql": SQL_STARTER, "php": PHP_STARTER}
+                                 .get(data.get("kind"), STARTER)))
         db.add(item)
         db.commit()
         _store_quiz_keys(db, item.id, item.file_map().values())
@@ -7493,10 +7548,10 @@ def live_keep(code):
         # word for it (`entry`, which live_page chose from the teacher's file).
         base = (draft.file_map() if draft is not None else
                 quiz.redact_files(item.file_map()) if item is not None else {})
-        if SQL_ENTRY in base or ENTRY in base:
-            entry = SQL_ENTRY if SQL_ENTRY in base else ENTRY
+        if SQL_ENTRY in base or ENTRY in base or PHP_ENTRY in base:
+            entry = entry_of(base)
         else:
-            entry = data.get("entry") if data.get("entry") in (ENTRY, SQL_ENTRY) \
+            entry = data.get("entry") if data.get("entry") in (ENTRY, SQL_ENTRY, PHP_ENTRY) \
                 else ENTRY
 
         project = dict(rest if rest is not None else base)
@@ -7629,8 +7684,9 @@ def live_page(code):
         # it: the project's own files say, as everywhere else in FlaskIDE.
         # Only a lesson with no assignment has no files to ask, and then the
         # teacher's open file says — the rule this page always used.
-        entry = SQL_ENTRY if (live.filename or "").lower().endswith(".sql") \
-            else ENTRY
+        low = (live.filename or "").lower()
+        entry = SQL_ENTRY if low.endswith(".sql") else \
+            PHP_ENTRY if low.endswith(".php") else ENTRY
         if item is not None:
             source = quiz.redact_files(item.file_map())
             if user is not None:
@@ -7639,7 +7695,7 @@ def live_page(code):
                 if mine is not None:
                     source = _current_notes(item, mine.file_map())
                     draft_version = mine.version or 0
-            entry = SQL_ENTRY if SQL_ENTRY in source else ENTRY
+            entry = entry_of(source)
             starter = source.get(entry, "")
             starter_files = {k: v for k, v in source.items() if k != entry}
 
@@ -7657,6 +7713,7 @@ def live_page(code):
             waiting=_waiting(live),
             entry=entry,
             sql_entry=SQL_ENTRY,
+            php_entry=PHP_ENTRY,
             error="",
             attend_class=_attend_item(db, user, item, live=True),
         )

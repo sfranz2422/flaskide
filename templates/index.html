@@ -86,6 +86,7 @@
         kind is set by its files when it is made. #}
     {% if not readonly and not assignment_title %}
       <a id="switch-kind" class="btn" href="/sql">+ SQL</a>
+      <a id="switch-php" class="btn" href="/php" title="Start a new PHP site. This one stays where it is.">+ PHP site</a>
     {% endif %}
     {% if not readonly %}
       <label class="toggle">
@@ -421,6 +422,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<!-- PHP: its mode is HTML with <?php ... ?> in it, so it needs clike (PHP's
+     own syntax) and htmlmixed (above) loaded first. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/php/php.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/fold/xml-fold.min.js"></script>
@@ -445,6 +450,7 @@
     files: {{ files | tojson }},
     entry: {{ entry | tojson }},
     sqlEntry: {{ sqlEntry | tojson }},
+    phpEntry: {{ phpEntry | tojson }},
     schema: {{ schema | tojson }},
     folders: {{ folders | tojson }},
     signedIn: {{ 'true' if user else 'false' }},
@@ -463,6 +469,7 @@
 <script src="{{ url_for('static', filename='zip.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/pyodide/v314.0.6/full/pyodide.js"></script>
 <script src="{{ url_for('static', filename='flask.js') }}"></script>
+<script src="{{ url_for('static', filename='php.js') }}"></script>
 <script src="{{ url_for('static', filename='preview.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script src="{{ url_for('static', filename='snippets.js') }}"></script>

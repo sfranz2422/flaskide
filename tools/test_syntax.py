@@ -189,14 +189,14 @@ for page, js in (("editor", "app.js"), ("live page", "live.js")):
     src = open(os.path.join(ROOT, "static", js)).read()
     run = src[src.index("async function run()"):]
     run = run[:run.index("\n  }\n")]
-    at = run.find("var bad = await runtime.check(")
-    later = run.find("await runtime.run(")
+    at = run.find("var bad = await runtime().check(")
+    later = run.find("await runtime().run(")
     check("the %s checks before it loads the app" % page,
           -1 < at < later, "a typo would surface as a traceback from inside Flask")
     check("  and stops there when Python can't read it",
           re.search(r"if \(bad\) \{[^}]*syntaxCard\.show\(bad\);\s*return;\s*\}", run) is not None)
     check("  and still prints Python's message in the console",
-          re.search(r"if \(bad\) \{[^}]*?\w+\(\"SyntaxError in \"", run) is not None)
+          re.search(r"if \(bad\) \{[^}]*?\"SyntaxError in \"", run) is not None)
 check("flask.js offers the check, and a broken one says null",
       re.search(r"async function check\(files, report\)[\s\S]*?catch \(e\) \{\s*return null;",
                 _flask_js) is not None

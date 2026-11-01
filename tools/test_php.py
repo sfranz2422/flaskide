@@ -72,6 +72,23 @@ SITE = {
                   "/* that's all */\n",
 }
 
+# A beginner's PHP mistakes, and a few words each card must say about it.
+# Each is made in real PHP, so a PHP upgrade that rewords its message makes
+# that card fall back to "PHP can't read line 3" -- and fails here.
+MISTAKES = {
+    "no ;": ("<?php\n$x = 1\necho $x;\n", ["line before line 3", "`$x = 1;`"]),
+    "no }": ("<?php\nif ($x) {\n  echo 1;\n", ["missing a closing `}`", "line 2"]),
+    "extra }": ("<?php\necho 1;\n}\n", ["extra `}`", "line 3"]),
+    "no $": ("<?php\nname = 'Ann';\n", ["`$name`"]),
+    "no .": ("<?php\necho 'Hi ' $name;\n", ["put a `.` between them"]),
+    "open quote": ("<?php\necho 'Hi;\n", ["never closed"]),
+    "no )": ("<?php\nif ($x > 1 {\n echo 1;\n}\n", ["a `(` is never closed"]),
+    "array": ("<?php\n$a = ['x' => 1, 'y' 2];\n", ["missing in the array"]),
+    "foreach in": ("<?php\nforeach ($pets in $p) { echo $p; }\n", ["with `as`"]),
+    "no endforeach": ("<?php foreach ($p as $x): ?>\n<li></li>\n", ["end of index.php", "endforeach"]),
+    "keyword": ("<?php\nfunction list() {}\n", ["`list`", "keeps for itself"]),
+}
+
 SCRIPT = r"""
 import { pathToFileURL } from "node:url";
 const ROOT = %(root)s;
@@ -114,6 +131,15 @@ out.badSchema = await core.run({ files: { ...SITE, "schema.sql": "CREATE TABLE a
 out.checkOk = await core.check({ files: SITE });
 out.checkBad = await core.check({ files: { ...SITE, "add.php": "<?php\n$x = 1\necho $x;\n" } });
 out.checkString = await core.check({ files: { "index.php": "<?php echo '<?php not code ?>';" } });
+
+// The syntax card's words (syntax.js), for each mistake as real PHP reports it.
+globalThis.window = globalThis;
+(0, eval)((await import("node:fs")).readFileSync(ROOT + "/static/syntax.js", "utf8"));
+out.cards = {};
+for (const [k, code] of Object.entries(%(mistakes)s)) {
+  const info = await core.check({ files: { "index.php": code } });
+  out.cards[k] = info ? window.FlaskIDESyntax.explain(info) : null;
+}
 console.log(JSON.stringify(out));
 process.exit(0);
 """
@@ -123,7 +149,8 @@ try:
     path = os.path.join(work, "core.mjs")
     with open(path, "w") as fh:
         fh.write(SCRIPT % {"root": json.dumps(ROOT), "universal": json.dumps(UNIVERSAL),
-                           "nodephp": json.dumps(NODE_PHP), "site": json.dumps(SITE)})
+                           "nodephp": json.dumps(NODE_PHP), "site": json.dumps(SITE),
+                           "mistakes": json.dumps({k: v[0] for k, v in MISTAKES.items()})})
     p = subprocess.run(["node", path], capture_output=True, text=True, timeout=300)
     try:
         r = json.loads(p.stdout.strip().splitlines()[-1])
@@ -167,7 +194,8 @@ check("a JSON body reaches php://input", json.loads(r["api"]["body"]) == {"got":
 check("a missing page is a 404", r["missing"]["status"] == 404, r["missing"]["status"])
 
 print("errors")
-check("a warning is shown in the page, as XAMPP shows it", "Undefined variable $titel" in r["warn"]["body"],
+check("a warning is shown in the page, as XAMPP shows it, naming warn.php (not /www/warn.php)",
+      "Undefined variable $titel" in r["warn"]["body"] and "in <b>warn.php</b>" in r["warn"]["body"],
       r["warn"]["body"])
 check("  and comes back for the output pane, naming the file without /www/",
       "Undefined variable $titel in warn.php on line 1" in r["warn"]["errors"], r["warn"]["errors"])
@@ -192,6 +220,13 @@ check("a missing ; is found, with its file and line",
       (r["checkBad"] or {}).get("file") == "add.php" and r["checkBad"]["line"] == 3
       and "syntax error" in r["checkBad"]["msg"] and r["checkBad"]["text"] == "echo $x;", r["checkBad"])
 check("<?php inside a string is not code", r["checkString"] is None, r["checkString"])
+
+print("the syntax card's words")
+for name, (code, words) in MISTAKES.items():
+    card = r["cards"].get(name) or {}
+    check("%s: %s" % (name, card.get("friendly", "")[:70]),
+          card.get("known") and card.get("lang") == "PHP" and all(w in card["friendly"] for w in words),
+          card)
 
 # ------------------------------------------------------------------ php.js
 # The page's side, in Node with a stand-in Worker: one that answers like the

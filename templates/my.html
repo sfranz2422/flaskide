@@ -53,7 +53,7 @@
           <tr>
             <td>
               <a href="{{ a.url }}">{{ a.title }}</a>
-              {% if a.sql %}<span class="dim small"> · SQL</span>{% endif %}
+              {% if a.sql %}<span class="dim small"> · SQL</span>{% endif %}{% if a.php %}<span class="dim small"> · PHP</span>{% endif %}
               {% if a.closed %}<span class="dim small"> · closed</span>{% endif %}
               {% if a.updated %}<div class="dim small">Last worked on {{ a.updated }}</div>{% endif %}
             </td>
@@ -117,7 +117,7 @@
         {% for p in projects %}
           <tr data-slug="{{ p.slug }}" data-title="{{ p.title }}">
             <td><a href="{{ p.url }}">{{ p.title }}</a>
-              {% if p.sql %}<span class="dim small"> · SQL</span>{% endif %}</td>
+              {% if p.sql %}<span class="dim small"> · SQL</span>{% endif %}{% if p.php %}<span class="dim small"> · PHP</span>{% endif %}</td>
             <td class="dim">{{ p.updated }}</td>
             <td class="right rowactions">
               <a class="linkbtn" href="{{ p.url }}">Open</a>

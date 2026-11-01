@@ -261,7 +261,7 @@
    * class already reads in the Notes pane, but it is still saved: a save
    * that left it out would delete the assignment's notes. */
   var MAIN = L.entry || "app.py";
-  var NAME_OK = /^(?:(?:templates|static)\/)?[A-Za-z0-9][A-Za-z0-9 _-]{0,50}\.[A-Za-z0-9]{1,8}$/;
+  var NAME_OK = /^(?:(?:templates|static|includes)\/)?[A-Za-z0-9][A-Za-z0-9 _-]{0,50}\.[A-Za-z0-9]{1,8}$/;
   var FILES_KEY = DRAFT_KEY + "-files";
   var docs = {};
   var active = MAIN;
@@ -283,6 +283,7 @@
 
   // The same modes the editor gives each kind of file (see app.js).
   function modeFor(name) {
+    if (/\.php$/i.test(name)) return "application/x-httpd-php";
     if (/\.sql$/i.test(name)) return "text/x-sql";
     if (/\.py$/i.test(name)) return "python";
     if (/\.css$/i.test(name)) return "css";
@@ -359,7 +360,11 @@
   var newFileBtn = $("mine-new-file");
   if (newFileBtn) {
     newFileBtn.addEventListener("click", function () {
-      var name = window.prompt(
+      var name = isPhp()
+        ? window.prompt("New file. A page goes at the top level, a piece every page " +
+                        "includes in includes/, and a stylesheet in static/.\n\n" +
+                        "For example: about.php", ".php")
+        : window.prompt(
         "New file. A template goes in templates/ and a stylesheet in " +
         "static/ — that is where Flask looks for them.\n\n" +
         "For example: templates/about.html", "templates/");
@@ -368,11 +373,11 @@
       if (!name) return;
       if (docs[name]) { switchTo(name); return; }
       if (!NAME_OK.test(name) || isNotes(name)
-          || name === L.entry || name === L.sqlEntry) {
+          || name === L.entry || name === L.sqlEntry || name === L.phpEntry) {
         window.alert("'" + name + "' will not work.\n\nUse letters, digits, " +
                      "dashes and underscores, end with an extension like " +
                      ".py, .html or .css, and put it either at the top level " +
-                     "or in templates/ or static/.");
+                     "or in templates/, static/ or includes/.");
         return;
       }
       docs[name] = CodeMirror.Doc("", modeFor(name));
@@ -1321,11 +1326,15 @@
 
   function clearOutput() { outputEl.textContent = ""; }
 
-  var runtime = window.FlaskIDERuntime;
   var preview = null;
   var running = false;
 
   function isSql() { return MAIN === L.sqlEntry; }
+  /* A PHP site's lesson: the server chose index.php as the entry from the
+     project's own files (live_page), as it chooses query.sql for SQL. */
+  function isPhp() { return MAIN === L.phpEntry; }
+  /* What runs their project: Flask in Pyodide, or PHP in its worker. */
+  function runtime() { return isPhp() ? window.PhpRuntime : window.FlaskIDERuntime; }
 
   function setBusy(on) {
     running = on;
@@ -1388,8 +1397,8 @@
     if (running || !tests.length) return null;
     setBusy(true);
     try {
-      await runtime.boot(function (note) { if (note && say) say(note + "\n", "dim"); });
-      var got = await window.PyIDETests.run(runtime, allFiles(), tests);
+      await runtime().boot(function (note) { if (note && say) say(note + "\n", "dim"); });
+      var got = await window.PyIDETests.run(runtime(), allFiles(), tests);
       if (L.signedIn && L.assignment) {
         fetch("/api/tests/self", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -1412,7 +1421,7 @@
 
   /* XP for their own run working (xp.js), as in the editor. */
   function reportRun(files) {
-    if (L.signedIn && window.PyIDEXP) window.PyIDEXP.ran(files, /\.(py|html?|css|js|sql)$/i);
+    if (L.signedIn && window.PyIDEXP) window.PyIDEXP.ran(files, /\.(py|php|html?|css|js|sql)$/i);
   }
 
   async function run() {
@@ -1440,7 +1449,7 @@
         return;
       }
       if (isSql()) {
-        var out = await runtime.runSql(project, function (note) {
+        var out = await window.FlaskIDERuntime.runSql(project, function (note) {
           if (note) write(note + "\n", "dim");
         });
         /* `results`, NOT `tables`. `tables` is the schema's table names and
@@ -1468,24 +1477,33 @@
          instead of a traceback from inside Flask. Python's own message
          still goes in the console. */
       syntaxCard.clear();
-      var bad = await runtime.check(project, function (note) {
+      var bad = await runtime().check(project, function (note) {
         if (note) write(note + "\n", "dim");
       });
       if (bad) {
         openConsole(true);                    // the card is in it, so it must show
-        write("SyntaxError in " + bad.file + " on line " + bad.line + ": " + bad.msg + "\n"
+        write((isPhp() ? "PHP can't read " + bad.file + ", line " + bad.line
+                       : "SyntaxError in " + bad.file + " on line " + bad.line) + ": " + bad.msg + "\n"
             + (bad.text.trim() ? "    " + bad.text.trim() + "\n" : ""), "err");
         syntaxCard.show(bad);
         return;
       }
-      var res = await runtime.run(project, function (note) {
+      var res = await runtime().run(project, function (note) {
         if (note) write(note + "\n", "dim");
       });
       if (!res.ok) {
         write("\n" + res.error + "\n", "err");
+        if (res.statement) write("\nin this statement:\n" + res.statement + "\n", "dim");
         return;
       }
       reportRun(project);
+      if (res.pages) {
+        // A PHP site: its pages, not routes.
+        write("Running. Pages:\n", "dim");
+        res.pages.forEach(function (p) { write("  " + p + "\n"); });
+        await preview.go("/");
+        return;
+      }
       if (!res.routes.length) {
         write("Your app has no routes yet.\n", "dim");
         return;
@@ -1520,6 +1538,9 @@
       if (failed) openConsole(true);
     }
   });
+  window.FlaskIDEPreview.useRuntime(runtime());
+  // PHP's warnings for their console (the page shows them too).
+  if (window.PhpRuntime) window.PhpRuntime.setOutput(function (text) { if (text) write(text); });
 
   runBtn.disabled = false;
   runLabel.textContent = "Run";

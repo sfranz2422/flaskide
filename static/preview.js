@@ -51,7 +51,27 @@
 (function () {
   "use strict";
 
-  const runtime = window.FlaskIDERuntime;
+  /* Whichever runtime the project runs on: FlaskIDERuntime for a Flask app,
+     PhpRuntime for a PHP site (Preview.useRuntime). Both answer request()
+     the same way, so nothing below knows which it is talking to. */
+  let runtime = window.FlaskIDERuntime;
+
+  /* A page's address, as the browser would make it from where the page is.
+     A PHP site links and posts with relative addresses -- href="pet.php",
+     action="add.php", header('Location: index.php') -- and those are
+     relative to the page they are on, not to "/". "" is the page itself
+     (a form with no action posts back to its own page), and an absolute
+     path or a query-only "?q=1" work as a browser's do. */
+  function resolve(path, base) {
+    path = path == null ? "" : String(path);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.slice(0, 2) === "//") return path;
+    try {
+      const u = new URL(path, "http://page" + (base && base.charAt(0) === "/" ? base : "/"));
+      return u.pathname + u.search;
+    } catch (err) {
+      return path;
+    }
+  }
 
   /* The script that rides along inside every page the student's app returns.
    * It is their page's only visitor from us, and it does three things: catch
@@ -97,7 +117,9 @@
     items.forEach(function (v, k) { data[k] = typeof v === "string" ? v : ""; });
     send({
       kind: "submit",
-      path: f.getAttribute("action") || location.pathname || "/",
+      // "" when it has none: the page it is on, which only the editor
+      // knows. location.pathname here is "srcdoc", a page no app has.
+      path: f.getAttribute("action") || "",
       method: (f.getAttribute("method") || "GET").toUpperCase(),
       form: data
     });
@@ -153,13 +175,13 @@
     const m = new RegExp("\\s" + name + "\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s>]+)", "i").exec(tag);
     return m ? m[1].replace(/^["']|["']$/g, "") : null;
   }
-  async function fetchOwn(url) {
+  async function fetchOwn(url, base) {
     try {
-      const res = await runtime.request("GET", url, null);
+      const res = await runtime.request("GET", resolve(url, base), null);
       return res.status >= 200 && res.status < 300 ? res : null;
     } catch (err) { return null; }
   }
-  async function inlineResources(html) {
+  async function inlineResources(html, base) {
     const jobs = [];
     html.replace(/<link\b[^>]*>/gi, (tag) => {
       if (/rel\s*=\s*["']?stylesheet/i.test(tag) && LOCAL(attr(tag, "href"))) jobs.push(tag);
@@ -177,13 +199,13 @@
     for (const tag of jobs) {
       if (done[tag] !== undefined) continue;
       if (/^<link/i.test(tag)) {
-        const res = await fetchOwn(attr(tag, "href"));
+        const res = await fetchOwn(attr(tag, "href"), base);
         done[tag] = res && res.isText ? "<style>" + res.body + "</style>" : tag;
       } else if (/^<script/i.test(tag)) {
-        const res = await fetchOwn(attr(tag, "src"));
+        const res = await fetchOwn(attr(tag, "src"), base);
         done[tag] = res && res.isText ? "<script>" + res.body.replace(/<\/script/gi, "<\\/script") + "</script>" : tag;
       } else {
-        const res = await fetchOwn(attr(tag, "src"));
+        const res = await fetchOwn(attr(tag, "src"), base);
         const kind = res && (res.headers["Content-Type"] || res.headers["content-type"] || "image/png");
         const data = res && (res.isText ? "data:" + kind + "," + encodeURIComponent(res.body)
                                         : "data:" + kind + ";base64," + res.body);
@@ -252,6 +274,7 @@
 
     /** Ask the app for a path and show what it says. */
     async go(path, method, form, record) {
+      path = resolve(path, this.path);
       if (record !== false && this.path && this.path !== path) {
         this.history.push(this.path);
       }
@@ -271,7 +294,7 @@
       let hops = 0;
       while (res.status >= 300 && res.status < 400 &&
              (res.headers.Location || res.headers.location) && hops < 10) {
-        path = res.headers.Location || res.headers.location;
+        path = resolve(res.headers.Location || res.headers.location, path);
         res = await runtime.request("GET", path, null);
         hops += 1;
       }
@@ -300,7 +323,7 @@
       }
       // What the class's live page is sent, too: with the CSS and pictures
       // in it, since their screens can't ask this app for /static either.
-      this.shown = await inlineResources(res.body);
+      this.shown = await inlineResources(res.body, path);
       await this._paint(this.shown, true);
     }
 
@@ -364,7 +387,7 @@
       // It only asks the app; it can't steer the preview.
       if (msg.kind === "fetch" && this.frames.some((f) => f.contentWindow === e.source)) {
         const page = e.source;
-        runtime.request(msg.method, msg.path, msg.form, msg.json).then((res) => {
+        runtime.request(msg.method, resolve(msg.path, this.path), msg.form, msg.json).then((res) => {
           page.postMessage({ __flaskideReply: 1, id: msg.id, status: res.status, headers: res.headers,
                              body: res.body, isText: res.isText }, "*");
         }, (err) => {
@@ -431,5 +454,9 @@
   // For tests (tools/test_preview.py): the two page rewrites, on their own.
   Preview.withShim = withShim;
   Preview.inlineResources = inlineResources;
+  Preview.resolve = resolve;
+  /* Which runtime answers: the editor and the live page call this when the
+     project's kind is known, and again whenever the files change it. */
+  Preview.useRuntime = (r) => { if (r) runtime = r; };
   window.FlaskIDEPreview = Preview;
 })();

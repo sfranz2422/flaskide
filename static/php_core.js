@@ -155,7 +155,10 @@ export function makeCore({ PHP, PHPRequestHandler, setPhpIniEntries, load }) {
     return {
       status: r.httpStatusCode,
       headers: out,
-      body: isText ? r.text : base64(bytes),
+      // A warning in the page names the file as add.php, not /www/add.php
+      // (only inside PHP's own "in <b>…</b> on line" wording, so nothing a
+      // student's page says is touched).
+      body: isText ? (r.text || "").split("in <b>" + WWW + "/").join("in <b>") : base64(bytes),
       isText,
       // PHP's own warnings and errors, for the output pane. The page has
       // them too (display_errors), but a warning on a redirect or inside a
@@ -180,7 +183,12 @@ export function makeCore({ PHP, PHPRequestHandler, setPhpIniEntries, load }) {
             $lines = explode("\\n", $code);
             echo json_encode(["file" => $name, "kind" => "ParseError", "msg" => $e->getMessage(),
                               "line" => $e->getLine(), "col" => 0, "end_line" => 0, "end_col" => 0,
-                              "text" => rtrim($lines[$e->getLine() - 1] ?? "")]);
+                              "text" => rtrim($lines[$e->getLine() - 1] ?? ""),
+                              // the line before, skipping blanks: where a missing ; was
+                              "prev" => (function ($lines, $n) {
+                                  for ($i = $n - 2; $i >= 0; $i--) if (trim($lines[$i]) !== "") return rtrim($lines[$i]);
+                                  return "";
+                              })($lines, $e->getLine())]);
             exit;
           }
         }`,
