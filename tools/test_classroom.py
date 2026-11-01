@@ -480,10 +480,13 @@ check("a topic id that is not one is refused before Google is asked",
 r = teacher.post(POST, json={"course": P4, "due": "next tuesday"})
 check("a due date that isn't one is refused before Google is asked",
       r.status_code == 400 and room[P4]["work"] is None, r.status_code)
+# A date already past goes to Google: last week's work is posted to send
+# its grades, and refusing it here locked the teacher out.
 r = teacher.post(POST, json={"course": P4, "due": "2020-01-01T04:59"})
-check("  and so is one already past, in words rather than Google's",
-      r.status_code == 400 and "passed" in r.get_json()["error"]
-      and room[P4]["work"] is None, r.status_code)
+check("  a due date already past is posted, not refused",
+      r.status_code == 200 and (room[P4]["work"] or {}).get("dueDate") == {"year": 2020, "month": 1, "day": 1},
+      r.status_code)
+room[P4]["gone"] = True           # deleted in Classroom, so the next post is fresh
 
 calls.clear()
 _due_year = P.datetime.now(P.timezone.utc).year + 1

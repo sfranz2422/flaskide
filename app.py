@@ -3879,8 +3879,8 @@ def _due_for_classroom(asked):
 
     Classroom wants both or neither — a dueDate alone is refused — so the
     page always sends a time, 11:59 PM unless the teacher picked another.
-    A due time already past is refused here in words, rather than letting
-    Google refuse it with a message no teacher can read."""
+    A date already past is allowed: the teacher posts last week's work to
+    Classroom to send its grades, and refusing it here locked them out."""
     if not asked:
         return {}, None
     try:
@@ -3888,8 +3888,6 @@ def _due_for_classroom(asked):
             tzinfo=timezone.utc)
     except ValueError:
         return {}, "That due date isn't a date."
-    if when <= datetime.now(timezone.utc):
-        return {}, "That due date has already passed."
     return {"dueDate": {"year": when.year, "month": when.month, "day": when.day},
             "dueTime": {"hours": when.hour, "minutes": when.minute}}, None
 

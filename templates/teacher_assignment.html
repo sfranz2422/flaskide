@@ -816,7 +816,6 @@
       if (dueDate) {
         var at = new Date(dueDate + "T" + dueTime);
         if (isNaN(at)) { state.textContent = "That due date isn't a date."; return; }
-        if (at <= new Date()) { state.textContent = "That due date has already passed."; return; }
         due = at.toISOString().slice(0, 16);
         dueWords = ", due " + at.toLocaleString([], { weekday: "short", month: "short",
                      day: "numeric", hour: "numeric", minute: "2-digit" }) + ",";
