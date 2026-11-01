@@ -275,6 +275,9 @@ out.made = made; out.ended = ended; out.ready = R.isReady();
 const T = window.PyIDETests.parse(%(tests_md)s).tests;
 out.labels = T.map((t) => t.label);
 out.grade = await window.PyIDETests.run(R, %(graded)s, T);
+out.snip = [await R.snippet("<?php\n$a = 2;\necho $a + 3;"), await R.snippet("echo 'Level' . ' Up';"),
+            await R.snippet("<?php echo $nope;")];
+out.siteAfter = (await R.request("GET", "/")).status;
 out.unreadable = await window.PyIDETests.run(R, Object.assign({}, %(graded)s, { "lib.php": "<?php\nfunction f( {\n" }), T.slice(0, 3));
 console.log(JSON.stringify(out));
 process.exit(0);
@@ -376,6 +379,17 @@ check("a SQL project's test says a PHP site has no query.sql", not res(21)["ok"]
 check("points add up from the tests that passed (Mario's POST is 2)",
       g["grade"]["possible"] == 23 and g["grade"]["earned"] == sum(r["points"] for r in G if r["ok"])
       and res(4)["points"] == 2, g["grade"])
+print("predict questions in PHP")
+check("a ~~~php predict question's Run it runs PHP, not Python", g["snip"][0]["text"] == "5", g["snip"][0])
+check("  with or without its <?php", g["snip"][1]["text"] == "Level Up", g["snip"][1])
+check("  and PHP's warning comes back as the error, in the code (not /internal/eval.php)",
+      "Undefined variable $nope in the code on line 1" in g["snip"][2]["error"]
+      and "/internal" not in g["snip"][2]["text"], g["snip"][2])
+check("  never touching the student's site", g["siteAfter"] == 200, g["siteAfter"])
+_nj = open(os.path.join(ROOT, "static", "notes.js")).read()
+check("notes.js sends a ~~~php fence to PhpRuntime.snippet",
+      'var run = /^php$/i.test(lang) ? window.PhpRuntime.snippet : js ? window.IDESnippets.runJs : window.IDESnippets.run;' in _nj
+      and "if (/^php$/i.test(codeLang(q.prompt)) && !(window.PhpRuntime && window.PhpRuntime.snippet)) return;" in _nj)
 _ta = open(os.path.join(ROOT, "templates", "teacher_assignment.html")).read()
 check("the teacher's Check all checks each PHP site in PHP, decided by its own files",
       'var rt = isPhp(work[i].files) ? await phpRuntime() : await python();' in _ta

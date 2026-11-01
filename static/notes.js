@@ -1736,9 +1736,12 @@ window.FlaskIDENotes = (function () {
     btn.addEventListener("click", function () {
       btn.disabled = true;
       said.textContent = "Running…";
-      // The fence says which language: ~~~js runs as JavaScript (WebIDE), anything else as Python.
-      var js = /^(js|javascript)$/i.test(codeLang(q.prompt));
-      (js ? window.IDESnippets.runJs : window.IDESnippets.run)(codeLines(q.prompt).join("\n")).then(function (r) {
+      // The fence says which language: ~~~js runs as JavaScript (WebIDE),
+      // ~~~php as PHP (php.js, a PHP site's lessons), anything else as Python.
+      var lang = codeLang(q.prompt);
+      var js = /^(js|javascript)$/i.test(lang);
+      var run = /^php$/i.test(lang) ? window.PhpRuntime.snippet : js ? window.IDESnippets.runJs : window.IDESnippets.run;
+      run(codeLines(q.prompt).join("\n")).then(function (r) {
         btn.disabled = false;
         said.textContent = "";
         printed = r.text;
@@ -1757,6 +1760,9 @@ window.FlaskIDENotes = (function () {
     return {
       show: function (teacher) {
         if (!window.IDESnippets || !window.IDESnippets.run) return;
+        // PHP's code needs PHP: a page without php.js has no Run it for it,
+        // rather than one that runs PHP as Python.
+        if (/^php$/i.test(codeLang(q.prompt)) && !(window.PhpRuntime && window.PhpRuntime.snippet)) return;
         forTeacher = teacher;
         wrap.hidden = false;
         btn.title = teacher ? "Run the question's code" : "See what it really prints";

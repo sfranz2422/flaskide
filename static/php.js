@@ -217,6 +217,17 @@
     return lines.length ? lines[lines.length - 1].trim() : String(text || "");
   }
 
+  /* A ~~~php predict question's code, run on its own (php_core's snippet):
+     { text, error }. Never the student's site. */
+  async function snippet(code) {
+    try {
+      await boot();
+      return await ask("snippet", { code }, LIMIT_MS);
+    } catch (e) {
+      return { text: "", error: e.timeout ? tooLong("That code") : String(e.message || e) };
+    }
+  }
+
   /* Stop: whatever page is running is abandoned with its worker. */
   function stop() {
     if (worker && waiting.size) restart();
@@ -225,5 +236,5 @@
   function setOutput(fn) { onOutput = fn || (() => {}); }
   function isReady() { return ready; }
 
-  window.PhpRuntime = { boot, run, request, check, autograde, stop, setOutput, isReady, PROJECT: "/www", LIMIT_MS };
+  window.PhpRuntime = { boot, run, request, check, autograde, snippet, stop, setOutput, isReady, PROJECT: "/www", LIMIT_MS };
 })();

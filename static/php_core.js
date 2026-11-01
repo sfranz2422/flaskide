@@ -288,7 +288,22 @@ export function makeCore({ PHP, PHPRequestHandler, setPhpIniEntries, load }) {
     });
   }
 
-  return { boot, run, request, check, checkRequest, codeChecks };
+  /* A predict question's ▶ Run it (notes.js, a ~~~php fence): the code on
+     its own, as the page's whole output, never touching the site in /www.
+     { text, error }, as the Python snippet runner answers. */
+  async function snippet({ code }) {
+    await boot();
+    php.mkdirTree("/tmp/snippet");
+    php.chdir("/tmp/snippet");
+    const src = /^\s*<\?php|^\s*<\?=/.test(code) ? code : "<?php\n" + code;
+    const r = await php.run({ code: src });
+    php.chdir(WWW);
+    // PHP names the code /internal/eval.php; to the student it is "the code".
+    const named = (t) => String(t).split("/internal/eval.php").join("the code");
+    return { text: named(r.text || ""), error: named(plainErrors(r.errors || "")) };
+  }
+
+  return { boot, run, request, check, checkRequest, codeChecks, snippet };
 }
 
 function norm(text) { return String(text).split(/\s+/).filter(Boolean).join(" ").toLowerCase(); }
