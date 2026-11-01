@@ -1172,6 +1172,19 @@ body:not(.is-authoring) .notes-body .snippet-guess,
 .reveal-bar[hidden] { display: none; }
 .reveal-play[hidden] { display: none; }
 .reveal-play:disabled { opacity: .55; cursor: default; }
+/* ▶ Play more, at the bottom of what's played so far (notes.js placeMore). */
+.reveal-more { display: flex; align-items: center; gap: 12px; margin: 1.1em 0 .4em; }
+.reveal-more[hidden] { display: none; }
+/* Its turn to be pressed — Play more with parts to come, or the next-slide
+   arrow once the slide is done: it pulses, so it's seen. */
+.reveal-play.is-ready, .slide-btn.is-ready { animation: ready-pulse 1.4s ease-in-out infinite; }
+@keyframes ready-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 65%, transparent); }
+  50% { transform: scale(1.07); box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-play.is-ready, .slide-btn.is-ready { animation: none; outline: 3px solid var(--accent); outline-offset: 2px; }
+}
 .reveal-hidden { visibility: hidden; }
 .reveal-start { margin-top: 1em; }
 .reveal-pop { animation: reveal-pop .5s ease-out; }

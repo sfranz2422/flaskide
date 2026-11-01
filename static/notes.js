@@ -494,7 +494,7 @@ window.FlaskIDENotes = (function () {
     var speed = "";                        // "slow", "normal" or "fast"
     var reached = { slide: 0, played: 0 }; // the furthest slide, and its sections played
     var busy = false;
-    var playBar = null, play = null, hint = null, skip = null, replay = null;
+    var playBar = null, play = null, hint = null, skip = null, replay = null, moreBox = null;
 
     /* LOCKED UNTIL ITS CHECKS PASS (`locked: yes` in the notes, and only
        where the page asks — the student's own editor; never the teacher's
@@ -515,7 +515,22 @@ window.FlaskIDENotes = (function () {
     var PREDICT_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*py(thon)?[ \t]+predict[ \t]*$/im;
     var HOLDS = ".tests-card[data-checks]:not([data-passed])";
     var UNPREDICTED = ".snippet[data-predict]:not([data-predicted])";
-    function waiting() { return !!(body.querySelector(HOLDS) || body.querySelector(UNPREDICTED)); }
+    /* And a ```cards block, until every card has been turned over once
+       (data-seen, set by enhanceCards). Students skipped Words to Know
+       without reading a card; the teacher wanted them turned first. */
+    var UNFLIPPED = ".flip-card:not([data-seen])";
+    function waiting() {
+      return !!(body.querySelector(HOLDS) || body.querySelector(UNPREDICTED) || body.querySelector(UNFLIPPED));
+    }
+    /* Why the way on is held, in the three places it's said: the arrow's
+       title, Play's title, and the line beside Play. */
+    function holdWhy() {
+      if (body.querySelector(UNPREDICTED)) return ["Get this slide's prediction right first",
+        "Get the prediction above right first", "Get the prediction above right to go on"];
+      if (body.querySelector(UNFLIPPED)) return ["Turn over every card first",
+        "Turn over every card above first", "Turn over every card to go on"];
+      return ["Pass this slide's checks first", "Pass the check above first", "Pass the check above to go on"];
+    }
     function lockWanted() { return !!lockOpt && (typeof lockOpt.locked === "function" ? lockOpt.locked() : !!lockOpt.locked); }
     var lockOn = false;
     var unlocked = 0;
@@ -536,11 +551,18 @@ window.FlaskIDENotes = (function () {
       var hold = checksHold();
       body.classList.toggle("tests-locking", hold);
       if (!cut.length) return;
-      next.disabled = at >= cut.length - 1 || unfinished() || busy || hold;
-      next.title = unfinished() ? "Play the rest of this slide first"
-        : hold ? (body.querySelector(UNPREDICTED) ? "Get this slide's prediction right first" : "Pass this slide's checks first")
-        : "Next slide";
+      /* While this slide has parts still to play (animate:), the arrow
+         plays the next one, as ▶ Play more does: students looked for the
+         way on at the arrow, found it greyed out, and missed Play at the
+         top of the slide. It turns the slide only once everything's played. */
+      var more = unfinished();
+      next.disabled = busy || hold || (!more && at >= cut.length - 1);
+      next.title = hold ? holdWhy()[0] : more ? "Play the next part of this slide" : "Next slide";
+      // Time to move on: the arrow pulses (style.css, .is-ready).
+      next.classList.toggle("is-ready", !!mode && !next.disabled && !more);
     }
+    // Checks run, a prediction right, a card turned over: all say so with
+    // this event (it bubbles), and the arrows and Play are painted again.
     body.addEventListener("ide-checks", function () {
       // Passed only once the slide has played through: a card passed
       // halfway (animate:) mustn't open the cards still to come.
@@ -563,10 +585,15 @@ window.FlaskIDENotes = (function () {
       replay.type = "button";
       replay.title = "Play this slide again from the start";
       hint = el("span", "reveal-hint dim small");
-      playBar.appendChild(play);
+      /* ▶ Play more sits at the BOTTOM of what's played so far, where the
+         student is reading (placeMore), not in the bar over the slide —
+         they finished a part, looked down for what next, and kept pressing
+         the arrow instead. The bar keeps the teacher's Skip and Replay. */
+      moreBox = el("div", "reveal-more");
+      moreBox.appendChild(play);
+      moreBox.appendChild(hint);
       playBar.appendChild(skip);
       playBar.appendChild(replay);
-      playBar.appendChild(hint);
       body.parentNode.insertBefore(playBar, body);
       play.addEventListener("click", playNext);
       skip.addEventListener("click", skipAhead);
@@ -595,7 +622,6 @@ window.FlaskIDENotes = (function () {
     function paintPlayer() {
       if (!playBar) return;
       var total = sectionsHere().length, shown = shownHere();
-      playBar.hidden = !mode;
       setTheme(playBar, theme);
       var more = mode && at === reached.slide && shown < total;
       /* TYPED BEFORE MORE PLAYS (`locked: yes` with `animate:`): a part
@@ -604,19 +630,40 @@ window.FlaskIDENotes = (function () {
          past every "Type this" without typing it; a small tests block
          right after the code now makes them do the step before the next. */
       var held = more && checksHold();
-      play.hidden = !more;
+      play.hidden = !more || busy;            // not while a part is playing in above it
       play.disabled = busy || held;
-      play.title = held ? (body.querySelector(UNPREDICTED) ? "Get the prediction above right first" : "Pass the check above first") : "";
+      play.title = held ? holdWhy()[1] : "";
+      // Its turn: it pulses (style.css, .is-ready) so it's seen.
+      play.classList.toggle("is-ready", !play.hidden && !play.disabled);
       skip.hidden = !skippable() || !(busy || more);
       replay.hidden = !skippable() || !mode || busy || !shown;
+      // The bar over the slide only holds the teacher's buttons now.
+      playBar.hidden = !mode || (skip.hidden && replay.hidden);
       play.textContent = shown ? "▶ Play more" : "▶ Play";
-      hint.textContent = busy ? "" : held
-        ? (body.querySelector(UNPREDICTED) ? "Get the prediction above right to go on" : "Pass the check above to go on")
+      // Held with nothing left to play (cards to turn, a check at the end)
+      // says why too: "Done — on to the next slide" beside a greyed arrow
+      // sent students hunting for a way on.
+      hint.textContent = busy ? "" : held || checksHold()
+        ? holdWhy()[2]
         : more
         ? (total > 1 ? "Part " + (shown + 1) + " of " + total : "")
         : at < reached.slide || shown >= total ? (cut.length && at < cut.length - 1 ? "Done — on to the next slide ▶" : "Done") : "";
       if (cut.length) prev.disabled = at <= 0 || busy;
+      placeMore();
       arrows();
+    }
+
+    /* Play and its line, kept last in the slide, under the newest part,
+       and scrolled into sight when it's their turn (only ever down, and
+       only inside the notes: the page itself never jumps). */
+    function placeMore() {
+      if (!moreBox) return;
+      moreBox.hidden = !mode;
+      if (!mode) { if (moreBox.parentNode) moreBox.remove(); return; }
+      if (moreBox.parentNode !== body || moreBox.nextSibling) body.appendChild(moreBox);
+      if (busy || !moreBox.getBoundingClientRect || !body.getBoundingClientRect) return;
+      var b = body.getBoundingClientRect(), m = moreBox.getBoundingClientRect();
+      if (m.bottom > b.bottom) body.scrollTop += m.bottom - b.bottom + 12;
     }
 
     function drawPlayed() {
@@ -635,8 +682,9 @@ window.FlaskIDENotes = (function () {
         return render(part, sec, { theme: "" });
       });
       return Promise.all(parts).then(function () {
-        arrows();                         // a tests card played in, or there already
         if (turned) body.scrollTop = 0;
+        placeMore();                      // under the parts drawn just now
+        arrows();                         // a tests card played in, or there already
         return true;
       });
     }
@@ -733,7 +781,8 @@ window.FlaskIDENotes = (function () {
 
     function step(by) {
       if (!cut.length || busy) return;
-      if (by > 0 && (unfinished() || checksHold())) return;
+      if (by > 0 && unfinished()) { playNext(); return; }   // checksHold is playNext's own guard
+      if (by > 0 && checksHold()) return;
       // Through, so this slide holds nothing any more — checks or none.
       if (lockOn && by > 0 && at >= unlocked) {
         unlocked = at + 1;
@@ -1226,6 +1275,16 @@ window.FlaskIDENotes = (function () {
           var on = !card.classList.contains("is-flipped");
           card.classList.toggle("is-flipped", on);
           card.setAttribute("aria-pressed", String(on));
+          /* Turned over once is enough for `locked: yes` (slideView's
+             UNFLIPPED), turned back or not. The event is the one a passed
+             check sends, so the slide viewer looks again. */
+          if (!card.hasAttribute("data-seen")) {
+            card.setAttribute("data-seen", "");
+            var ev;
+            try { ev = new CustomEvent("ide-checks", { bubbles: true }); }
+            catch (e) { ev = document.createEvent("Event"); ev.initEvent("ide-checks", true, false); }
+            card.dispatchEvent(ev);
+          }
         });
         grid.appendChild(card);
       });
@@ -2044,6 +2103,7 @@ window.FlaskIDENotes = (function () {
 
   return {
     parseCards: parseCards,
+    _enhanceCards: enhanceCards,
     runFences: runFences,
     scramble: scramble,
     cleanLong: cleanLong,

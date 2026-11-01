@@ -166,10 +166,17 @@ check("the lesson page plays them at the student's own pace, never following a l
 check("live and the projector never ask for it",
       all("animate" not in re.findall(r"slideView\([^)]*\)", js)[0] for js in others.values() if re.findall(r"slideView\([^)]*\)", js)),
       [n for n, js in others.items() if "animate:" in js])
-check("the next slide waits until this one has been played, and Play while a section plays",
-      "if (by > 0 && (unfinished() || checksHold())) return;" in NOTES_JS
-      and "next.disabled = at >= cut.length - 1 || unfinished() || busy || hold;" in NOTES_JS
+check("the next slide waits until this one has been played: till then the arrow plays the next part, as Play does",
+      "if (by > 0 && unfinished()) { playNext(); return; }" in NOTES_JS
+      and "next.disabled = busy || hold || (!more && at >= cut.length - 1);" in NOTES_JS
       and "play.disabled = busy || held;" in NOTES_JS)   # held: a check above it (test_checks_in_notes.py)
+STYLE = open(os.path.join(ROOT, "static", "style.css")).read()
+check("Play sits at the bottom of the slide, under what's played — not in the bar above it",
+      "moreBox.appendChild(play);" in NOTES_JS and "playBar.appendChild(play)" not in NOTES_JS
+      and "if (moreBox.parentNode !== body || moreBox.nextSibling) body.appendChild(moreBox);" in NOTES_JS)
+check("  whatever is pressed next pulses — Play, or the arrow once the slide is done; still, for reduced motion",
+      ".reveal-play.is-ready, .slide-btn.is-ready { animation: ready-pulse" in STYLE
+      and re.search(r"prefers-reduced-motion: reduce\) \{\s*\.reveal-play\.is-ready, \.slide-btn\.is-ready \{ animation: none;", STYLE) is not None)
 check("someone who asks for reduced motion gets each section at once",
       'matchMedia("(prefers-reduced-motion: reduce)")' in NOTES_JS)
 check("Skip shows the part playing at once, or between parts the whole slide — and only where it's offered",

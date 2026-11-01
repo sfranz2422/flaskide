@@ -65,11 +65,17 @@ function El(tag) {
 }
 Object.defineProperty(El.prototype, "textContent", {
   get: function () { return this._text + this.children.map(function (c) { return c.textContent; }).join(""); },
-  set: function (v) { this._text = String(v); this.children = []; } });
+  // Cleared children are cut loose, as in a browser: notes.js checks a
+  // box's parentNode to put Play back after the slide is drawn again.
+  set: function (v) { this._text = String(v); this.children.forEach(function (c) { c.parentNode = null; }); this.children = []; } });
 Object.defineProperty(El.prototype, "innerHTML", {
   get: function () { return this._text; }, set: function (v) { this._text = String(v); this.children = []; } });
 Object.defineProperty(El.prototype, "offsetParent", { get: function () { return this.parentNode ? {} : null; } });
-El.prototype.appendChild = function (c) { this.children.push(c); c.parentNode = this; return c; };
+Object.defineProperty(El.prototype, "nextSibling", { get: function () {
+  var s = this.parentNode ? this.parentNode.children : []; return s[s.indexOf(this) + 1] || null; } });
+// Appending what's already in the page MOVES it, as in a browser (notes.js
+// moves Play down under each new part).
+El.prototype.appendChild = function (c) { if (c.parentNode) c.remove(); this.children.push(c); c.parentNode = this; return c; };
 El.prototype.insertBefore = function (c) { return this.appendChild(c); };
 El.prototype.replaceChild = function (c, old) { var i = this.children.indexOf(old); this.children[i] = c; c.parentNode = this; old.parentNode = null; return old; };
 El.prototype.remove = function () { if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1); this.parentNode = null; };
@@ -87,6 +93,9 @@ El.prototype.click = function () { this.dispatchEvent({ type: "click" }); };
 // comma list of those — all the card, the viewer and snippets.js use.
 function matches(el, sel) {
   if (sel.indexOf(",") >= 0) return sel.split(",").some(function (s) { return matches(el, s.trim()); });
+  // "a > b": b, whose parent is a (enhanceCards' pre > code.language-cards).
+  var gt = sel.lastIndexOf(" > ");
+  if (gt >= 0) return matches(el, sel.slice(gt + 3)) && !!el.parentNode && matches(el.parentNode, sel.slice(0, gt));
   var tag = /^[a-z]+/i.exec(sel);
   if (tag && el.tagName !== tag[0].toUpperCase()) return false;
   var not = /:not\(\[([\w-]+)\]\)/.exec(sel), base = sel.replace(/:not\(\[[\w-]+\]\)/, "");
@@ -107,7 +116,7 @@ var document = { createElement: function (t) { return new El(t); },
                  querySelectorAll: function (s) { return root.querySelectorAll(s); },
                  createTreeWalker: function () { return { nextNode: function () { return null; } }; } };
 function CustomEvent(type) { this.type = type; }
-var window = { marked: { parse: function (s) { return s; } },
+var window = { marked: { parse: function (s) { return s; }, parseInline: function (s) { return s; } },
                DOMPurify: { sanitize: function (s) { return s; } },
                matchMedia: function () { return { matches: false }; } };
 // snippets.js's Python worker, stood in for: ready at once, and every run
@@ -257,15 +266,70 @@ var tick = function () { return new Promise(function (r) { setTimeout(r, 0); });
   play.click(); await tick(); await tick();
   a.put();                                    // the part just played had a tests block
   await C.check();
-  out.midHeld = { play: play.disabled, hint: a.pane.querySelector(".reveal-hint").textContent };
+  out.midHeld = { play: play.disabled, hint: a.pane.querySelector(".reveal-hint").textContent,
+                  next: a.next.disabled, pulse: play.classList.contains("is-ready") };
   play.click(); await tick(); await tick();
+  a.next.handlers.click.forEach(function (f) { f(); }); await tick(); await tick();
   out.midStillAt = a.pane.querySelectorAll(".reveal-part").length;
   answer = { results: [{ label: "Step test", ok: true }] };
   await C.check();
-  out.midOpen = { play: play.disabled, next: a.next.disabled, kept: store["pyide-unlocked:anim"] || null };
-  play.click(); await tick(); await tick();
+  // Play is the last thing in the slide, under the parts, and pulses.
+  var kids = a.body.children, box = play.parentNode;
+  out.midOpen = { play: play.disabled, next: a.next.disabled, nextTitle: a.next.title, kept: store["pyide-unlocked:anim"] || null,
+                  pulse: play.classList.contains("is-ready"), arrowPulse: a.next.classList.contains("is-ready"),
+                  last: box.parentNode === a.body && kids[kids.length - 1] === box };
+  // The ARROW plays the next part, as Play would — and stays on this slide.
+  a.next.handlers.click.forEach(function (f) { f(); }); await tick(); await tick();
   out.midPlayed = a.pane.querySelectorAll(".reveal-part").length;
+  out.midAt = a.v.at();
+  kids = a.body.children;
+  out.midLastAgain = kids[kids.length - 1] === box && kids[kids.length - 2] === a.pane.querySelectorAll(".reveal-part")[1];
+  // All played (the third and last part, by the arrow again): Play goes,
+  // and now the arrow pulses, and turns the slide.
+  a.next.handlers.click.forEach(function (f) { f(); }); await tick(); await tick();
+  out.midThree = [a.pane.querySelectorAll(".reveal-part").length, a.v.at()];
+  out.midDone = { play: play.hidden, pulse: play.classList.contains("is-ready"), arrowPulse: a.next.classList.contains("is-ready") };
+  a.next.handlers.click.forEach(function (f) { f(); }); await tick(); await tick();
+  out.midTurned = a.v.at();
   a.pane.remove();
+
+  // Held at the END of a slide (nothing left to play): the line says why,
+  // never "Done — on to the next slide" beside a greyed arrow.
+  window.matchMedia = function () { return { matches: true }; };
+  C.forget();
+  answer = { results: [{ label: "Step test", ok: false, detail: "not yet" }] };
+  var e = await viewer("animate: words\nlocked: yes\n# One\n...\nLast part\n---\n# Two", { locked: true, animate: true, key: "endheld" });
+  e.next.handlers.click.forEach(function (f) { f(); }); await tick(); await tick();
+  e.next.handlers.click.forEach(function (f) { f(); }); await tick(); await tick();
+  e.put(); await C.check();
+  out.endHeld = { next: e.next.disabled, hint: e.pane.querySelector(".reveal-hint").textContent, parts: e.pane.querySelectorAll(".reveal-part").length };
+  e.pane.remove();
+  window.matchMedia = still;
+
+  // ---------------------------------------------------- cards to turn over
+  // Words to Know under `locked: yes`: the slide holds until every card has
+  // been turned over once — the real enhanceCards, clicked as a student would.
+  var cdeck = "locked: yes\n# Words\n---\n# Two";
+  async function cardsViewer(opts, key) {
+    var w = await viewer(cdeck, Object.assign({ key: key }, opts));
+    var pre = w.body.appendChild(new El("pre")), code = pre.appendChild(new El("code"));
+    code.className = "language-cards"; code.textContent = "key -> a label\nvalue -> what's stored\n";
+    N._enhanceCards(w.body);
+    await refresh(w, cdeck);
+    return w;
+  }
+  var k1 = await cardsViewer({ locked: true }, "cards");
+  var cs = k1.body.querySelectorAll(".flip-card");
+  out.cHeld = { n: cs.length, next: k1.next.disabled, title: k1.next.title };
+  cs[0].click(); await tick();
+  cs[0].click(); await tick();               // turned back: still seen
+  out.cOne = k1.next.disabled;
+  cs[1].click(); await tick();
+  out.cAll = { next: k1.next.disabled, kept: store["pyide-unlocked:cards"] || null };
+  k1.pane.remove();
+  var k2 = await cardsViewer({ locked: false }, "cards2");
+  out.cFree = k2.next.disabled;
+  k2.pane.remove();
   window.matchMedia = still;
 
   console.log(JSON.stringify(out));
@@ -319,13 +383,32 @@ if "error" not in got:
     check("never held without the line, where the page doesn't ask, or on a slide with no tests",
           got["free"] == [False, False, False, False], got["free"])
     mh = got["midHeld"]
-    check("animate: a part with a check holds ▶ Play until it passes, saying why",
-          mh["play"] is True and "check above" in mh["hint"], mh)
-    check("  pressing it anyway plays nothing", got["midStillAt"] == 1, got["midStillAt"])
+    check("animate: a part with a check holds ▶ Play until it passes, saying why — and the arrow too",
+          mh["play"] is True and "check above" in mh["hint"] and mh["next"] is True, mh)
+    check("  held, Play doesn't pulse", mh["pulse"] is False, mh)
+    check("  pressing Play or the arrow anyway plays nothing", got["midStillAt"] == 1, got["midStillAt"])
     mo = got["midOpen"]
-    check("  passed: Play opens — but not the slide, with parts still to play",
-          mo["play"] is False and mo["next"] is True and mo["kept"] is None, mo)
-    check("  and the next part plays", got["midPlayed"] == 2, got["midPlayed"])
+    check("  passed: Play opens and pulses — but the slide isn't passed, with parts still to play",
+          mo["play"] is False and mo["pulse"] is True and mo["kept"] is None, mo)
+    check("  Play sits last in the slide, under what's been played", mo["last"] is True, mo)
+    check("  the arrow is open too, saying it plays the next part (no pulse: Play's the one)",
+          mo["next"] is False and mo["nextTitle"] == "Play the next part of this slide" and mo["arrowPulse"] is False, mo)
+    check("  pressing the arrow plays the next part, on the same slide",
+          got["midPlayed"] == 2 and got["midAt"] == 0, [got["midPlayed"], got["midAt"]])
+    check("  and Play moves down under the new part", got["midLastAgain"] is True)
+    check("  and again for the last part, still on the slide", got["midThree"] == [3, 0], got["midThree"])
+    md_ = got["midDone"]
+    check("  all played: Play goes, and the arrow pulses", md_["play"] is True and md_["pulse"] is False and md_["arrowPulse"] is True, md_)
+    check("  and now the arrow turns the slide", got["midTurned"] == 1, got["midTurned"])
+    eh = got["endHeld"]
+    check("held at the end of a slide, the line says why — not \"Done, on to the next slide\"",
+          eh["parts"] == 2 and eh["next"] is True and eh["hint"] == "Pass the check above to go on", eh)
+    ch = got["cHeld"]
+    check("locked: Words to Know holds the next slide until every card is turned over, saying why",
+          ch["n"] == 2 and ch["next"] is True and ch["title"] == "Turn over every card first", ch)
+    check("  one card turned (and turned back) isn't enough", got["cOne"] is True)
+    check("  all turned: open, and kept", got["cAll"]["next"] is False and got["cAll"]["kept"] == "1", got["cAll"])
+    check("  and cards hold nothing where the page doesn't lock", got["cFree"] is False)
     ph = got["pHeld"]
     check("a slide with a python predict block holds the next one, saying why",
           ph["next"] is True and ph["title"] == "Get this slide's prediction right first" and ph["run"] is True, ph)
