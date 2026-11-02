@@ -31,7 +31,34 @@ window.FlaskIDEAccount = (function () {
    * Refused, this tab stops saving for good and says so. It does not try to
    * merge or retry: the other tab's copy is the one to keep, and what was
    * typed here is still on screen to copy across by hand. */
-  var TAB = Math.random().toString(36).slice(2, 14);
+  /* A RELOAD IS THE SAME TAB. A browser asks for the new page first and only
+     runs the old one's pagehide once the answer is in, so the old page's last
+     save always lands AFTER the new page was told its version. With a new id
+     for every page load, that last save looked like "another tab": the new
+     page's first save was refused, and everything typed in it was lost at the
+     next reload. It happened to a whole class told to refresh for a changed
+     tutorial. So the id is handed from a page to the next one in this tab.
+
+     Handed over as the page goes, not kept in sessionStorage all along:
+     Duplicate tab copies sessionStorage, and a real second tab must stay a
+     different writer. A page brought back whole by the Back button gets
+     reloaded, because the id has moved on and it would write its old copy as
+     if it were current. Blocked storage means a new id, as before. */
+  var TAB_KEY = "pyide-tab-handover";
+  var TAB = (function () {
+    var id = null;
+    try {
+      id = window.sessionStorage.getItem(TAB_KEY);
+      window.sessionStorage.removeItem(TAB_KEY);
+    } catch (e) { /* blocked: a new id */ }
+    return id || Math.random().toString(36).slice(2, 14);
+  }());
+  window.addEventListener("pagehide", function () {
+    try { window.sessionStorage.setItem(TAB_KEY, TAB); } catch (e) { /* blocked */ }
+  });
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) window.location.reload();
+  });
   var STALE_NOTE = "This was changed in another tab or window. Reload this "
                  + "page to carry on from the latest version, then turn it in.";
   var seen = typeof cfg.draftVersion === "number" ? cfg.draftVersion : null;
@@ -144,6 +171,9 @@ window.FlaskIDEAccount = (function () {
     }
 
     function schedule() {
+      // Refused for good: "Saving…" here would sit there forever over the
+      // "Not saved" a student needs to see, while nothing is being saved.
+      if (stale) return;
       clearTimeout(timer);
       show("Saving…", "busy");
       timer = setTimeout(save, SAVE_DELAY);

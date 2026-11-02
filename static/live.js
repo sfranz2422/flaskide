@@ -446,7 +446,34 @@
      Unknown until the first save when the page had no draft to start from
      (a lesson with no assignment), and then nothing is claimed: the first
      reply carries the version, and the guard holds from there. */
-  var TAB = Math.random().toString(36).slice(2, 14);
+  /* A RELOAD IS THE SAME TAB. A browser asks for the new page first and only
+     runs the old one's pagehide once the answer is in, so the old page's last
+     save always lands AFTER the new page was told its version. With a new id
+     for every page load, that last save looked like "another tab": the new
+     page's first save was refused, and everything typed in it was lost at the
+     next reload. It happened to a whole class told to refresh for a changed
+     tutorial. So the id is handed from a page to the next one in this tab.
+
+     Handed over as the page goes, not kept in sessionStorage all along:
+     Duplicate tab copies sessionStorage, and a real second tab must stay a
+     different writer. A page brought back whole by the Back button gets
+     reloaded, because the id has moved on and it would write its old copy as
+     if it were current. Blocked storage means a new id, as before. */
+  var TAB_KEY = "pyide-tab-handover";
+  var TAB = (function () {
+    var id = null;
+    try {
+      id = window.sessionStorage.getItem(TAB_KEY);
+      window.sessionStorage.removeItem(TAB_KEY);
+    } catch (e) { /* blocked: a new id */ }
+    return id || Math.random().toString(36).slice(2, 14);
+  }());
+  window.addEventListener("pagehide", function () {
+    try { window.sessionStorage.setItem(TAB_KEY, TAB); } catch (e) { /* blocked */ }
+  });
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) window.location.reload();
+  });
   /* NOT `seen`. The mirror below keeps the lesson's version in a `seen` of
      its own, and with one function around both they were the same variable:
      the first poll replaced the draft's version with the lesson's, so a
@@ -476,8 +503,10 @@
       saveState.textContent = "Not saved — changed in another tab";
     }
     if (turnInBtn) turnInBtn.disabled = true;
-    window.alert(message + " What you typed here is still on screen, and in "
-                 + "this browser, so copy it first if you need it.");
+    // Not "and in this browser": the copy here is older than the draft now,
+    // so the next load drops it (`behind`). Only the screen still has it.
+    window.alert(message + " What you typed here is still on screen, so copy "
+                 + "it first if you need it.");
   }
 
   function savedNow(text) {
@@ -659,6 +688,10 @@
 
   window.addEventListener("pagehide", function () {
     if (!changedSinceTurnIn || !canTurnIn || !draftSlug || stale || !L.signedIn) return;
+    // This last save moves the draft and its reply is never read. Without this
+    // the copy kept here looks older than the draft at the next load, and is
+    // dropped, even with typing in it that hasn't reached the server.
+    if (draftSeen !== null) noteBase(draftSeen + 1);
     try {
       fetch("/api/draft/" + encodeURIComponent(draftSlug), {
         method: "POST",

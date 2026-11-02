@@ -319,6 +319,137 @@ check("  and then STOPS saving", out.get("savedAfter") == 0, out.get("savedAfter
 check("  and will not turn in either",
       out.get("turnInAfter") == 0 and out.get("alertsAfter") == 2, out)
 
+# ------------------------------------------------------------- a reload
+# THE BUG: a teacher changed a tutorial mid-lesson and told the class to
+# refresh. A browser asks for the new page first and runs the old one's pagehide
+# only once the answer is in, so the old page's last save always lands after the
+# new page was told its version. Each page load had its own tab id, so that save
+# looked like another tab: the new page's first save was refused, "Saving…" then
+# stuck on screen, and what they typed was gone at the next refresh.
+print("\nA reload is the same tab, not another one")
+
+_repo = os.path.dirname(HERE)
+_v = draft().version
+_tab = "RELOADED"
+check("  (the old page saves, as the new page is being told its version)",
+      save("last words", base=_v, tab=_tab).status_code == 200)
+r = save("typed after the refresh", base=_v, tab=_tab)
+check("the reloaded page's first save, a version behind, is taken",
+      r.status_code == 200 and draft().version == _v + 2, r.status_code)
+r = save("someone else", base=_v, tab="OTHER")
+check("  while a page with another id, as far behind, is still refused", r.status_code == 409)
+
+RELOAD = r"""
+const fs = require("fs"), vm = require("vm");
+const [file] = process.argv.slice(2);
+function load(session, opts) {
+  opts = opts || {};
+  const els = {}, handlers = {}, sent = [], alerts = [];
+  const el = (id) => els[id] || (els[id] = { id, textContent: "", className: "", handlers: {},
+    addEventListener(t, f) { this.handlers[t] = f; } });
+  const cfg = { draftSlug: "abc", draftVersion: opts.version === undefined ? 3 : opts.version };
+  const window = {
+    PYIDE: cfg, WEBIDE: cfg, FLASKIDE: cfg,
+    addEventListener(t, f) { (handlers[t] = handlers[t] || []).push(f); },
+    alert(m) { alerts.push(m); },
+    location: { reload() { out.reloads = (out.reloads || 0) + 1; } },
+  };
+  if (session) window.sessionStorage = session;
+  else Object.defineProperty(window, "sessionStorage",
+    { get() { throw new Error("blocked"); } });
+  const ctx = { window, console,
+    document: { getElementById: (id) => (id === "save-state" ? el(id) : null), addEventListener() {} },
+    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0,
+    fetch: (url, o) => {
+      const body = JSON.parse(o.body); sent.push(body);
+      const reply = opts.refuse ? [409, { stale: true, error: "Changed." }] : [200, { version: 9 }];
+      return Promise.resolve({ ok: reply[0] === 200, status: reply[0], json: () => Promise.resolve(reply[1]) });
+    } };
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(file, "utf8"), ctx);
+  const name = Object.keys(window).find((k) => /Account$/.test(k));
+  const acct = window[name].attach({ read: () => ({ code: "c" + sent.length, files: {} }), say() {} });
+  return { acct, sent, els, fire: (t, e) => (handlers[t] || []).forEach((f) => f(e || {})) };
+}
+function store(from) {
+  const m = Object.assign({}, from);
+  return { getItem: (k) => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); },
+           removeItem: (k) => { delete m[k]; }, dump: () => Object.assign({}, m) };
+}
+const tick = () => new Promise((r) => setImmediate(r));
+const out = {};
+(async () => {
+  const s = store();
+  const first = load(s);
+  first.acct.saveNow(); await tick(); await tick();
+  out.firstTab = first.sent[0].tab;
+  const duplicate = load(store(s.dump()));
+  duplicate.acct.saveNow(); await tick(); await tick();
+  out.duplicateTab = duplicate.sent[0].tab;
+  first.fire("pagehide");
+  const second = load(s);
+  second.acct.saveNow(); await tick(); await tick();
+  out.reloadedTab = second.sent[0].tab;
+  const duplicateLater = load(store(s.dump()));
+  duplicateLater.acct.saveNow(); await tick(); await tick();
+  out.duplicateLaterTab = duplicateLater.sent[0].tab;
+  const fresh = load(store());
+  fresh.acct.saveNow(); await tick(); await tick();
+  out.freshTab = fresh.sent[0].tab;
+  const blocked = load(null);
+  blocked.acct.saveNow(); await tick(); await tick();
+  out.blockedTab = blocked.sent[0].tab;
+  blocked.fire("pagehide");
+
+  second.fire("pageshow", { persisted: false });
+  out.reloadsAfterOrdinaryShow = out.reloads || 0;
+  second.fire("pageshow", { persisted: true });
+  out.reloadsAfterBack = out.reloads || 0;
+
+  const refused = load(store(), { refuse: true });
+  refused.acct.saveNow(); await tick(); await tick();
+  out.refusedState = refused.els["save-state"].textContent;
+  refused.acct.noteEdit();
+  out.refusedThenTyped = refused.els["save-state"].textContent;
+  console.log(JSON.stringify(out));
+})();
+"""
+harness = os.path.join(tempfile.mkdtemp(), "reload.js")
+open(harness, "w").write(RELOAD)
+proc = subprocess.run(["node", harness, os.path.join(_repo, "static", "account.js")],
+                      capture_output=True, text=True)
+try:
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+except Exception:
+    out = {}
+    print(proc.stdout, proc.stderr)
+check("the reloaded page keeps the tab's id",
+      out.get("firstTab") and out.get("reloadedTab") == out.get("firstTab"), out)
+check("  a new tab gets its own", out.get("freshTab") and out.get("freshTab") != out.get("firstTab"))
+check("  and so does Duplicate tab, which copies sessionStorage",
+      out.get("duplicateTab") and out.get("duplicateTab") != out.get("firstTab"))
+check("  even after a reload, so the id handed over doesn't stay behind to be copied",
+      out.get("duplicateLaterTab") and out.get("duplicateLaterTab") != out.get("firstTab"))
+check("  blocked storage still saves, with an id of its own", bool(out.get("blockedTab")))
+check("a page brought back by the Back button is reloaded, not kept",
+      out.get("reloadsAfterOrdinaryShow") == 0 and out.get("reloadsAfterBack") == 1, out)
+check("refused, then typing again, it still says Not saved and not Saving…",
+      "Not saved" in out.get("refusedState", "")
+      and out.get("refusedThenTyped") == out.get("refusedState"), out.get("refusedThenTyped"))
+
+_live = open(os.path.join(_repo, "static", "live.js"), encoding="utf-8").read()
+check("live.js hands its id on the same way",
+      'window.sessionStorage.getItem(TAB_KEY)' in _live
+      and 'window.sessionStorage.removeItem(TAB_KEY)' in _live
+      and 'window.sessionStorage.setItem(TAB_KEY, TAB)' in _live
+      and "if (e.persisted) window.location.reload();" in _live
+      and "var TAB = Math.random()" not in _live)
+_hide = _live[_live.index('addEventListener("pagehide", function () {\n    if (!changedSinceTurnIn'):]
+check("  and counts its last save, so the next load keeps this browser's copy",
+      "noteBase(draftSeen + 1)" in _hide[:_hide.index("fetch(")])
+check("  and doesn't promise a copy in this browser that the next load drops",
+      'still on screen, and in "' not in _live)
+
 bad = results.count(False)
 print("\n%s (%d checks, %d failed)"
       % ("SOME FAILED" if bad else "ALL PASSED", len(results), bad))

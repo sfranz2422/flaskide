@@ -982,7 +982,7 @@ check("  and as the page closes", re.search(
     r'addEventListener\("pagehide"[\s\S]{0,400}if \(turn\) payload\.turn_in = true;', account_js))
 check("the live page does both too",
       re.search(r"setInterval\(function \(\) \{\s*if \(changedSinceTurnIn && canTurnIn", live_js)
-      and re.search(r'addEventListener\("pagehide"[\s\S]{0,300}autosaveBody\(true\)', live_js))
+      and re.search(r'addEventListener\("pagehide"[\s\S]{0,800}autosaveBody\(true\)', live_js))
 check("an answer tells the page it was turned in, and every page listens",
       notes_js.count("announceTurnIn(out.d);") == 2
       and re.search(r"function announceTurnIn\(reply\) \{\s*if \(!reply \|\| !reply\.turned_in_at\) return;"

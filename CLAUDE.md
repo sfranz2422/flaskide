@@ -249,6 +249,8 @@ right — there is no room for both — and the editor stays on the code. The
 Notes | Preview switch, a code tab or Run brings the preview back; an
 assignment opens on its notes, except for its author, who gets Edit source.
 
+**A reload is the same tab** (`TAB`, `TAB_KEY` in `account.js` and `live.js`). A write to a draft is refused when another tab has saved since (`_stale`, `test_two_tabs.py`). A browser asks for the new page first and runs the old page's `pagehide` only after the answer is in, so the old page's last save always lands after the new page was told its version. With a new id per page load, that looked like another tab: a class told to refresh for a changed tutorial had their next save refused, and what they typed was lost at the next refresh. So the id is handed to the next page in this tab through sessionStorage, written at `pagehide` and removed when read, because Duplicate tab copies sessionStorage and must stay a different writer. A page the Back button brings back whole is reloaded. Text typed in the last moments before a refresh can still go missing in the editor: it reaches the server in the last save, but the new page was already sent, and its next save overwrites it.
+
 **The rescue** (`static/rescue.js`, identical in all three apps). Work typed
 while signed out is kept in the browser and restored after signing in.
 
