@@ -11,12 +11,16 @@
  */
 (function () {
   "use strict";
+  // With data-code it watches that lesson from the start: the page is the
+  // lesson's own. Without, as on the class page, nothing is asked or covered
+  // until a View teacher lesson button is pressed and the slides are up.
   var code = document.currentScript.getAttribute("data-code");
   var SHOWING_MS = 1000;
   var IDLE_MS = 2500;       // beside the live poll all lesson, so slower until it's needed
 
   var seq = 0, cover = null, frame = null, ready = false, current = null, waiting = null;
   var quieted = [];
+  var timer = null;
 
   /* The student's cursor must not stay in the editor behind the slide, where
      they would type without seeing it. */
@@ -106,15 +110,41 @@
   }
 
   function poll() {
-    fetch("/api/live/" + encodeURIComponent(code) + "/deck?d=" + seq, { cache: "no-store" })
+    var asked = code;
+    fetch("/api/live/" + encodeURIComponent(asked) + "/deck?d=" + seq, { cache: "no-store" })
       .then(function (r) { return r.status === 200 ? r.json() : null; })
       .then(function (d) {
-        if (!d) return;
+        if (!d || asked !== code) return;
         if (d.showing) { seq = d.seq; draw(d.frame); }
         else { seq = 0; close(); }
       })
       .catch(function () {})     // school wifi drops polls; the next one catches up
-      .finally(function () { setTimeout(poll, cover ? SHOWING_MS : IDLE_MS); });
+      .finally(function () {
+        if (asked === code) timer = setTimeout(poll, cover ? SHOWING_MS : IDLE_MS);
+      });
   }
-  poll();
+
+  /* It keeps watching after the slides stop, so a teacher's reload or a second
+     go doesn't put the student back to finding the button. The cover is the only
+     thing that ever changes on this page. */
+  function watch(next) {
+    if (next === code) return;
+    code = next;
+    seq = 0;
+    close();
+    clearTimeout(timer);
+    poll();
+  }
+
+  document.addEventListener("click", function (e) {
+    var button = e.target.closest && e.target.closest(".js-view-lesson");
+    if (!button) return;
+    fetch("/api/assignment/" + encodeURIComponent(button.getAttribute("data-slug")) + "/showing",
+          { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d.showing) watch(d.code); })
+      .catch(function () {});
+  });
+
+  if (code) poll();
 })();

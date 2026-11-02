@@ -124,6 +124,13 @@
             </div>
             {% if r.description %}<div class="md card-desc" data-md="{{ r.description }}">{{ r.description }}</div>{% endif %}
             <div class="card-actions">
+              {#  Separate from the live button, and always there on an assignment
+                  with slides: pressed while they aren't being shown, it does
+                  nothing (deck_view.js), which is what the teacher asked for. #}
+              {% if r.has_deck and not visitor %}
+                <button class="btn js-view-lesson" type="button" data-slug="{{ r.slug }}"
+                        title="Your teacher's slides, while they are showing them">View teacher lesson</button>
+              {% endif %}
               {% if r.live_code and not visitor %}
                 <a class="btn {{ 'btn-live' if r.on_air }}" href="{{ url_for('live_page', code=r.live_code) }}"
                    title="{{ 'Your teacher is live now' if r.on_air else 'The live lesson' }}">{{ "● Join the live lesson" if r.on_air else "Live lesson" }}</a>
@@ -181,6 +188,7 @@
 <script src="{{ url_for('static', filename='notes.js') }}"></script>
 <script src="{{ url_for('static', filename='embeds.js') }}"></script>
 <script src="{{ url_for('static', filename='calendar.js') }}"></script>
+{% if not visitor %}<script src="{{ url_for('static', filename='deck_view.js') }}"></script>{% endif %}
 <script>
   document.querySelectorAll(".class-calendar").forEach(function (box) {
     var view = box.querySelector(".cal-view");

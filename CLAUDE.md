@@ -310,6 +310,11 @@ for a student to press. It needs no Go live and leaves the lesson's `version` al
 because slides usually come first. Its own table and poll, because a slide
 can be megabytes and the class loads the `live_sessions` row every second. A
 picture drawn on a `<canvas>` or a value typed into a slide's box doesn't go.
+Students also get **View teacher lesson** on the class page, on any assignment
+with a deck, apart from the live button. While the slides are up it covers the
+class page; otherwise pressing it does nothing, by the teacher's choice. It asks by
+slug (`/api/assignment/<slug>/showing`), so a hidden live link's code isn't in the
+page.
 `test_deck_show.py` (the same file in all three).
 
 **An assignment's notes follow the teacher's edits** (`_current_notes`,

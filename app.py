@@ -5171,6 +5171,8 @@ def _class_rows(db, course, user=None, student=False):
                "kind": a.kind, "hidden": bool(r.hidden), "closed": bool(a.closed),
                "live_code": live.code if live else "",
                "on_air": bool(live and not live.ended),
+               # View teacher lesson. Labs are never live.
+               "has_deck": bool(a.deck_id) and a.kind != "lab",
                "show_live": bool(r.show_live),
                "out_of": a.out_of or "", "count": counts.get(a.id, 0),
                # A quest: an assignment with an XP reward for full marks.
@@ -7509,6 +7511,40 @@ def _with_deck_show(html, live):
     return html + add if at < 0 else html[:at] + add + html[at:]
 
 
+def _deck_is_showing(row):
+    """Is this DeckShow row (or its small columns) a show still going?"""
+    return bool(row is not None and row.showing
+                and time.time() - row.beat < DECK_SHOW_STALE_SECONDS)
+
+
+@app.get("/api/assignment/<slug>/showing")
+def assignment_showing(slug):
+    """For View teacher lesson on the class page: is the teacher showing this
+    assignment's slides now, and if so on which lesson?
+
+    Asked on the click, by slug, so the page doesn't carry the lesson's code: a
+    teacher can hide an assignment's live link from students (ClassItem.show_live),
+    and a code in every class page would undo that. It is only told while the
+    slides are up, when the class is meant to be there. Not showing is an ordinary
+    answer, and the button then does nothing: the teacher asked for that.
+    """
+    db = SessionLocal()
+    try:
+        item = db.query(accounts.Assignment).filter_by(slug=slug, app=APP_NAME).first()
+        if item is None:
+            return jsonify(showing=False)
+        live = _newest_lesson(db, item.teacher_id, item.id)
+        row = None
+        if live is not None:
+            row = (db.query(DeckShow.showing, DeckShow.beat)
+                     .filter(DeckShow.code == live.code).first())
+        if not _deck_is_showing(row):
+            return jsonify(showing=False)
+        return jsonify(showing=True, code=live.code)
+    finally:
+        db.close()
+
+
 @app.post("/api/live/<code>/deck")
 def live_deck_push(code):
     db = SessionLocal()
@@ -7583,9 +7619,7 @@ def live_deck_poll(code):
             seen = int(request.args.get("d", 0))
         except (TypeError, ValueError):
             seen = 0
-        on = (row is not None and row.showing
-              and time.time() - row.beat < DECK_SHOW_STALE_SECONDS)
-        if not on:
+        if not _deck_is_showing(row):
             return ("", 304) if not seen else jsonify(showing=False)
         if seen == row.seq:
             return ("", 304)

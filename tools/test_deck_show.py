@@ -217,6 +217,48 @@ src = open(os.path.join(ROOT, "static", "deck_view.js"), encoding="utf-8").read(
 check("the frame's sandbox lets nothing run",
       'frame.setAttribute("sandbox", "allow-same-origin")' in src and "allow-scripts" not in src.replace("WITHOUT\n * allow-scripts", ""))
 
+print("View teacher lesson on the class page")
+stop(teacher, CODE, 10 ** 14)
+COURSE = add(accounts.Course(app=P.APP_NAME, teacher_id=TEACHER, name="P1"))
+add(accounts.Enrollment(class_id=COURSE, email="amy@school.org"))
+WITH = teacher.post("/api/class/%d/new" % COURSE, json={"title": "Has slides"}).get_json()["slug"]
+BARE = teacher.post("/api/class/%d/new" % COURSE, json={"title": "No slides"}).get_json()["slug"]
+teacher.post("/api/assignment/%s/slides" % WITH,
+             json={"name": "d.html", "data": base64.b64encode(DECK.encode()).decode()})
+db = P.SessionLocal()
+withrow = db.query(accounts.Assignment).filter_by(slug=WITH).first()
+db.query(accounts.ClassItem).filter_by(assignment_id=withrow.id).update({"show_live": 0})
+db.commit()
+WITH_ID = withrow.id
+db.close()
+teacher.get("/teacher/%s" % WITH)         # makes the lesson's link, as the page always does
+db = P.SessionLocal()
+WITH_CODE = P._newest_lesson(db, TEACHER, WITH_ID).code
+db.close()
+page = amy.get("/class/%d" % COURSE).get_data(as_text=True)
+check("an assignment with slides has the button, in those words",
+      'data-slug="%s"' % WITH in page and ">View teacher lesson</button>" in page)
+check("  one without has none", page.count("js-view-lesson") == 1 and 'data-slug="%s"' % BARE not in page)
+check("  the page can act on it", "deck_view.js" in page)
+check("  and a hidden live link's code isn't in the page", WITH_CODE not in page)
+token = teacher.post("/api/class/%d/view-link" % COURSE)
+if token.status_code == 200:
+    seen = nobody.get(token.get_json()["url"].replace("http://localhost", "")).get_data(as_text=True)
+    check("a view-only visitor gets no button", "js-view-lesson" not in seen and "deck_view.js" not in seen)
+showing = lambda: amy.get("/api/assignment/%s/showing" % WITH).get_json()
+check("not showing: the answer gives nothing away", showing() == {"showing": False}, showing())
+check("  and an assignment that doesn't exist answers the same",
+      amy.get("/api/assignment/nope/showing").get_json() == {"showing": False})
+push(teacher, WITH_CODE, 10 ** 14, frame("<p>class</p>"))
+check("showing: it says where", showing() == {"showing": True, "code": WITH_CODE}, showing())
+db = P.SessionLocal()
+db.query(P.DeckShow).filter_by(code=WITH_CODE).update({"beat": 0})
+db.commit()
+db.close()
+check("a show gone silent counts as not showing", showing() == {"showing": False})
+view = open(os.path.join(ROOT, "static", "deck_view.js"), encoding="utf-8").read()
+check("the button only moves on if the slides are up", "if (d.showing) watch(d.code);" in view)
+
 print("what the slide is written out as (deck_show.js in node)")
 RUN = r"""
 const vm = require("vm"), fs = require("fs");
