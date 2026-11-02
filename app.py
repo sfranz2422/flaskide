@@ -37,7 +37,8 @@ from flask import (
     session,
     url_for,
 )
-from sqlalchemy import Column, DateTime, Integer, String, Text, create_engine, func
+from sqlalchemy import BigInteger, Column, DateTime, Integer, String, Text, create_engine, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, sessionmaker
 from werkzeug.exceptions import BadRequest
 
@@ -353,6 +354,26 @@ class TeacherDeck(Base):
     size = Column(Integer, nullable=False, default=0)
     updated_at = Column(DateTime, nullable=False,
                         default=lambda: datetime.now(timezone.utc))
+
+
+class DeckShow(Base):
+    """The slide the teacher is showing on their class's screens, for one
+    live lesson (`code`). One row, rewritten in place, like the lesson itself.
+
+    A table of its own and not columns on LiveSession, because the class
+    polls that row every second and each poll loads all of it: a slide with
+    pictures in it can be megabytes. It lives in this file's tables for the
+    reason TeacherDeck does. `beat` is plain seconds so that SQLite's and
+    Postgres's different views of a timezone can't make a live show look old.
+    """
+    __tablename__ = "deck_shows"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(16), unique=True, index=True, nullable=False)
+    showing = Column(Integer, nullable=False, default=0)
+    seq = Column(BigInteger, nullable=False, default=0)
+    beat = Column(BigInteger, nullable=False, default=0)
+    frame = Column(Text, nullable=False, default="")
 
 
 engine = create_engine(
@@ -3331,7 +3352,10 @@ def teacher_deck(slug):
                              as_attachment=True, download_name=name, max_age=0)
         # The same address serves whatever was uploaded last; a replaced deck
         # not coming back from the cache is _no_store_signed_in's doing.
-        resp = Response(deck.html, mimetype="text/html")
+        page = deck.html
+        if request.args.get("show"):
+            page = _with_deck_show(page, _lesson_for(db, user, item))
+        resp = Response(page, mimetype="text/html")
         resp.headers["X-Content-Type-Options"] = "nosniff"
         # Opened in its own tab, never framed by another site.
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
@@ -7449,6 +7473,124 @@ def live_poll(code):
             pointer_path="" if live.ended else (live.pointer_path or ""),
             pointer_seq=live.pointer_seq or 0,
         )
+    finally:
+        db.close()
+
+
+# --------------------------------------------------------------------------
+# The teacher's slides on every student's screen
+#
+# static/deck_show.js writes out the slide on the teacher's screen and posts it
+# here; static/deck_view.js shows it over the page of everyone on the lesson's
+# link. The students are sent one slide with nothing in it to run, never the
+# deck, so teacher_deck's rule that a deck reaches only its teacher still holds.
+# It works on a lesson that isn't on the air: the slides usually come first, and
+# they leave the lesson's own `version`, and so "not started yet", alone.
+# --------------------------------------------------------------------------
+
+#: A slide is written out with the deck's CSS, and any pictures inlined.
+DECK_FRAME_MAX_BYTES = 4_000_000
+#: With no word from the teacher's tab for this long the show is over, or a tab
+#: that crashed or a laptop that went to sleep would leave a class staring at a
+#: slide with no way back to their work. Long, because a browser slows the timers
+#: of a tab that isn't in front, and the teacher may be in another tab.
+DECK_SHOW_STALE_SECONDS = 180
+
+
+def _with_deck_show(html, live):
+    """The deck with the teacher's side of the show added, the stored file
+    untouched. Before the last </body>, so it starts after the deck's own
+    script has drawn the first slide."""
+    config = json.dumps({"code": live.code,
+                         "join": request.host + url_for("live_page", code=live.code)})
+    add = ('<script>window.DECK_SHOW=%s;</script><script src="%s"></script>'
+           % (config.replace("<", "\\u003c"), url_for("static", filename="deck_show.js")))
+    at = html.lower().rfind("</body>")
+    return html + add if at < 0 else html[:at] + add + html[at:]
+
+
+@app.post("/api/live/<code>/deck")
+def live_deck_push(code):
+    db = SessionLocal()
+    try:
+        user = current_user(db)
+        live = _find_live(db, code)
+        if live is None:
+            return jsonify(error="No such live lesson."), 404
+        # The host, as on live_send: nobody else puts things on this class's screens.
+        if user is None or live.host_id != user.id:
+            return jsonify(error="This is not your live lesson."), 403
+        data = request.get_json(silent=True) or {}
+        try:
+            seq = int(data.get("seq", 0))
+        except (TypeError, ValueError):
+            return jsonify(error="Bad sequence number."), 400
+        now = int(time.time())
+        rows = db.query(DeckShow).filter(DeckShow.code == live.code)
+        if data.get("beat"):
+            rows.filter(DeckShow.showing == 1).update({"beat": now}, synchronize_session=False)
+            db.commit()
+            return jsonify(ok=True)
+        if not data.get("showing"):
+            # Keyed on the stamp, so a slide that was overtaken can't start it again.
+            rows.filter(DeckShow.seq < seq).update(
+                {"showing": 0, "seq": seq, "frame": ""}, synchronize_session=False)
+            db.commit()
+            return jsonify(ok=True)
+        try:
+            raw = base64.b64decode(data.get("data") or "", validate=True)
+        except (ValueError, TypeError):
+            return jsonify(error="That slide didn't arrive whole."), 400
+        if len(raw) > DECK_FRAME_MAX_BYTES:
+            return jsonify(error="This slide is too big to send (4 MB at most)."), 413
+        try:
+            frame = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            return jsonify(error="That slide didn't arrive whole."), 400
+        keys = ("head", "body", "html_attrs", "body_attrs")
+        if not isinstance(frame, dict) or not all(isinstance(frame.get(k), str) for k in keys):
+            return jsonify(error="That slide didn't arrive whole."), 400
+        text = json.dumps({k: frame[k] for k in keys})
+        if rows.first() is None:
+            db.add(DeckShow(code=live.code, showing=1, seq=seq, beat=now, frame=text))
+            try:
+                db.commit()
+                return jsonify(ok=True, stale=False)
+            except IntegrityError:      # the other worker made it just now
+                db.rollback()
+        # Stamped as a push is: two slides overtaking each other must not leave
+        # the older one on thirty screens.
+        changed = rows.filter(DeckShow.seq < seq).update(
+            {"showing": 1, "seq": seq, "beat": now, "frame": text},
+            synchronize_session=False)
+        db.commit()
+        return jsonify(ok=True, stale=not changed)
+    finally:
+        db.close()
+
+
+@app.get("/api/live/<code>/deck")
+def live_deck_poll(code):
+    """What each student's page asks, all lesson. 304 unless there is news, and
+    only the small columns until there is. No sign-in, as live_poll: anyone who
+    can follow the lesson can see the slide its teacher is showing."""
+    db = SessionLocal()
+    try:
+        name = (code or "").strip().lower()
+        row = (db.query(DeckShow.seq, DeckShow.showing, DeckShow.beat)
+                 .filter(DeckShow.code == name).first())
+        try:
+            seen = int(request.args.get("d", 0))
+        except (TypeError, ValueError):
+            seen = 0
+        on = (row is not None and row.showing
+              and time.time() - row.beat < DECK_SHOW_STALE_SECONDS)
+        if not on:
+            return ("", 304) if not seen else jsonify(showing=False)
+        if seen == row.seq:
+            return ("", 304)
+        full = db.query(DeckShow.seq, DeckShow.frame).filter(DeckShow.code == name).first()
+        return jsonify(showing=True, seq=full.seq, frame=json.loads(full.frame))
     finally:
         db.close()
 

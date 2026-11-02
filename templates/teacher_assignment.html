@@ -46,6 +46,14 @@
     <a class="btn" id="deck-open" target="_blank" rel="noopener"
        href="{{ url_for('teacher_deck', slug=assignment.slug) }}"
        title="{{ deck.name if deck else '' }}" {% if not deck %}hidden{% endif %}>Teacher lesson ↗</a>
+    {#  The same slides, shown on the screen of everyone on the lesson's live
+        link and moved by the teacher (deck_show.js). Labs are never live. #}
+    {% if assignment.kind != 'lab' %}
+    <a class="btn" id="deck-show" target="_blank" rel="noopener"
+       href="{{ url_for('teacher_deck', slug=assignment.slug, show=1) }}"
+       title="Your slides on the screen of every student on this lesson's live link. You move them; they watch."
+       {% if not deck %}hidden{% endif %}>Show to class ↗</a>
+    {% endif %}
     <a class="btn" id="deck-download"
        href="{{ url_for('teacher_deck', slug=assignment.slug, download=1) }}"
        title="Download the HTML file as it is now" {% if not deck %}hidden{% endif %}>Download</a>
@@ -493,6 +501,11 @@
         open.href = out.d.url;
         open.title = out.d.name;
         open.hidden = false;
+        var show = document.getElementById("deck-show");   // labs have none
+        if (show) {
+          show.href = out.d.url + "?show=1";
+          show.hidden = false;
+        }
         download.href = out.d.url + "?download=1";
         download.hidden = false;
         button.textContent = "Replace teacher lesson";

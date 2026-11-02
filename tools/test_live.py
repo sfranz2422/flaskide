@@ -1319,7 +1319,8 @@ check("  the right-hand column's size the pane below them",
       ("y", "live-console", ' data-size="next"') in _live_handles
       and ("y", "live-notes", ' data-size="next"') in _live_handles,
       _live_handles)
-_joined = _live_tpl[_live_tpl.rindex("{% if joined and not is_host %}"):]
+# The block holding split.js, not simply the last such block: deck_view.js has one after live.js.
+_joined = _live_tpl[_live_tpl.rindex("{% if joined and not is_host %}", 0, _live_tpl.index("filename='split.js'")):]
 check("  with split.js loaded for a student, before live.js",
       -1 < _joined.find("filename='split.js'") < _joined.find("{% endif %}")
       < _joined.find("filename='live.js'"))

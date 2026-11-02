@@ -38,7 +38,7 @@ loop above keeps the last line of a passing run and shows the tail of a
 failing one, so a red suite cannot scroll past unnoticed — a bare
 `for ... do python3 "$t"; done` will let it.
 
-**`node` is required** by `test_hashing.py`, `test_preview.py`, `test_calendar.py`, `test_complete.py`, `test_pack.py`, `test_quiz.py`,
+**`node` is required** by `test_deck_show.py`, `test_hashing.py`, `test_preview.py`, `test_calendar.py`, `test_complete.py`, `test_pack.py`, `test_quiz.py`,
 `test_rescue.py`, `test_sighint.py`, `test_syntax.py`, `test_tabstops.py`, `test_xp.py`, `test_keep_place.py` and `test_autograde.py`. `test_syntax.py`
 also needs PyIDE checked out beside this (`../pyide`), for its Pyodide: they load this repo's own JavaScript and drive it, rather
 than grepping it — which is the only way those get checked at all.
@@ -295,6 +295,22 @@ who set the assignment can open it**. It is not sandboxed like `/img`,
 because the decks keep their class list in localStorage and a sandboxed page
 has none. The page sends it base64 in JSON, because Render's firewall blocks a
 body full of `<script>` before the app sees it. `test_teacher_deck.py` (the same file in PyIDE).
+
+**Showing those slides on the class's screens** (`static/deck_show.js`,
+`deck_view.js`, `DeckShow` in `app.py`; Show to class on the assignment's page).
+Everyone on the lesson's live link gets the slide over their page, whatever it
+is, and gets the page back untouched when the teacher stops, closes the tab, or
+goes silent for `DECK_SHOW_STALE_SECONDS`. **A student is sent a picture of the
+slide, never the deck**, which is what keeps the rule above: the page written
+out as HTML in the teacher's browser, with no scripts, other slides, unrevealed
+answers (masked, not just hidden) or class list, and shown in a frame sandboxed
+`allow-same-origin` without `allow-scripts`, so nothing in it can run whatever
+arrives. Any deck works, a late student needs no catching up, and there is nothing
+for a student to press. It needs no Go live and leaves the lesson's `version` alone,
+because slides usually come first. Its own table and poll, because a slide
+can be megabytes and the class loads the `live_sessions` row every second. A
+picture drawn on a `<canvas>` or a value typed into a slide's box doesn't go.
+`test_deck_show.py` (the same file in all three).
 
 **An assignment's notes follow the teacher's edits** (`_current_notes`,
 `_keep_notes` in `app.py`). A draft copies the assignment's files, notes

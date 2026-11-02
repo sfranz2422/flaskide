@@ -83,6 +83,9 @@
 <script src="{{ url_for('static', filename='xp.js') }}"></script>
 <script src="{{ url_for('static', filename='laser.js') }}"></script>
 <script src="{{ url_for('static', filename='lesson.js') }}"></script>
+{% if live and not is_host %}
+<script src="{{ url_for('static', filename='deck_view.js') }}" data-code="{{ live.code }}"></script>
+{% endif %}
 {% include "_idle.html" %}
 </body>
 </html>
