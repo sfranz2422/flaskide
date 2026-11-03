@@ -285,6 +285,8 @@ check("a student page snaps only when the teacher moves",
 check("  and only from the live link: the assignment link just shows the slides",
       re.search(r"if \(!L\.live\) \{\s*slides\.show\(L\.notes\);", lesson_js) is not None)
 check("  answering into this lesson", "N.setQuizContext({ assignment: L.slug" in lesson_js)
+check("`locked: yes` holds a student at their own pace, never live or view-only",
+      "locked: !L.live && !L.viewOnly" in lesson_js)
 check("the teacher's moves in Present go to the class",
       "present.onMove(function () { pushNow(); });" in teacher_js
       and re.search(r'body: JSON\.stringify\(\{ body: "", filename: "lesson\.md", notes: editor\.getValue\(\),\s*slide: slideStamp\(\)',

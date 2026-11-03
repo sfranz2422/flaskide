@@ -21,8 +21,12 @@
   N.setQuizContext({ assignment: L.slug, signedIn: L.signedIn, viewOnly: L.viewOnly });
   if (window.IDESnippets) window.IDESnippets.configure({ assignment: L.slug, signedIn: L.signedIn, viewOnly: L.viewOnly });
   // At their own pace (the assignment link), `animate:` notes play a
-  // section at a time; following a live lesson they never do.
-  var slides = N.slideView($("lesson-body"), { animate: !L.live && !L.viewOnly, key: L.slug });
+  // section at a time; following a live lesson they never do. `locked: yes`
+  // holds them there too, and for the same reason never live, where the
+  // teacher moves the slides: it wasn't passed here once, so a lesson's cards
+  // and predictions silently held nobody, whatever its notes said.
+  var slides = N.slideView($("lesson-body"), { animate: !L.live && !L.viewOnly,
+                                               locked: !L.live && !L.viewOnly, key: L.slug });
 
   // ------------------------------------------------------------ theme
   (function themeSwitch() {

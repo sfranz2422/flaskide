@@ -162,7 +162,7 @@ for name in ("assignment_notes.js", "lesson_teacher.js"):
     check("  the teacher's preview in %s plays them, with Skip" % name,
           'slideView($("' in js and "{ animate: true, skip: true, key: \"author:\" + location.pathname }" in js)
 check("the lesson page plays them at the student's own pace, never following a live lesson",
-      'slideView($("lesson-body"), { animate: !L.live && !L.viewOnly, key: L.slug })' in lesson_js)
+      'slideView($("lesson-body"), { animate: !L.live && !L.viewOnly,' in lesson_js)
 check("live and the projector never ask for it",
       all("animate" not in re.findall(r"slideView\([^)]*\)", js)[0] for js in others.values() if re.findall(r"slideView\([^)]*\)", js)),
       [n for n, js in others.items() if "animate:" in js])
