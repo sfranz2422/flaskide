@@ -377,7 +377,7 @@ would, which is the whole defence.
 A class's leaderboard (`_board`) shows its roster's signed-in students by
 their whole XP, **first name and last initial only** (`xp.board_name`),
 never an email, and not on the view-only link. Students can hide and still
-earn. Their home page (`/classes`) shows all of it. An avatar is one
+earn. Their home page (`/classes`) shows all of it. Their classes are a column on the left of it (`.home-classes`), first on a phone: under the XP card and the shop, the one button they came for was at the very bottom. An avatar is one
 picture from `xp.AVATARS` — `static/avatars/<id>.webp`, painted portraits
 the teacher made with Gemini, cropped square and shrunk to 400px — never an
 upload or text, checked by `xp.clean_avatar` against the level that unlocks

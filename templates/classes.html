@@ -21,7 +21,7 @@
 </script>
 <script src="{{ url_for('static', filename='pack.js') }}"></script>
 </head>
-<body class="class-page">
+<body class="class-page classes-home">
 
 <header class="bar">
   <div class="brand"><a class="brandlink" href="{{ url_for('home') }}"><span class="logo">🧪</span> FlaskIDE</a></div>
@@ -43,6 +43,33 @@
     whole card is the link — the button is how it looks, not the only place
     that works. #}
 <main class="sheet">
+<div class="home-layout">
+<aside class="home-classes" aria-label="Your classes">
+  {% if enrolled %}
+    <h1 class="enrolled-title">Currently enrolled classes</h1>
+    <p class="enrolled-sub">Choose a class to see its assignments and lessons.</p>
+    <ul class="enrolled">
+      {% for c in enrolled %}
+        <li><a class="enrolled-card" href="{{ c.url }}">
+          <span class="enrolled-text">
+            <span class="enrolled-name">{{ c.name }}</span>
+            {% if c.teacher %}<span class="enrolled-teacher">{{ c.teacher }}</span>{% endif %}
+          </span>
+          <span class="btn btn-primary enrolled-open" aria-hidden="true">Open class →</span>
+        </a></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">
+      <h2>You're not in any classes yet</h2>
+      <p>You're signed in as <strong>{{ user_email }}</strong>. If that's your
+         school account, your teacher needs to sync the class's roster —
+         then it shows up here.</p>
+      <p><a class="btn btn-primary" href="{{ url_for('index') }}">Open the editor</a></p>
+    </div>
+  {% endif %}
+</aside>
+<div class="home-main">
   {#  Their XP, first thing: level, tokens, badges, where they stand in each
       class, and what the last few points were for. All of it is worked out
       from their awards (_game_card) — nothing here is stored as shown. #}
@@ -190,29 +217,8 @@
     </section>
   {% endif %}
 
-  {% if enrolled %}
-    <h1 class="enrolled-title">Currently enrolled classes</h1>
-    <p class="enrolled-sub">Choose a class to see its assignments and lessons.</p>
-    <ul class="enrolled">
-      {% for c in enrolled %}
-        <li><a class="enrolled-card" href="{{ c.url }}">
-          <span class="enrolled-text">
-            <span class="enrolled-name">{{ c.name }}</span>
-            {% if c.teacher %}<span class="enrolled-teacher">{{ c.teacher }}</span>{% endif %}
-          </span>
-          <span class="btn btn-primary enrolled-open" aria-hidden="true">Open class →</span>
-        </a></li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <div class="empty">
-      <h2>You're not in any classes yet</h2>
-      <p>You're signed in as <strong>{{ user_email }}</strong>. If that's your
-         school account, your teacher needs to sync the class's roster —
-         then it shows up here.</p>
-      <p><a class="btn btn-primary" href="{{ url_for('index') }}">Open the editor</a></p>
-    </div>
-  {% endif %}
+</div>
+</div>
 </main>
 <script src="{{ url_for('static', filename='avatar.js') }}"></script>
 <script>

@@ -1834,6 +1834,30 @@ table.sql-table tbody tr:nth-child(even) { background: var(--bg-head); }
 .enrolled-teacher { color: var(--muted); font-size: 14px; }
 .enrolled-open { flex: none; white-space: nowrap; }
 
+/* A student's home page (classes.html): the classes in a column of their own
+ * on the left. They used to be under the XP card, the boards and the whole
+ * shop, so the one thing a student came to press was at the very bottom of
+ * the page. It sticks while the rest scrolls, and on a phone it goes first,
+ * above everything, not last, for the same reason. The page is wider than
+ * other sheets so the XP card keeps the width it had. */
+.classes-home .sheet { max-width: 1600px; }
+.home-layout { display: grid; grid-template-columns: clamp(180px, 16%, 260px) minmax(0, 1fr);
+  gap: 24px; align-items: start; }
+.home-classes { position: sticky; top: 0; max-height: calc(100vh - var(--bar-h) - 24px); overflow-y: auto; }
+.home-classes .enrolled-title { font-size: 17px; margin: 0 0 4px; }
+.home-classes .enrolled-sub { font-size: 13px; margin: 0 0 12px; }
+.home-classes .enrolled { gap: 10px; }
+.home-classes .enrolled-card { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
+.home-classes .enrolled-name { font-size: 15px; }
+.home-classes .enrolled-teacher { font-size: 13px; }
+.home-classes .enrolled-open { justify-content: center; text-align: center; }
+.home-classes .empty { text-align: left; padding: 0; font-size: 14px; overflow-wrap: anywhere; }
+.home-classes .empty h2 { font-size: 16px; margin-top: 0; }
+@media (max-width: 900px) {
+  .home-layout { grid-template-columns: minmax(0, 1fr); }
+  .home-classes { position: static; max-height: none; overflow-y: visible; }
+}
+
 .class-tools { margin-bottom: 18px; }
 .class-tools .grade-line { margin-bottom: 8px; }
 .class-line p { margin: 0 0 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

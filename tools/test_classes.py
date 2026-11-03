@@ -389,6 +389,12 @@ check("  under a heading that says what they are",
       "Currently enrolled classes" in _mine and 'class="enrolled-card"' in _mine)
 check("  each with its teacher and an Open button",
       'class="enrolled-teacher">Mr Franz<' in _card and "Open class" in _card, _card[:200])
+# The classes are a column of their own, ahead of everything else on the page:
+# under the XP card and the shop, the one button a student came for was at the
+# very bottom.
+_col = _mine.find('<aside class="home-classes"')
+check("  in a column before the XP card, not under it",
+      0 <= _col < _mine.find('class="enrolled-title"') < _mine.find("</aside>") < _mine.find('class="xp-card"'), _col)
 # The logo is the way back here. On most pages it was url_for('index'), which
 # is the editor (/new), and in the editor it was not a link at all.
 import glob                                                  # noqa: E402
