@@ -101,6 +101,9 @@ const core = makeCore({ PHP, PHPRequestHandler, setPhpIniEntries,
   load: () => loadNodeRuntime("8.4", { emscriptenOptions: { processId: 1 } }) });
 const get = (path, extra) => core.request({ method: "GET", path, ...(extra || {}) });
 
+// Before any Run: a notes snippet (a PHP predict) is often pressed first.
+try { out.snipFirst = await core.snippet({ code: "<?php echo '<p>first</p>';" }); }
+catch (e) { out.snipFirst = { threw: String(e && (e.message || e.name) || e) }; }
 out.split = sqlStatements(SITE["schema.sql"]);
 out.noIndex = await core.run({ files: { "about.php": "<?php echo 1;" } });
 out.run = await core.run({ files: SITE });
@@ -159,6 +162,9 @@ try:
         sys.exit(1)
 finally:
     shutil.rmtree(work, ignore_errors=True)
+
+print("a notes snippet")
+check("a snippet runs before the site has ever been run", r["snipFirst"] == {"text": "<p>first</p>", "error": ""}, r["snipFirst"])
 
 print("schema.sql")
 check("statements split where SQLite would, not at a ; inside a string",

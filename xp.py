@@ -506,7 +506,7 @@ def avatars_for_page():
 
 # ---------------------------------------------------------------- predictions
 
-_PREDICT_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*(py(?:thon)?|html|sql)[ \t]+predict[ \t]*$", re.I)
+_PREDICT_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*(py(?:thon)?|html|sql|php)[ \t]+predict[ \t]*$", re.I)
 _PREDICT_HINT = re.compile(r"^\s*#\s*hint\s*:", re.I)
 _PICK_LINE = re.compile(r"^\s*#\s*(choice|answer|hint)\s*:", re.I)
 
@@ -538,7 +538,7 @@ def predict_keys(files):
     files), as predict_key()s, and every ```html predict block (a pick),
     read as pick_code reads it, and every ```sql predict block (FlaskIDE's
     database lessons), read as a python one is: its `# setup:` lines are
-    part of the block. A claim for anything else pays nothing."""
+    part of the block. A ```php predict block is read as a python one too. A claim for anything else pays nothing."""
     keys = set()
     for name, text in (files or {}).items():
         if not str(name).lower().endswith(".md"):

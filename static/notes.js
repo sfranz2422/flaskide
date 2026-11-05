@@ -513,7 +513,7 @@ window.FlaskIDENotes = (function () {
        predicting was the point of the step. */
     var TESTS_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*tests[ \t]*$/im;
     // An ```html predict holds only with choices (a pick), but taking any as holding errs safe.
-    var PREDICT_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*(py(thon)?|html|sql)[ \t]+predict[ \t]*$/im;
+    var PREDICT_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*(py(thon)?|html|sql|php)[ \t]+predict[ \t]*$/im;
     var CARDS_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*cards[ \t]*$/im;
     var HOLDS = ".tests-card[data-checks]:not([data-passed])";
     var UNPREDICTED = ".snippet[data-predict]:not([data-predicted])";
@@ -1206,7 +1206,7 @@ window.FlaskIDENotes = (function () {
         fence = f[1];
         var w = f[2].trim().split(/\s+/);
         if (w.length === 2 && (/^(python|py|html)$/i.test(w[0]) && /^(run|predict)$/i.test(w[1]) ||
-                              /^sql$/i.test(w[0]) && /^predict$/i.test(w[1])))
+                              /^(sql|php)$/i.test(w[0]) && /^predict$/i.test(w[1])))
           return ln.slice(0, ln.indexOf(f[1]) + f[1].length) + w[0].toLowerCase() + "-" + w[1].toLowerCase();
         return ln;
       }

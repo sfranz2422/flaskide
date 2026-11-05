@@ -112,6 +112,10 @@ table. It runs as Python in the snippet worker (`sqlProgram`: SQLite in
 memory, fresh each run). xp.py counts the block WITH its setup lines, which
 is how the page sends a claim — strip them on one side only and no claim
 ever pays. `test_predict.py` runs the program in real SQLite.
+A ```` ```php predict ```` block is the same box for PHP lessons: run by
+`PhpRuntime.snippet` (so only where php.js is loaded: the editor and the
+live page), compared as the page READS (`pageLines`: a line per heading,
+paragraph, list item, row or `<br>`, tags out, entities undone).
 
 **PHP sites** (`static/php.js`, `php_worker.js`, `php_core.js`; `examples/php/`;
 `/php`, Add to class → PHP site; `/help/php`). Plain PHP pages — `index.php`,

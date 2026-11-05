@@ -351,6 +351,69 @@ if "error" not in sq:
     check("  # setup: lines are found whatever their spacing and capitals",
           sq["split"] == {"setup": "CREATE TABLE a (x);\nINSERT INTO a VALUES (1);", "code": "SELECT x FROM a;"}, sq["split"])
 
+# ```php predict (Nov 2026, FlaskIDE's PHP lessons): what the page shows, a
+# line each, tags out. php.js's PhpRuntime.snippet is stood in for here; it is
+# test_php.py's to show the real one runs PHP.
+PHP_HARNESS = DOM + r"""
+var phpRuns = [];
+window.PhpRuntime = { snippet: function (code) { phpRuns.push(code);
+  return Promise.resolve(/oops/.test(code) ? { text: "", error: "PHP Parse error: syntax error in the code on line 2" }
+                                           : { text: "<h2>Level Up</h2><p>Celeste &amp; Tetris</p>Total: $5<br>", error: "" }); } };
+""" + SNIPPETS_JS + r"""
+var S = window.IDESnippets;
+var out = {};
+var tick = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
+async function settle() { for (var i = 0; i < 5; i++) await tick(); }
+function phpBlock(code) {
+  var root = new El("div"), pre = root.appendChild(new El("pre")), c = pre.appendChild(new El("code"));
+  c.className = "language-php-predict"; c.textContent = code + "\n";
+  S.renderBlocks(root);
+  var box = root.children[0];
+  return { box: box, guess: box.querySelector(".snippet-guess"), check: box.querySelectorAll(".snippet-run")[0],
+           code: box.querySelector(".snippet-code"), out: box.querySelector(".snippet-out"), status: box.querySelector(".snippet-status") };
+}
+(async function () {
+  var b = phpBlock('<?php\necho "<h2>Level Up</h2>";\n# hint: tags are not shown');
+  out.kind = b.box.className; out.code = b.code.value;
+  out.ask = b.box.querySelector(".snippet-ask").textContent;
+  b.guess.value = "<h2>Level Up</h2>"; b.guess.fire("input"); b.check.click(); await settle();
+  out.tagsTyped = { predicted: b.box.hasAttribute("data-predicted"), outHidden: b.out.hidden };
+  b.guess.value = "Level Up\nCeleste & Tetris\nTotal: $5"; b.guess.fire("input"); b.check.click(); await settle();
+  out.right = { predicted: b.box.hasAttribute("data-predicted"), out: b.out.textContent };
+  out.ran = phpRuns[0];
+  var e = phpBlock('<?php\noops');
+  e.guess.value = "x"; e.guess.fire("input"); e.check.click(); await settle();
+  out.erred = { predicted: e.box.hasAttribute("data-predicted"), out: e.out.textContent };
+  delete window.PhpRuntime;
+  var n = phpBlock('<?php\necho "x";');
+  n.guess.value = "x"; n.guess.fire("input"); n.check.click(); await settle();
+  out.noPhp = { predicted: n.box.hasAttribute("data-predicted"), status: n.status.textContent };
+  out.lines = S._pageLines("<ul><li>A</li><li>B &lt;3</li></ul>Price: &#36;5<br/>end");
+  console.log(JSON.stringify(out));
+})().catch(function (e) { console.log(JSON.stringify({ error: String(e && e.stack || e) })); });
+"""
+res = subprocess.run(["node", "-e", PHP_HARNESS], capture_output=True, text=True, timeout=60)
+try:
+    ph = json.loads(res.stdout.strip().splitlines()[-1])
+except (ValueError, IndexError):
+    ph = {"error": res.stderr[-800:] or res.stdout[-800:]}
+print("\nA PHP prediction (```php predict)")
+check("node ran the PHP box", "error" not in ph, ph.get("error"))
+if "error" not in ph:
+    check("a predict box asking what the page shows, its hints out of the code",
+          "snippet-php" in ph["kind"] and "page show" in ph["ask"] and ph["code"] == '<?php\necho "<h2>Level Up</h2>";', ph)
+    check("  the code goes to PhpRuntime.snippet, without its hints", ph["ran"] == '<?php\necho "<h2>Level Up</h2>";', ph["ran"])
+    check("typing the tags is wrong: the page shows text, not tags",
+          not ph["tagsTyped"]["predicted"] and ph["tagsTyped"]["outHidden"], ph["tagsTyped"])
+    check("the page's text a line each (a heading, a paragraph, a <br>), &amp; read as &, is right",
+          ph["right"]["predicted"] and "Celeste & Tetris" in ph["right"]["out"], ph["right"])
+    check("  an example that stops with PHP's error shows it and holds nobody",
+          ph["erred"]["predicted"] and "syntax error" in ph["erred"]["out"], ph["erred"])
+    check("  on a page without PHP it says so, counts no try and holds",
+          not ph["noPhp"]["predicted"] and "PHP couldn't load" in ph["noPhp"]["status"], ph["noPhp"])
+    check("list items and <br/> are lines; &lt; and &#36; are read",
+          ph["lines"] == "A\nB <3\n\nPrice: $5\nend", repr(ph["lines"]))
+
 if "error" not in got:
     print("\nThe box")
     f = got["fresh"]
@@ -466,10 +529,15 @@ print(len("PIE"))
 # setup: CREATE TABLE g (t TEXT);
 SELECT t FROM g;
 ```
+
+```php predict
+<?php
+echo "Hi";
+```
 """
 teacher.post("/api/library", json={"body": NOTES, "linkTo": SLUG})
-check("every predict block in the notes is found (an HTML one and a SQL one too), and nothing else",
-      len(xp.predict_keys({"notes.md": NOTES, "main.py": "```python predict\nx\n```"})) == 5)
+check("every predict block in the notes is found (an HTML, a SQL and a PHP one too), and nothing else",
+      len(xp.predict_keys({"notes.md": NOTES, "main.py": "```python predict\nx\n```"})) == 6)
 
 
 def claim(c, code):

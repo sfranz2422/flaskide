@@ -297,6 +297,10 @@ export function makeCore({ PHP, PHPRequestHandler, setPhpIniEntries, load }) {
     php.chdir("/tmp/snippet");
     const src = /^\s*<\?php|^\s*<\?=/.test(code) ? code : "<?php\n" + code;
     const r = await php.run({ code: src });
+    // Back to the site's folder, made if no Run has made it yet: a snippet
+    // pressed before the student's first Run failed with "ErrnoError 44"
+    // (no such folder), shown as [object Object], on every PHP predict.
+    php.mkdirTree(WWW);
     php.chdir(WWW);
     // PHP names the code /internal/eval.php; to the student it is "the code".
     const named = (t) => String(t).split("/internal/eval.php").join("the code");

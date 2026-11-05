@@ -10,6 +10,9 @@
  *                              gives back, and must get them RIGHT (the
  *                              same buildPredict; `# setup:` lines hold
  *                              the tables, run but not shown)
+ *     ```php predict           the student types what the page shows, a
+ *                              line each (tags out), and must be RIGHT;
+ *                              run by PhpRuntime.snippet where php.js is
  *     ```html predict          with `# choice:` lines: the student picks
  *                              what the page will show, and must pick
  *                              RIGHT (buildPick, below); without them,
@@ -291,6 +294,25 @@ window.IDESnippets = (function () {
     ].join("\n");
   }
 
+  /* ```php predict (Nov 2026, FlaskIDE's PHP lessons): what a PHP page
+     shows is HTML, so it's compared as a reader sees it — a line for each
+     <br>, paragraph, heading, list item, row or div; the tags out; &amp;
+     and the like turned back into what they show. A student types
+     "Celeste $19.99", never "<p>Celeste $19.99</p>". */
+  var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", copy: "©", hellip: "…", mdash: "—" };
+  function pageLines(html) {
+    return String(html)
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|h[1-6]|li|tr|div|ul|ol|table|section|header|footer|article|nav|main)\s*>/gi, "\n")
+      .replace(/<[^>]*>/g, "")
+      .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, function (m, e) {
+        if (e.charAt(0) === "#") {
+          return String.fromCodePoint(/^#x/i.test(e) ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10));
+        }
+        return ENTITIES.hasOwnProperty(e.toLowerCase()) ? ENTITIES[e.toLowerCase()] : m;
+      });
+  }
+
   // Kept here too, so a box drawn again asks nothing even where storage is refused.
   var states = {};
   function stateKey(code) { return "pyide-predict:" + location.pathname + ":" + hashOf(code); }
@@ -316,7 +338,7 @@ window.IDESnippets = (function () {
   function teacher() { return page.teacher || !!window.PM; }
 
   function buildPredict(codeEl, lang) {
-    var sql = lang === "sql";
+    var sql = lang === "sql", php = lang === "php";
     var parts = splitHints(codeEl.textContent.replace(/\n$/, ""));
     // `original` keeps a SQL block's setup lines: it is the block as the
     // server reads it (xp.predict_code), so a claim still matches.
@@ -324,7 +346,7 @@ window.IDESnippets = (function () {
     var setup = sql ? splitSetup(original) : { setup: "", code: original };
     var shown = setup.code;
     var st = loadState(original);
-    var box = el("div", "snippet snippet-" + (sql ? "sql" : "python") + " snippet-predict");
+    var box = el("div", "snippet snippet-" + (lang || "python") + " snippet-predict");
     box.setAttribute("data-predict", "");
 
     var area = el("textarea", "snippet-code");
@@ -335,12 +357,14 @@ window.IDESnippets = (function () {
 
     var ask = el("label", "snippet-ask small", sql
       ? "🤔 What will it give back? Type each row on its own line."
+      : php ? "🤔 What will the page show? Type each line of it."
       : "🤔 What will it print? Type every line it prints.");
     box.appendChild(ask);
     var guess = el("textarea", "field snippet-guess");
     guess.spellcheck = false;
     guess.setAttribute("aria-label", "Your prediction");
-    guess.placeholder = sql ? "One line for each row, its values with spaces between" : "One line for each line it prints";
+    guess.placeholder = sql ? "One line for each row, its values with spaces between"
+      : php ? "One line for each line the page shows" : "One line for each line it prints";
     guess.value = predicted[original] || "";
     function fitGuess() { guess.rows = Math.max(2, Math.min(12, guess.value.split("\n").length + 1)); }
     fitGuess();
@@ -393,6 +417,24 @@ window.IDESnippets = (function () {
     function runIt(code, then) {
       var text = "", seen = [];
       status.className = "snippet-status small dim";
+      if (php) {
+        // PHP runs in php.js's own worker, never the student's site.
+        if (!window.PhpRuntime || !window.PhpRuntime.snippet) {
+          status.textContent = "";
+          then("", "PHP couldn't load here: this page has no PHP to run it with.", []);
+          return;
+        }
+        status.textContent = "Running… the first time loads PHP, a few seconds.";
+        window.PhpRuntime.snippet(code).then(function (r) {
+          status.textContent = "";
+          var shownText = pageLines(r && r.text || "");
+          then(shownText, r && r.error || "", shownText ? [[shownText, false]] : []);
+        }, function (e) {
+          status.textContent = "";
+          then("", "PHP couldn't load here (" + (e && e.message || e) + ").", []);
+        });
+        return;
+      }
       status.textContent = worker ? "Running…" : "Loading Python… the first time takes a few seconds.";
       runPython(sql ? sqlProgram(setup.setup, code) : code, function (chunk, err) {
         if (text.length >= OUTPUT_MAX) return;
@@ -445,7 +487,7 @@ window.IDESnippets = (function () {
       check.disabled = true;
       runIt(shown, function (text, error, seen) {
         check.disabled = false;
-        if (/^Python couldn't load|^Stopped:/.test(error || "")) {
+        if (/^(Python|PHP) couldn't load|^Stopped:/.test(error || "")) {
           // Not their guess's fault: no try counted.
           status.className = "snippet-status small is-wrong";
           status.textContent = error;
@@ -667,6 +709,7 @@ window.IDESnippets = (function () {
     ["code.language-python-run, code.language-py-run", "python"],
     ["code.language-python-predict, code.language-py-predict", "predict"],
     ["code.language-sql-predict", "sqlpredict"],
+    ["code.language-php-predict", "phppredict"],
     ["code.language-html-run, code.language-html-predict", "html"]
   ];
 
@@ -678,6 +721,7 @@ window.IDESnippets = (function () {
         var made;
         if (k[1] === "predict") made = buildPredict(code);
         else if (k[1] === "sqlpredict") made = buildPredict(code, "sql");
+        else if (k[1] === "phppredict") made = buildPredict(code, "php");
         else if (k[1] === "html" && /(^|\s)language-html-predict(\s|$)/.test(code.className)) {
           // With choices, a pick; without, the Run box it always was.
           var parts = splitPick(code.textContent.replace(/\n$/, ""));
@@ -767,5 +811,5 @@ window.IDESnippets = (function () {
 
   return { renderBlocks: renderBlocks, run: run, runJs: runJs, configure: configure, _splitPick: splitPick,
            TIME_LIMIT: TIME_LIMIT, _same: same, _splitHints: splitHints, _outLines: outLines,
-           _splitSetup: splitSetup, _sqlProgram: sqlProgram };
+           _splitSetup: splitSetup, _sqlProgram: sqlProgram, _pageLines: pageLines };
 })();
