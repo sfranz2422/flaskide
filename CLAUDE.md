@@ -103,6 +103,16 @@ inside a string or a comment is not the end of a statement.
 
 ## Features worth knowing about
 
+**A ```` ```sql predict ```` block** (snippets.js, Nov 2026, for Intro to
+Information Systems' database unit) is a prediction like Python's: the
+student types the ROWS the query gives back, one a line, the ` | ` between
+values optional, and must be right to go on. `# setup:` lines hold the tables
+it reads, run but never shown, because the slide already shows them as a
+table. It runs as Python in the snippet worker (`sqlProgram`: SQLite in
+memory, fresh each run). xp.py counts the block WITH its setup lines, which
+is how the page sends a claim — strip them on one side only and no claim
+ever pays. `test_predict.py` runs the program in real SQLite.
+
 **PHP sites** (`static/php.js`, `php_worker.js`, `php_core.js`; `examples/php/`;
 `/php`, Add to class → PHP site; `/help/php`). Plain PHP pages — `index.php`,
 `add.php?id=3`, `include 'includes/header.php'` — run in the student's browser

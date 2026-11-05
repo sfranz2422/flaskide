@@ -173,7 +173,10 @@ Press ✔ Check my work on the card below.
     A page can't be predicted by typing what it prints, so an <code>html predict</code> block
     with <code># choice:</code> lines asks students to <strong>pick</strong> what it will show
     (<code># answer:</code> names the right one); a wrong pick is marked ✗ with the next hint,
-    and the page appears once they're right. Without the line, the tests still show and check in the notes,
+    and the page appears once they're right. A <code>sql predict</code> block asks for the
+    <strong>rows</strong> its query gives back, one a line, values with spaces between;
+    <code># setup: CREATE TABLE …</code> lines hold the tables it reads, run but not shown.
+    Without the line, the tests still show and check in the notes,
     and students move through the slides freely. Your own previews and a live lesson are never held.</p>
   <pre class="help-src">locked: yes
 

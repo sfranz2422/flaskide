@@ -6,6 +6,10 @@
  *     ```python predict        the student says what it will print, and
  *                              must get it RIGHT (buildPredict, below)
  *     ```html run              a page (WebIDE): Run shows it in a frame
+ *     ```sql predict           the student types the rows the last query
+ *                              gives back, and must get them RIGHT (the
+ *                              same buildPredict; `# setup:` lines hold
+ *                              the tables, run but not shown)
  *     ```html predict          with `# choice:` lines: the student picks
  *                              what the page will show, and must pick
  *                              RIGHT (buildPick, below); without them,
@@ -241,6 +245,52 @@ window.IDESnippets = (function () {
     for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
     return h.toString(36);
   }
+  /* ```sql predict (Nov 2026, the Intro to Information Systems database
+     unit): SQL can't be predicted by a Python block, and a pick would show
+     the result in its choices. `# setup:` lines are the tables the query
+     reads — run first, never shown, because the slide already shows the
+     table as a table and the CREATE/INSERT lines would bury the one query
+     the step is about. A block about CREATE or INSERT just leaves them in.
+
+     It runs as Python in the same worker: SQLite in memory, a fresh
+     database every run, each statement found with complete_statement (a
+     semicolon inside a string isn't the end, as flask.js splits them), and
+     every row a SELECT gives back printed on a line, " | " between values,
+     NULL for a missing one — what the student types, the bars optional. */
+  var SETUP = /^\s*#\s*setup\s*:\s?(.*)$/i;
+  function splitSetup(text) {
+    var setup = [], code = [];
+    String(text).split("\n").forEach(function (ln) {
+      var m = ln.match(SETUP);
+      if (m) setup.push(m[1]); else code.push(ln);
+    });
+    return { setup: setup.join("\n"), code: code.join("\n").replace(/^\s+|\s+$/g, "") };
+  }
+  function sqlProgram(setup, code) {
+    return [
+      "import sqlite3 as _s, json as _j",
+      "_db = _s.connect(':memory:')",
+      "def _go(text, show):",
+      "    buf = ''",
+      "    for line in (text + '\\n').split('\\n'):",
+      "        buf += line + '\\n'",
+      "        if not _s.complete_statement(buf):",
+      "            continue",
+      "        try:",
+      "            cur = _db.execute(buf)",
+      "        except _s.Error as e:",
+      "            raise RuntimeError('SQL said: ' + str(e)) from None",
+      "        buf = ''",
+      "        if show and cur.description:",
+      "            for row in cur.fetchall():",
+      "                print(' | '.join('NULL' if v is None else str(v) for v in row))",
+      "    if buf.strip() and not all(l.strip().startswith('--') for l in buf.strip().split('\\n')):",
+      "        raise RuntimeError('SQL said: a statement is missing its ; at the end')",
+      "_go(_j.loads(" + JSON.stringify(JSON.stringify(setup)) + "), False)",
+      "_go(_j.loads(" + JSON.stringify(JSON.stringify(code)) + "), True)"
+    ].join("\n");
+  }
+
   // Kept here too, so a box drawn again asks nothing even where storage is refused.
   var states = {};
   function stateKey(code) { return "pyide-predict:" + location.pathname + ":" + hashOf(code); }
@@ -265,25 +315,32 @@ window.IDESnippets = (function () {
   // teacher's page without asking; its page is generated, not ours to edit.
   function teacher() { return page.teacher || !!window.PM; }
 
-  function buildPredict(codeEl) {
+  function buildPredict(codeEl, lang) {
+    var sql = lang === "sql";
     var parts = splitHints(codeEl.textContent.replace(/\n$/, ""));
+    // `original` keeps a SQL block's setup lines: it is the block as the
+    // server reads it (xp.predict_code), so a claim still matches.
     var original = parts.code, hints = parts.hints;
+    var setup = sql ? splitSetup(original) : { setup: "", code: original };
+    var shown = setup.code;
     var st = loadState(original);
-    var box = el("div", "snippet snippet-python snippet-predict");
+    var box = el("div", "snippet snippet-" + (sql ? "sql" : "python") + " snippet-predict");
     box.setAttribute("data-predict", "");
 
     var area = el("textarea", "snippet-code");
     area.spellcheck = false;
-    area.value = original;
-    area.rows = Math.max(2, Math.min(24, original.split("\n").length));
+    area.value = shown;
+    area.rows = Math.max(2, Math.min(24, shown.split("\n").length));
     box.appendChild(area);
 
-    var ask = el("label", "snippet-ask small", "🤔 What will it print? Type every line it prints.");
+    var ask = el("label", "snippet-ask small", sql
+      ? "🤔 What will it give back? Type each row on its own line."
+      : "🤔 What will it print? Type every line it prints.");
     box.appendChild(ask);
     var guess = el("textarea", "field snippet-guess");
     guess.spellcheck = false;
     guess.setAttribute("aria-label", "Your prediction");
-    guess.placeholder = "One line for each line it prints";
+    guess.placeholder = sql ? "One line for each row, its values with spaces between" : "One line for each line it prints";
     guess.value = predicted[original] || "";
     function fitGuess() { guess.rows = Math.max(2, Math.min(12, guess.value.split("\n").length + 1)); }
     fitGuess();
@@ -337,7 +394,7 @@ window.IDESnippets = (function () {
       var text = "", seen = [];
       status.className = "snippet-status small dim";
       status.textContent = worker ? "Running…" : "Loading Python… the first time takes a few seconds.";
-      runPython(code, function (chunk, err) {
+      runPython(sql ? sqlProgram(setup.setup, code) : code, function (chunk, err) {
         if (text.length >= OUTPUT_MAX) return;
         text += chunk;
         seen.push([chunk, err]);
@@ -347,11 +404,18 @@ window.IDESnippets = (function () {
       });
     }
     function showOut(seen, error) {
+      // The SQL program's own line number means nothing to a student.
+      if (sql && error) error = String(error).replace(/^Line \d+: RuntimeError: /, "");
       out.textContent = "";
       seen.forEach(function (s) { out.appendChild(el("span", s[1] ? "snippet-err" : "", s[0])); });
       if (error) out.appendChild(el("span", "snippet-err", "\n" + error));
       if (!seen.length && !error) out.appendChild(el("span", "dim", "(It ran, and printed nothing.)"));
       out.hidden = false;
+    }
+    // A row is read as its values: " | " between them is how a result is
+    // shown, and typing it or not is the same answer.
+    function rowLines(t) {
+      return outLines(sql ? String(t).replace(/\|/g, " ") : t);
     }
     function markLines(want, got) {
       marks.textContent = "";
@@ -379,7 +443,7 @@ window.IDESnippets = (function () {
     check.addEventListener("click", function () {
       if (check.disabled || st.right) return;
       check.disabled = true;
-      runIt(original, function (text, error, seen) {
+      runIt(shown, function (text, error, seen) {
         check.disabled = false;
         if (/^Python couldn't load|^Stopped:/.test(error || "")) {
           // Not their guess's fault: no try counted.
@@ -399,7 +463,7 @@ window.IDESnippets = (function () {
           tellLock(box);
           return;
         }
-        var want = outLines(text), got = outLines(guess.value);
+        var want = rowLines(text), got = rowLines(guess.value);
         var right = want.length === got.length && want.every(function (l, i) { return l === got[i]; });
         var first = st.tries === 0;
         st.tries += 1;
@@ -428,9 +492,9 @@ window.IDESnippets = (function () {
       run.disabled = true;
       runIt(area.value, function (text, error, seen) { run.disabled = false; showOut(seen, error); });
     });
-    reset.addEventListener("click", function () { area.value = original; });
+    reset.addEventListener("click", function () { area.value = shown; });
     show.addEventListener("click", function () {
-      runIt(original, function (text, error, seen) { showOut(seen, error); });
+      runIt(shown, function (text, error, seen) { showOut(seen, error); });
     });
 
     if (st.right) {
@@ -602,6 +666,7 @@ window.IDESnippets = (function () {
   var KINDS = [
     ["code.language-python-run, code.language-py-run", "python"],
     ["code.language-python-predict, code.language-py-predict", "predict"],
+    ["code.language-sql-predict", "sqlpredict"],
     ["code.language-html-run, code.language-html-predict", "html"]
   ];
 
@@ -612,6 +677,7 @@ window.IDESnippets = (function () {
         if (!pre || pre.tagName !== "PRE") return;
         var made;
         if (k[1] === "predict") made = buildPredict(code);
+        else if (k[1] === "sqlpredict") made = buildPredict(code, "sql");
         else if (k[1] === "html" && /(^|\s)language-html-predict(\s|$)/.test(code.className)) {
           // With choices, a pick; without, the Run box it always was.
           var parts = splitPick(code.textContent.replace(/\n$/, ""));
@@ -700,5 +766,6 @@ window.IDESnippets = (function () {
   }
 
   return { renderBlocks: renderBlocks, run: run, runJs: runJs, configure: configure, _splitPick: splitPick,
-           TIME_LIMIT: TIME_LIMIT, _same: same, _splitHints: splitHints, _outLines: outLines };
+           TIME_LIMIT: TIME_LIMIT, _same: same, _splitHints: splitHints, _outLines: outLines,
+           _splitSetup: splitSetup, _sqlProgram: sqlProgram };
 })();

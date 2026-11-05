@@ -826,7 +826,7 @@ if shutil.which("node"):
 var N = window.FlaskIDENotes;
 console.log(JSON.stringify([
   N.runFences("```python run\\nprint(1)\\n```\\n```python\\nx\\n```\\n```html predict\\n<p>\\n```\\n"
-              + "~~~\\n```python run\\n~~~"),
+              + "~~~\\n```python run\\n~~~\\n```sql predict\\nSELECT 1;\\n```\\n```sql run\\nx\\n```"),
   N.parseCards("- a -> b\\nno arrow here\\n`len` -> how many"),
   N.scramble(["for i in range(QQONE):", "    total += i", "print(total)"])
 ]));
@@ -836,8 +836,8 @@ console.log(JSON.stringify([
         fences, cards, js_scramble = json.loads(res.stdout)
     except ValueError:
         fences, cards, js_scramble = "", [], []
-    check("python run fences become python-run, and nothing inside another fence changes",
-          fences == "```python-run\nprint(1)\n```\n```python\nx\n```\n```html-predict\n<p>\n```\n~~~\n```python run\n~~~",
+    check("python run fences become python-run (sql predict too, not sql run), and nothing inside another fence changes",
+          fences == "```python-run\nprint(1)\n```\n```python\nx\n```\n```html-predict\n<p>\n```\n~~~\n```python run\n~~~\n```sql-predict\nSELECT 1;\n```\n```sql run\nx\n```",
           repr(fences) + res.stderr[-200:])
     check("a cards block is read a card a line, skipping lines without ->",
           cards == [{"front": "a", "back": "b"}, {"front": "`len`", "back": "how many"}], repr(cards))

@@ -290,6 +290,67 @@ if "error" not in pk:
           pk["teacher"]["show"] is False and not pk["teacherShown"]["frame"] and "is-answer" in pk["teacherShown"]["marked"]
           and not pk["teacherShown"]["predicted"], pk)
 
+# ```sql predict (Nov 2026, FlaskIDE's database lessons): the rows the query
+# gives back, typed a line each; `# setup:` lines are the tables, run but not
+# shown. The fake worker can't run SQL, so the box is checked here and the
+# program it builds is run below in this machine's real Python and SQLite.
+SQL_HARNESS = DOM + SNIPPETS_JS + r"""
+var S = window.IDESnippets;
+var out = {};
+var tick = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
+async function settle() { for (var i = 0; i < 5; i++) await tick(); }
+var claims = [];
+S.configure({ claim: function (code) { claims.push(code); } });
+(async function () {
+  var CODE = "# setup: CREATE TABLE g (t TEXT);\n# setup: INSERT INTO g VALUES ('a; b');\nSELECT t FROM g;\n# hint: one row";
+  var root = new El("div"), pre = root.appendChild(new El("pre")), c = pre.appendChild(new El("code"));
+  c.className = "language-sql-predict"; c.textContent = CODE + "\n";
+  S.renderBlocks(root);
+  var box = root.children[0];
+  out.kind = box.className; out.held = box.hasAttribute("data-predict");
+  out.code = box.querySelector(".snippet-code").value;
+  out.ask = box.querySelector(".snippet-ask").textContent;
+  var guess = box.querySelector(".snippet-guess");
+  guess.value = "x"; guess.fire("input");
+  box.querySelectorAll(".snippet-run")[0].click(); await settle();
+  out.ran = runs[runs.length - 1];
+  out.program = S._sqlProgram("CREATE TABLE g (t TEXT, n INTEGER);\nINSERT INTO g VALUES ('Tetris; 1', 1984), ('Pac-Man', NULL);",
+                              "-- the old ones\nSELECT t, n FROM g\nORDER BY t;\nSELECT COUNT(*) FROM g;");
+  out.broken = S._sqlProgram("", "SELEC 1;");
+  out.unended = S._sqlProgram("", "SELECT 1");
+  out.split = S._splitSetup("# setup: CREATE TABLE a (x);\nSELECT x FROM a;\n  #SETUP:INSERT INTO a VALUES (1);");
+  console.log(JSON.stringify(out));
+})().catch(function (e) { console.log(JSON.stringify({ error: String(e && e.stack || e) })); });
+"""
+res = subprocess.run(["node", "-e", SQL_HARNESS], capture_output=True, text=True, timeout=60)
+try:
+    sq = json.loads(res.stdout.strip().splitlines()[-1])
+except (ValueError, IndexError):
+    sq = {"error": res.stderr[-800:] or res.stdout[-800:]}
+print("\nA SQL prediction (```sql predict)")
+check("node ran the SQL box", "error" not in sq, sq.get("error"))
+if "error" not in sq:
+    check("a predict box that holds the slide, asking for rows",
+          "snippet-predict" in sq["kind"] and sq["held"] and "row" in sq["ask"], sq)
+    check("  the setup and hint lines are out of the code shown", sq["code"] == "SELECT t FROM g;", sq["code"])
+    check("  what runs is Python running the setup, then the query",
+          "import sqlite3" in sq["ran"] and "CREATE TABLE g" in sq["ran"] and "SELECT t FROM g" in sq["ran"]
+          and "hint" not in sq["ran"], sq["ran"])
+
+    def py(program):
+        r = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=30)
+        return r.stdout, r.stderr
+
+    o, e = py(sq["program"])
+    check("the program prints every row a SELECT gives back, ' | ' between values, NULL for none",
+          o == "Pac-Man | NULL\nTetris; 1 | 1984\n2\n" and not e, (o, e))
+    o, e = py(sq["broken"])
+    check("  a mistake in the SQL stops it, saying what SQL said", not o and "SQL said" in e and "syntax error" in e, (o, e))
+    o, e = py(sq["unended"])
+    check("  and so does a statement with no ; at the end", "missing its ;" in e, (o, e))
+    check("  # setup: lines are found whatever their spacing and capitals",
+          sq["split"] == {"setup": "CREATE TABLE a (x);\nINSERT INTO a VALUES (1);", "code": "SELECT x FROM a;"}, sq["split"])
+
 if "error" not in got:
     print("\nThe box")
     f = got["fresh"]
@@ -400,10 +461,15 @@ print(len("PIE"))
 ```html predict
 <p>no choices, a plain run box</p>
 ```
+
+```sql predict
+# setup: CREATE TABLE g (t TEXT);
+SELECT t FROM g;
+```
 """
 teacher.post("/api/library", json={"body": NOTES, "linkTo": SLUG})
-check("every predict block in the notes is found (an HTML one too), and nothing else",
-      len(xp.predict_keys({"notes.md": NOTES, "main.py": "```python predict\nx\n```"})) == 4)
+check("every predict block in the notes is found (an HTML one and a SQL one too), and nothing else",
+      len(xp.predict_keys({"notes.md": NOTES, "main.py": "```python predict\nx\n```"})) == 5)
 
 
 def claim(c, code):
@@ -416,13 +482,14 @@ check("a first-try prediction pays PREDICT_XP", claim(amy, A) == (200, xp.PREDIC
 check("  once: the same block again pays nothing", claim(amy, A) == (200, 0))
 check("  the other block pays too", claim(amy, 'print(len("PIE"))') == (200, xp.PREDICT_XP))
 check("  and an HTML pick, by its page", claim(amy, "<b>Pie</b>") == (200, xp.PREDICT_XP))
+check("  and a SQL one, by the block with its setup lines", claim(amy, "# setup: CREATE TABLE g (t TEXT);\nSELECT t FROM g;") == (200, xp.PREDICT_XP))
 check("  a block that isn't in the notes pays nothing", claim(amy, 'print("free xp")') == (200, 0))
 check("  nor does a teacher's", claim(teacher, A) == (200, 0))
 check("  and signed out, it's refused", claim(nobody, A)[0] == 401)
 _db = P.SessionLocal()
 paid = [a.source for a in _db.query(accounts.XpAward).filter_by(user_id=AMY).all()]
 _db.close()
-check("  paid as predict:<assignment>:<block>", len(paid) == 3 and all(s.startswith("predict:") for s in paid), paid)
+check("  paid as predict:<assignment>:<block>", len(paid) == 4 and all(s.startswith("predict:") for s in paid), paid)
 
 failed = results.count(False)
 print("\n" + ("ALL PASSED" if not failed else "SOME FAILED") + " (%d checks, %d failed)" % (len(results), failed))
