@@ -79,13 +79,20 @@ def make_template():
         attr, path = m.group(1), m.group(2)
         if re.match(r"^[a-z]+:|^/|^#", path):
             return m.group(0)
+        # The tests' reader is the tutorial's IDE's (pm_autograde, set by the
+        # page): PyIDE holds Python, web and Flask tutorials since WebIDE and
+        # FlaskIDE moved in, and each IDE's tests are its own grammar.
+        if path == "pyide/autograde.js":
+            return '%s="{{ url_for(\'static\', filename=(pm_autograde or \'autograde.js\')) }}"' % attr
         return '%s="%s"' % (attr, static(OWN.get(path, "presmaker/" + path)))
     html = re.sub(r'\b(src|href)="([^"]+)"', address, html)
 
     head = '''<meta name="viewport" content="width=device-width, initial-scale=1">
   {#  FlaskIDE's: every JSON body packed past Render's firewall (pack.js),
       loaded before any other script so none keeps the plain fetch. #}
-  {% if pack_js %}<script src="''' + static("pack.js") + '''"></script>{% endif %}
+  {#  `pack_js` true is pack.js; a path is where this IDE keeps it (PyIDE's
+      is flask/pack.js, for a Flask or web tutorial). #}
+  {% if pack_js %}<script src="{{ url_for('static', filename=(pack_js if pack_js is string else 'pack.js')) }}"></script>{% endif %}
   <script>
     try {
       var saved = {{ (user_theme or "")|tojson }} || localStorage.getItem({{ theme_key|tojson }});
@@ -121,7 +128,9 @@ def make_template():
        notes and tests under the names PresMaker uses. */
     window.PM_SERVER = {{ pm_server|tojson }};
     window.PyIDENotes = window.PyIDENotes || window[{{ ns|tojson }} + "Notes"];
-    window.PyIDETests = window.PyIDETests || window[{{ ns|tojson }} + "Tests"];
+    window.PyIDETests = window.PyIDETests || window[{{ ns|tojson }} + "Tests"]
+      // a web tutorial's, in PyIDE (pm_autograde: web/autograde.js)
+      || window.WebIDETests;
   </script>
   {% if pm_adapter == "gameide" %}
   <script>

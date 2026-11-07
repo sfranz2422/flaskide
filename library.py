@@ -67,6 +67,14 @@ def init(app, **hooks):
                       is a React page): /teacher/tutorials goes there
         visibilities  who a tutorial may be shown to (default only "private")
         is_admin      (user) -> bool: may make one "site" wide
+        page_for      (db, user, item) -> the page for editing this item, when
+                      it differs by item (the IDE a tutorial is for): else page
+        app_names     the IDEs whose tutorials and assignments this editor
+                      has, when it is more than its own (PyIDE, since WebIDE
+                      and FlaskIDE moved into it): one shelf for all of them.
+                      A tutorial's `app` is then the IDE it is for — a web
+                      tutorial's tests are a web page's — and it links only
+                      to that IDE's assignments. Left out, only app_name.
     """
     H.update(hooks)
     app.register_blueprint(bp)
@@ -104,6 +112,24 @@ def title_of(text, fallback):
     return fallback
 
 
+def _apps():
+    """The IDEs this editor's library holds (the app_names hook, else its own)."""
+    return tuple(H.get("app_names") or (H["app_name"],))
+
+
+def _target(ide):
+    """The IDE a new tutorial is for: the one asked for, if this library has
+    it, else the editor's own."""
+    return ide if ide in _apps() else H["app_name"]
+
+
+def _same_ide(item, a):
+    """May this item be linked to this assignment? A deck is the teacher's
+    slides, for any assignment; a tutorial's notes — their tests, their
+    examples — are written for one IDE, and only its assignments run them."""
+    return item.kind != "tutorial" or item.app == a.app
+
+
 def _new_slug(db):
     while True:
         slug = "".join(secrets.choice(_ALPHABET) for _ in range(10))
@@ -121,7 +147,8 @@ def _teacher(db):
 
 
 def _own_item(db, user, slug):
-    item = db.query(accounts.LibraryItem).filter_by(slug=str(slug)[:16], app=H["app_name"]).first()
+    item = (db.query(accounts.LibraryItem)
+            .filter(accounts.LibraryItem.slug == str(slug)[:16], accounts.LibraryItem.app.in_(_apps())).first())
     if item is None or item.teacher_id != user.id or item.archived:
         return None
     return item
@@ -129,7 +156,7 @@ def _own_item(db, user, slug):
 
 def _own_assignments(db, user):
     return (db.query(accounts.Assignment)
-            .filter_by(teacher_id=user.id, app=H["app_name"])
+            .filter(accounts.Assignment.teacher_id == user.id, accounts.Assignment.app.in_(_apps()))
             .order_by(accounts.Assignment.created_at.desc()).all())
 
 
@@ -137,7 +164,7 @@ def _own_assignments(db, user):
 
 def linked(db, item):
     field = accounts.Assignment.tutorial_id if item.kind == "tutorial" else accounts.Assignment.deck_id
-    return db.query(accounts.Assignment).filter(field == item.id, accounts.Assignment.app == H["app_name"]).all()
+    return db.query(accounts.Assignment).filter(field == item.id, accounts.Assignment.app.in_(_apps())).all()
 
 
 def fan_out(db, item):
@@ -205,7 +232,7 @@ def adopt(db, a, title=None):
     text = H["notes_of"](a)
     if a.tutorial_id is not None or not text.strip():
         return None
-    item = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=a.teacher_id, kind="tutorial",
+    item = accounts.LibraryItem(slug=_new_slug(db), app=_target(a.app), teacher_id=a.teacher_id, kind="tutorial",
                                 title=(title or title_of(text, a.title))[:200], body=text,
                                 size=len(text.encode("utf-8")))
     db.add(item)
@@ -223,16 +250,18 @@ def import_existing(db, user):
     is taken once (tutorial_id set), and one unlinked on purpose (0) never."""
     todo = (db.query(accounts.Assignment)
             .filter(accounts.Assignment.teacher_id == user.id,
-                    accounts.Assignment.app == H["app_name"],
+                    accounts.Assignment.app.in_(_apps()),
                     accounts.Assignment.tutorial_id.is_(None))
             .order_by(accounts.Assignment.created_at).with_for_update().all())
+    # By IDE as well as by text: the same words for a Python and a web
+    # assignment are two tutorials, each with the tests its IDE runs.
     groups = {}
     for a in todo:
         text = H["notes_of"](a)
         if text.strip():
-            groups.setdefault(text, []).append(a)
+            groups.setdefault((_target(a.app), text), []).append(a)
     made = 0
-    for text, items in groups.items():
+    for (ide, text), items in groups.items():
         # A known tutorial (GameIDE's built-ins): the teacher's row for it,
         # found by where it came from, so it's one row however its text changes.
         known = H["known"](text) if H.get("known") else None
@@ -244,9 +273,9 @@ def import_existing(db, user):
         # Already in the library word for word (another period's copy imported
         # earlier, or the same file uploaded): link to that one.
         same = (db.query(accounts.LibraryItem)
-                .filter_by(teacher_id=user.id, app=H["app_name"], kind="tutorial", archived=0, body=text).first())
+                .filter_by(teacher_id=user.id, app=ide, kind="tutorial", archived=0, body=text).first())
         if same is None:
-            same = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=user.id, kind="tutorial",
+            same = accounts.LibraryItem(slug=_new_slug(db), app=ide, teacher_id=user.id, kind="tutorial",
                                         title=title_of(text, items[0].title), body=text,
                                         size=len(text.encode("utf-8")))
             db.add(same)
@@ -264,7 +293,9 @@ def import_existing(db, user):
             decks.setdefault(html, []).append((a, name))
         for html, uses in decks.items():
             same = (db.query(accounts.LibraryItem)
-                    .filter_by(teacher_id=user.id, app=H["app_name"], kind="deck", archived=0, body=html).first())
+                    .filter(accounts.LibraryItem.teacher_id == user.id, accounts.LibraryItem.app.in_(_apps()),
+                            accounts.LibraryItem.kind == "deck", accounts.LibraryItem.archived == 0,
+                            accounts.LibraryItem.body == html).first())
             if same is None:
                 name = re.sub(r"\.html?$", "", uses[0][1] or "", flags=re.I).strip() or uses[0][0].title
                 same = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=user.id, kind="deck",
@@ -318,12 +349,13 @@ def _class_names(db, assignment_ids):
 
 def _assignment_out(a, classes):
     return {"slug": a.slug, "title": a.title, "kind": a.kind, "class": classes.get(a.id, ""),
-            "archived": bool(a.archived), "url": H["assignment_url"](a)}
+            "archived": bool(a.archived), "url": H["assignment_url"](a), "ide": a.app}
 
 
 def _item_out(item, uses):
     return {"id": item.id, "slug": item.slug, "kind": item.kind, "title": item.title, "size": item.size, "origin": item.origin,
-            "updated": item.updated_at.isoformat() + "Z", "visibility": item.visibility, "uses": uses}
+            "updated": item.updated_at.isoformat() + "Z", "visibility": item.visibility, "uses": uses,
+            "ide": item.app}
 
 
 def tutorial_box(db, user, a):
@@ -336,8 +368,9 @@ def tutorial_box(db, user, a):
     others = 0
     if tut is not None:
         others = len([x for x in linked(db, tut) if x.id != a.id])
+    # This assignment's IDE's tutorials only (_same_ide).
     choices = (db.query(accounts.LibraryItem.slug, accounts.LibraryItem.title)
-               .filter_by(teacher_id=user.id, app=H["app_name"], kind="tutorial", archived=0)
+               .filter_by(teacher_id=user.id, app=a.app, kind="tutorial", archived=0)
                .order_by(accounts.LibraryItem.title).all())
     return {"tutorial": tut, "tutorial_others": others,
             "tutorial_choices": [{"slug": s, "title": t} for s, t in choices]}
@@ -375,7 +408,7 @@ def library_edit_page(slug):
             return Response("No such tutorial.", 404)
         uses = linked(db, item)
         classes = _class_names(db, [a.id for a in uses])
-        page = H["page"](db, user)
+        page = H["page_for"](db, user, item) if H.get("page_for") else H["page"](db, user)
         server = {"slug": item.slug, "title": item.title, "kind": item.kind, "body": item.body,
                   "saveUrl": "/api/library/" + item.slug, "libraryUrl": "/teacher/tutorials", "brand": page["brand"],
                   # PyIDE's tests have a form; the others' are typed as lines,
@@ -399,7 +432,9 @@ def list_items():
         if bounce:
             return bounce
         import_existing(db, user)
-        items = (db.query(accounts.LibraryItem).filter_by(teacher_id=user.id, app=H["app_name"], archived=0)
+        items = (db.query(accounts.LibraryItem)
+                 .filter(accounts.LibraryItem.teacher_id == user.id, accounts.LibraryItem.app.in_(_apps()),
+                         accounts.LibraryItem.archived == 0)
                  .order_by(accounts.LibraryItem.updated_at.desc()).all())
         mine = _own_assignments(db, user)
         classes = _class_names(db, [a.id for a in mine])
@@ -452,14 +487,20 @@ def new_item():
             item = builtin_row(db, user.id, origin, title, body)
             db.commit()
         else:
-            item = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=user.id, kind=kind,
+            # Made for an assignment ("New tutorial" in its Tutorial box): for
+            # its IDE, and linked to it at once. Otherwise for the IDE asked.
+            a = None
+            if data.get("linkTo"):
+                a = (db.query(accounts.Assignment)
+                     .filter(accounts.Assignment.slug == str(data["linkTo"])[:16],
+                             accounts.Assignment.app.in_(_apps()),
+                             accounts.Assignment.teacher_id == user.id).first())
+            ide = _target(a.app if a is not None else data.get("ide"))
+            item = accounts.LibraryItem(slug=_new_slug(db), app=ide if kind == "tutorial" else H["app_name"],
+                                        teacher_id=user.id, kind=kind,
                                         title=title, body=body, size=len(body.encode("utf-8")))
             db.add(item)
             db.commit()
-        # Made for an assignment ("New tutorial" in its Tutorial box): linked to it at once.
-        if data.get("linkTo"):
-            a = db.query(accounts.Assignment).filter_by(slug=str(data["linkTo"])[:16], app=H["app_name"],
-                                                        teacher_id=user.id).first()
             if a is not None:
                 link(db, item, a)
         return jsonify(slug=item.slug), 201
@@ -595,10 +636,14 @@ def link_item(slug):
         for s in data.get("unlink") or []:
             if s in mine:
                 unlink(db, item, mine[s])
+        refused = []
         for s in data.get("link") or []:
             if s in mine:
-                link(db, item, mine[s])
-        return jsonify(ok=True)
+                if _same_ide(item, mine[s]):
+                    link(db, item, mine[s])
+                else:
+                    refused.append(s)
+        return jsonify(ok=True, refused=refused)
     finally:
         db.close()
 
@@ -624,6 +669,10 @@ def upload():
         if len(files) > MAX_UPLOAD_FILES:
             return jsonify(error=f"{MAX_UPLOAD_FILES} files at a time at most."), 400
         replace = data.get("replace", True) is not False
+        # The IDE the tutorials are for (a deck is for any): a replace looks
+        # only among that IDE's, so a web tutorial can't overwrite a Python one
+        # of the same title.
+        ide = _target(data.get("ide"))
         report = []
         for f in files:
             name = str((f or {}).get("name", ""))[:200]
@@ -646,7 +695,9 @@ def upload():
             same = None
             if replace:
                 same = (db.query(accounts.LibraryItem)
-                        .filter(accounts.LibraryItem.teacher_id == user.id, accounts.LibraryItem.app == H["app_name"],
+                        .filter(accounts.LibraryItem.teacher_id == user.id,
+                                (accounts.LibraryItem.app == ide) if kind == "tutorial"
+                                else accounts.LibraryItem.app.in_(_apps()),
                                 accounts.LibraryItem.kind == kind, accounts.LibraryItem.archived == 0,
                                 func.lower(accounts.LibraryItem.title) == title.lower())
                         .order_by(accounts.LibraryItem.updated_at.desc()).first())
@@ -657,7 +708,8 @@ def upload():
                 n = save(db, same, body)
                 report.append({"name": name, "result": "replaced", "slug": same.slug, "title": same.title, "updated": n})
             else:
-                item = accounts.LibraryItem(slug=_new_slug(db), app=H["app_name"], teacher_id=user.id, kind=kind,
+                item = accounts.LibraryItem(slug=_new_slug(db), app=ide if kind == "tutorial" else H["app_name"],
+                                            teacher_id=user.id, kind=kind,
                                             title=title, body=body, size=len(body.encode("utf-8")))
                 db.add(item)
                 db.commit()

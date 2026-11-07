@@ -13,6 +13,8 @@
 .library-title { font-weight: 600; }
 .library-kind { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
 .library-kind.tutorial { border-color: var(--accent); color: var(--accent); }
+/* Which kind of project a tutorial is for, when the library holds more than one. */
+.library-ide { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px dashed var(--line); color: var(--muted); }
 .library-actions { white-space: nowrap; }
 .library-actions > * { margin-right: 6px; }
 .library-uses summary { cursor: pointer; }

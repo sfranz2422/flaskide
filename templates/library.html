@@ -55,6 +55,14 @@
       <option value="tutorial">Tutorials</option>
       <option value="deck">Teacher decks</option>
     </select>
+    {#  Which kind of project a tutorial is for, when this editor has more
+        than one (PyIDE, since WebIDE and FlaskIDE moved in). #}
+    {% if ides and ides|length > 1 %}
+    <select id="lib-ide" aria-label="For">
+      <option value="">Every kind of project</option>
+      {% for id, label in ides %}<option value="{{ id }}">{{ label }}</option>{% endfor %}
+    </select>
+    {% endif %}
     <select id="lib-sort" aria-label="Sort">
       <option value="updated">Recently changed</option>
       <option value="title">By title</option>
@@ -80,7 +88,7 @@
   </form>
 </dialog>
 
-<script>window.LIBRARY_T = { editUrl: "/teacher/tutorials/" };</script>
+<script>window.LIBRARY_T = { editUrl: "/teacher/tutorials/", ides: {{ (ides or [])|tojson }} };</script>
 <script src="{{ url_for('static', filename='library.js') }}"></script>
 </body>
 </html>

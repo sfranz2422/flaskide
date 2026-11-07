@@ -1,2 +1,2 @@
 Copied from ~/presMaker/web by tools/sync_presmaker.py. Edit PresMaker, then sync.
-3de5772 2026-11-01 Predict the output: hints in the inserted block; PyIDE's files re-synced
+dc212fc 2026-11-01 Sync from PyIDE: HTML predict picks

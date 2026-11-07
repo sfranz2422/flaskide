@@ -6,12 +6,38 @@
  * uploads (many at once — a file with the same title as one here replaces
  * it, links and all), duplicates, downloads, deletes, and links them to
  * assignments. Editing is on each tutorial's own page.
+ *
+ * MORE THAN ONE IDE (window.LIBRARY_T.ides, from the page — PyIDE's, since
+ * WebIDE and FlaskIDE moved in): each tutorial is for one, said on its row
+ * and chosen with Show; New and Upload make them for the IDE shown, or ask;
+ * and Link lists only that IDE's assignments, whose tests it is written
+ * for. With one IDE (or none given) the page is as it always was.
  */
 (function () {
   "use strict";
 
   var $ = function (id) { return document.getElementById(id); };
   var items = [], assignments = [];
+  var IDES = (window.LIBRARY_T && window.LIBRARY_T.ides) || [];   // [[id, label]]
+  var MANY = IDES.length > 1;
+  function ideLabel(id) {
+    for (var i = 0; i < IDES.length; i++) if (IDES[i][0] === id) return IDES[i][1];
+    return id || "";
+  }
+  /* The IDE new tutorials are for: the one Show is on, else asked. Null when
+     the question is cancelled. With one IDE, nothing to choose ("" — the
+     server's own). */
+  function ideForNew() {
+    if (!MANY) return "";
+    var shown = $("lib-ide") ? $("lib-ide").value : "";
+    if (shown) return shown;
+    var lines = ["Which kind of project is it for?", ""];
+    IDES.forEach(function (x, i) { lines.push((i + 1) + " — " + x[1]); });
+    var pick = window.prompt(lines.join("\n"), "1");
+    if (pick === null) return null;
+    var n = parseInt(pick, 10);
+    return n >= 1 && n <= IDES.length ? IDES[n - 1][0] : null;
+  }
 
   function api(url, opts) {
     opts = opts || {};
@@ -63,8 +89,11 @@
 
   function shown() {
     var q = $("lib-search").value.trim().toLowerCase(), kind = $("lib-kind").value, by = $("lib-sort").value;
+    // A deck is the teacher's slides, for any IDE: Show by IDE keeps them.
+    var ide = MANY && $("lib-ide") ? $("lib-ide").value : "";
     var list = items.filter(function (i) {
-      return (!kind || i.kind === kind) && (!q || i.title.toLowerCase().indexOf(q) >= 0);
+      return (!kind || i.kind === kind) && (!q || i.title.toLowerCase().indexOf(q) >= 0)
+        && (!ide || i.kind !== "tutorial" || i.ide === ide);
     });
     list.sort(function (a, b) {
       if (by === "title") return a.title.localeCompare(b.title);
@@ -101,7 +130,9 @@
       var tutorial = item.kind === "tutorial";
       var title = el("a", { href: window.LIBRARY_T.editUrl + item.slug + "/edit", text: item.title, "class": "library-title" });
       body.appendChild(el("tr", { "data-slug": item.slug, "data-testid": "library-row" }, [
-        el("td", {}, [el("span", { "class": "library-kind " + item.kind, text: tutorial ? "Tutorial" : "Deck" }), " ", title]),
+        el("td", {}, [el("span", { "class": "library-kind " + item.kind, text: tutorial ? "Tutorial" : "Deck" }), " ",
+                      MANY && tutorial ? el("span", { "class": "library-ide", "data-ide": item.ide, text: ideLabel(item.ide) }) : null,
+                      MANY && tutorial ? " " : null, title]),
         el("td", {}, [usedIn(item)]),
         el("td", { "class": "muted small", text: when(item.updated) }),
         el("td", { "class": "library-actions" }, [
@@ -116,14 +147,16 @@
     });
   }
 
-  ["lib-search", "lib-kind", "lib-sort"].forEach(function (id) { $(id).addEventListener("input", draw); });
+  ["lib-search", "lib-kind", "lib-sort", "lib-ide"].forEach(function (id) { if ($(id)) $(id).addEventListener("input", draw); });
 
   /* ---------------------------------------------------------------- making, copying, deleting */
 
   $("lib-new").addEventListener("click", function () {
+    var ide = ideForNew();
+    if (ide === null) return;
     var title = prompt("What's it called?");
     if (!title || !title.trim()) return;
-    api("/api/library", { json: { title: title.trim(), body: "# " + title.trim() + "\n\n" } })
+    api("/api/library", { json: { title: title.trim(), body: "# " + title.trim() + "\n\n", ide: ide } })
       .then(function (d) { location.href = window.LIBRARY_T.editUrl + d.slug + "/edit"; }, function (e) { say(e.message, true); });
   });
 
@@ -150,6 +183,8 @@
     var byClass = {};
     assignments.forEach(function (a) {
       if (a.archived) return;
+      // A tutorial's tests and examples are its IDE's: only those assignments.
+      if (MANY && item.kind === "tutorial" && a.ide !== item.ide) return;
       (byClass[a.class || ""] = byClass[a.class || ""] || []).push(a);
     });
     var names = Object.keys(byClass).sort(function (a, b) { return !a ? 1 : !b ? -1 : a.localeCompare(b); });
@@ -197,9 +232,11 @@
   function upload(files) {
     files = Array.prototype.filter.call(files, function (f) { return /\.(md|markdown|txt|html?)$/i.test(f.name); });
     if (!files.length) return say("Choose .md tutorials or .html decks.", true);
+    var ide = files.some(function (f) { return /\.(md|markdown|txt)$/i.test(f.name); }) ? ideForNew() : "";
+    if (ide === null) return;
     say("Uploading " + files.length + " file" + (files.length === 1 ? "" : "s") + "…");
     Promise.all(files.map(function (f) { return asBase64(f).then(function (data) { return { name: f.name, data: data }; }); }))
-      .then(function (list) { return api("/api/library/upload", { json: { files: list } }); })
+      .then(function (list) { return api("/api/library/upload", { json: { files: list, ide: ide } }); })
       .then(function (d) {
         var r = $("lib-report");
         r.hidden = false;
